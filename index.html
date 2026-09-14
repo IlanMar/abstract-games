@@ -2,488 +2,59 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0e1116">
-<title>Abstract Trader</title>
+<title>Abstract Games</title>
 <style>
-  /* touch-action не наследуется, поэтому ставим всем: убирает зум по двойному тапу */
-  * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation }
+  * { box-sizing: border-box; margin: 0; padding: 0 }
   :root {
     --bg:#0e1116; --panel:#161b22; --line:#232a35;
-    --fg:#e6edf3; --dim:#8b949e; --up:#2ea043; --down:#e5534b;
+    --fg:#e6edf3; --dim:#8b949e; --up:#2ea043;
     color-scheme: dark;
   }
   body {
-    display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
-    background: var(--bg); color: var(--fg);
-    font: 14px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    user-select: none; -webkit-user-select: none; -webkit-text-size-adjust: 100%;
+    min-height: 100dvh; background: var(--bg); color: var(--fg);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 40px 20px calc(40px + env(safe-area-inset-bottom));
+    -webkit-text-size-adjust: 100%;
   }
-  header { padding: 10px 14px; border-bottom: 1px solid var(--line) }
-  .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 6px }
-  .row + .row { margin-top: 4px }
-  .price { font-size: 26px; font-weight: 600 }
-  .hint { font-size: 11px; color: var(--dim) }
-  select {
-    max-width: 62%; padding: 5px 15px 5px 5px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--panel); color: var(--fg); font: 600 12px/1 inherit; cursor: pointer;
-    appearance: none; -webkit-appearance: none;   /* нативная стрелка съедает вдвое больше места */
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%238b949e' stroke-width='1.6'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 4px center; background-size: 8px 5px;
+  main { max-width: 620px; margin: 0 auto }
+  h1 { font-size: 26px; font-weight: 600; letter-spacing: .3px }
+  .sub { margin-top: 6px; color: var(--dim); font-size: 14px }
+  ul { list-style: none; margin-top: 28px; display: grid; gap: 12px }
+  a.game {
+    display: block; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px;
+    background: var(--panel); color: inherit; text-decoration: none;
   }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--dim) }
-  .stats b { display: block; font-size: 15px; font-weight: 600; color: var(--fg) }
-  .num, .price, .stats b { font-variant-numeric: tabular-nums }
-  main { position: relative; flex: 1; min-height: 0 }
-  canvas { display: block; width: 100%; height: 100% }
-  footer { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 14px }
-  button {
-    padding: 18px 0; border: 0; border-radius: 12px; color: #fff; cursor: pointer;
-    font: 600 17px/1 inherit; -webkit-tap-highlight-color: transparent;
-  }
-  button.off { opacity: .3 }
-  button:active:not(.off) { transform: translateY(1px) }
-  #buy { background: var(--up) } #sell { background: var(--down) }
-  #over {
-    position: absolute; inset: 0; display: none; flex-direction: column; gap: 14px;
-    align-items: center; justify-content: center; text-align: center;
-    background: rgba(14,17,22,.92);
-  }
-  #over.show { display: flex }
-  #over h1 { font-size: 22px; color: var(--down) }
-  #restart { background: var(--panel); border: 1px solid var(--line); padding: 14px 26px }
+  a.game:hover { border-color: var(--up) }
+  a.game:active { transform: translateY(1px) }
+  .name { font-size: 17px; font-weight: 600 }
+  .about { margin-top: 4px; color: var(--dim); font-size: 14px }
+  footer { margin-top: 32px; color: var(--dim); font-size: 13px }
+  footer a { color: var(--dim) }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="row">
-    <select id="src"></select>
-    <select id="year" hidden></select>
-    <select id="month" hidden></select>
-    <select id="mode" hidden title="Приводить цену к $10 или играть настоящими котировками">
-      <option value="norm">к $10</option>
-      <option value="real">как есть</option>
-    </select>
-  </div>
-  <div class="row">
-    <span>
-      <span class="price" id="price">$10.00</span>
-      <span class="num" id="chg">0.00%</span>
-      <span class="hint" id="ref"></span>
-    </span>
-    <span class="hint" id="hint" title="Один тик — один торговый день"></span>
-  </div>
-  <div class="stats">
-    <div>Кэш<b id="cash">$1000</b></div>
-    <div>Акции<b id="shares">0</b></div>
-    <div>Капитал<b id="equity">$1000</b></div>
-    <div>Рекорд<b id="best">&mdash;</b></div>
-  </div>
-</header>
-
 <main>
-  <canvas id="c"></canvas>
-  <div id="over">
-    <h1 id="verdict">Банкрот</h1>
-    <p id="result"></p>
-    <button id="restart">Начать заново</button>
-  </div>
+  <h1>Abstract Games</h1>
+  <p class="sub">Маленькие браузерные игры. Одна игра — одна папка, без сборки и зависимостей.</p>
+
+  <ul>
+    <li>
+      <a class="game" href="trader/">
+        <div class="name">Abstract Trader &rarr;</div>
+        <div class="about">
+          Биржа в реальном времени и две кнопки. Настоящая история котировок
+          десяти бумаг с 1990 года: можно встать в Apple перед обвалом 2000-го
+          или в GameStop накануне выноса.
+        </div>
+      </a>
+    </li>
+  </ul>
+
+  <footer>Исходники: <a href="https://github.com/IlanMar/abstract-games">github.com/IlanMar/abstract-games</a></footer>
 </main>
 
-<footer>
-  <button id="buy">Купить 10</button>
-  <button id="sell">Продать 10</button>
-</footer>
-
-<script src="data/index.js"></script>
-<script>
-'use strict';
-
-// --- правила игры ---------------------------------------------------------
-const TICK   = 100;    // мс на одну котировку
-const POINTS = 600;    // точек в окне графика (= 60 секунд истории)
-const LOT    = 10;     // акций в одной сделке
-const START  = { price: 10, cash: 1000, shares: 0 };    // режим нормированной цены
-const REAL   = { cash: 0, shares: 100 };               // режим настоящих котировок
-const RUIN   = 0.1;    // банкротство, если осталась десятая часть стартового капитала
-
-// --- модель случайного рынка ----------------------------------------------
-const SIGMA = 0.003;   // волатильность за тик (в лог-доходности)
-const PULL  = 0.0008;  // возврат к справедливой цене
-const AXIS  = 54;      // ширина шкалы цен, px
-
-// --- источники котировок --------------------------------------------------
-// SIM — генератор; остальное — дневные бары реальных бумаг из data/quotes.js.
-// Играем не абсолютной ценой, а доходностями бумаги, поэтому старт всегда $10.
-const SIM = 'SIM';
-const DEFAULT = 'GOOGL';               // что показываем новому игроку
-const TICKERS = window.TICKERS || {};   // код бумаги -> название
-const QUOTES = window.QUOTES || {};    // сюда попадают уже загруженные ряды
-
-const $ = id => document.getElementById(id);
-const cv = $('c'), ctx = cv.getContext('2d');
-const hist = new Float32Array(POINTS);    // кольцевой буфер котировок
-const months = new Uint16Array(POINTS);  // и код месяца каждого бара: (год - 1970) * 12 + месяц
-
-let head = 0, price, cash, shares, avg, peak, dead;
-let drift, regimeEnd, tickAt;
-let srcKey = SIM, src = null, series = null, idx = 0, ts = 0;
-let startAt = -1;                          // -1 — начинать со случайного места истории
-let factor = 1;                            // накопленное дробление акций
-let real = false, base = START.price, startEq = 0, rec = SIM, saveAt = 0;
-let curAcc = '$', curSec = '$';        // валюта счёта и валюта самой бумаги
-let W = 0, H = 0, PW = 0, upFill, downFill;
-
-// --- результат в localStorage ---------------------------------------------
-const KEY = 'abstract-trader';
-let saved = {};
-try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
-if (!saved.best || typeof saved.best !== 'object') saved.best = {};   // рекорд — свой у каждой бумаги
-function persist() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
-
-// --- рынок ----------------------------------------------------------------
-let spare = null;
-function gauss() {                     // Бокс—Мюллер, вторую величину кэшируем
-  if (spare !== null) { const v = spare; spare = null; return v; }
-  const r = Math.sqrt(-2 * Math.log(1 - Math.random())), a = 2 * Math.PI * Math.random();
-  spare = r * Math.sin(a);
-  return r * Math.cos(a);
-}
-
-function newRegime(now) {              // новый тренд длиной 2...30 секунд
-  drift = (Math.random() * 2 - 1) * 0.0005;
-  regimeEnd = now + 2000 + Math.random() * 28000;
-}
-
-const NUM = new Intl.NumberFormat('ru-RU');
-const short = v => {                   // 1 234 · 12k · 3.4M — иначе настоящие котировки не влезают
-  v = Math.round(v);
-  return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? Math.round(v / 1e3) + 'k' : NUM.format(v);
-};
-const sign = (txt, cur) => cur === '$' ? '$' + txt : txt + ' ' + cur;   // ₽ пишется после суммы
-const money = v => sign(short(v), curAcc);
-const quote = (v, cur) => sign(v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2), cur);
-
-const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-const STEPS = [1, 2, 3, 6, 12, 24, 60, 120];   // сколько месяцев между подписями на оси времени
-const monthOf = sec => { const d = new Date(sec * 1000); return (d.getUTCFullYear() - 1970) * 12 + d.getUTCMonth(); };
-const stamp = sec => {                 // время хранится в часовом поясе биржи — печатаем как есть
-  const d = new Date(sec * 1000);
-  return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
-};
-
-const equity = () => cash + shares * price;
-
-function simReturn(now) {              // тренд + возврат к среднему + случайный шок
-  if (now >= regimeEnd) newRegime(now);
-  return drift + PULL * Math.log(START.price / price) + SIGMA * gauss();
-}
-
-function realReturn() {                // следующий бар реальной истории
-  const prev = series[idx];
-  if (++idx === series.length) { idx = 0; ts = src.t0; return 0; }   // круг: цену не рвём
-  ts += src.dh[idx - 1] * 3600;
-  return Math.log(series[idx] / prev);
-}
-
-// Как настоящий эмитент: если цена ушла далеко от стартовой, дробим акции (k = 2)
-// или, наоборот, консолидируем (k = 0.5). Капитал и форма графика не меняются —
-// меняется только масштаб цены, и лот из 10 акций остаётся по карману.
-function rescale(k) {
-  const odd = shares % (2 * LOT);        // при консолидации остаток не делится на лот —
-  if (k < 1) { cash += odd * price; shares -= odd; }   // отдаём его деньгами
-  shares *= k; price /= k; avg /= k; factor *= k;
-  for (let i = 0; i < POINTS; i++) hist[i] /= k;
-}
-
-function step(now) {
-  price *= Math.exp(series ? realReturn() : simReturn(now));
-  hist[head] = price;
-  if (series) months[head] = monthOf(ts);
-  head = (head + 1) % POINTS;
-  if (!real) {                          // настоящие котировки не трогаем
-    if (price > base * 2) rescale(2);
-    else if (price < base / 2) rescale(0.5);
-  }
-
-  const eq = equity();
-  if (eq > peak) {
-    peak = eq;
-    if (peak > (saved.best[rec] || 0)) {       // рекорд пишем сразу, а не в конце партии
-      saved.best[rec] = Math.round(peak);
-      if (now > saveAt) { persist(); saveAt = now + 2000; }   // на диск — не чаще раза в 2 секунды
-    }
-  }
-  if (eq < startEq * RUIN || (!shares && cash < LOT * price)) gameOver();
-}
-
-// --- сделки ---------------------------------------------------------------
-function buy() {
-  const cost = LOT * price;
-  if (dead || cash < cost) return;
-  avg = (avg * shares + cost) / (shares + LOT);
-  cash -= cost; shares += LOT;
-  hud();
-}
-
-function sell() {
-  if (dead || shares < LOT) return;
-  cash += LOT * price; shares -= LOT;
-  hud();
-}
-
-// --- партия ---------------------------------------------------------------
-function reset() {
-  factor = 1;
-  src = QUOTES[srcKey] || null;
-  series = src ? src.c : null;
-  real = !!series && $('mode').value === 'real';
-  curSec = src && src.cur || '$';
-  curAcc = real ? curSec : '$';        // с нормировкой к $10 счёт всегда долларовый
-  rec = srcKey + (real ? '·real' : '');
-  price = base = START.price;
-  cash = real ? REAL.cash : START.cash;
-  shares = real ? REAL.shares : START.shares;
-  if (series) {
-    // отрезок реальной истории; окно перед ним — уже готовая предыстория
-    idx = startAt >= 0 ? startAt : POINTS + Math.floor(Math.random() * (series.length - POINTS));
-    const from = idx - POINTS + 1;
-    if (real) price = base = series[idx];
-    ts = src.t0;
-    for (let i = 0; i < from; i++) ts += src.dh[i] * 3600;
-    for (let i = 0; i < POINTS; i++) {
-      hist[i] = price * series[from + i] / series[idx];
-      months[i] = monthOf(ts);
-      if (i < POINTS - 1) ts += src.dh[from + i] * 3600;   // в конце ts — время текущего бара
-    }
-  } else {
-    // предыстория: идём от текущей цены назад, чтобы график сразу выглядел живым
-    for (let i = POINTS - 1, p = price; i >= 0; i--) {
-      hist[i] = p;
-      p *= Math.exp(SIGMA * gauss() - PULL * Math.log(START.price / p));
-    }
-  }
-  head = 0;
-  avg = price;
-  peak = startEq = equity(); dead = false;
-  tickAt = performance.now(); newRegime(tickAt);
-  $('over').classList.remove('show');
-  hud();
-}
-
-function gameOver() {
-  dead = true;
-  saved.last = Math.round(peak);
-  saved.best[rec] = Math.max(saved.best[rec] || 0, saved.last);
-  persist();
-  $('verdict').textContent = equity() < startEq * RUIN ? 'Банкрот' : 'Не на что торговать';
-  $('result').textContent = 'Результат: ' + money(saved.last) + ' · Рекорд: ' + money(saved.best[rec]);
-  $('over').classList.add('show');
-  hud();
-}
-
-// --- интерфейс ------------------------------------------------------------
-function hud() {
-  const eq = equity(), mult = price * factor / base, chg = (mult - 1) * 100;
-  $('price').textContent = quote(price, curAcc);
-  // для справки — настоящая котировка бумаги в этот день, в её родной валюте
-  $('ref').textContent = series && !real ? '(' + quote(series[idx], curSec) + ')' : '';
-  // в затяжных партиях проценты вырождаются в пять цифр — печатаем кратность
-  $('chg').textContent = Math.abs(chg) < 1000 ? (chg < 0 ? '' : '+') + chg.toFixed(2) + '%'
-                                              : '×' + NUM.format(Math.round(mult));
-  $('chg').style.color = chg < 0 ? 'var(--down)' : 'var(--up)';
-  $('cash').textContent = money(cash);
-  $('shares').textContent = NUM.format(shares);
-  $('equity').textContent = money(eq);
-  $('equity').style.color = eq < startEq ? 'var(--down)' : 'var(--up)';
-  $('best').textContent = saved.best[rec] ? money(saved.best[rec]) : '—';
-  $('hint').textContent = series ? stamp(ts) : 'выдуманная бумага';
-
-  const cost = LOT * price;              // цену лота пишем на кнопке: видно, почему она гаснет
-  $('buy').textContent = 'Купить 10 · ' + money(cost);
-  $('sell').textContent = 'Продать 10 · ' + money(cost);
-  $('buy').classList.toggle('off', dead || cash < cost);
-  $('sell').classList.toggle('off', dead || shares < LOT);
-}
-
-function resize() {
-  const r = cv.getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 2);
-  W = r.width; H = r.height; PW = W - AXIS;
-  cv.width = Math.round(W * d); cv.height = Math.round(H * d);
-  ctx.setTransform(d, 0, 0, d, 0, 0);
-  upFill = fade('#2ea043'); downFill = fade('#e5534b');
-}
-
-function fade(color) {
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, color + '40');
-  g.addColorStop(1, color + '00');
-  return g;
-}
-
-// f — доля прошедшего тика: за счёт неё график едет плавно, а не рывками
-function draw(f) {
-  ctx.clearRect(0, 0, W, H);
-
-  let lo = Infinity, hi = -Infinity;
-  for (let i = 0; i < POINTS; i++) { const v = hist[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
-  const pad = (hi - lo) * 0.12 + 0.02;
-  lo = Math.max(0, lo - pad); hi += pad;   // цена не бывает отрицательной
-
-  const k = H / (hi - lo);
-  const y = v => (hi - v) * k;
-  const dx = PW / (POINTS - 2);
-  const x0 = PW - dx * (POINTS - f);
-
-  ctx.font = '11px system-ui, sans-serif';
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 3; i++) {
-    const v = lo + (hi - lo) * i / 3, yy = Math.round(y(v)) + .5;
-    ctx.strokeStyle = '#232a35';
-    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(PW, yy); ctx.stroke();
-    ctx.fillStyle = '#8b949e';
-    ctx.fillText(v >= 1000 ? Math.round(v) : v.toFixed(2), PW + 6, Math.min(Math.max(yy, 8), H - 8));
-  }
-
-  // ось времени: границы месяцев для реальной истории, секунды — для выдуманной
-  if (series) {
-    // шаг подписей выбираем из круглых значений и привязываем к самому месяцу (c % step),
-    // а не к его номеру в окне — иначе при уходе месяца за край съезжал бы весь набор
-    // после круга истории в окне соседствуют две эпохи и разность уходит в минус
-    const span = Math.abs(months[(head + POINTS - 1) % POINTS] - months[head]);
-    const step = STEPS.find(v => span / v <= 4) || 240;
-    for (let i = 1; i < POINTS; i++) {
-      const c = months[(head + i) % POINTS];
-      if (c === months[(head + i - 1) % POINTS] || c % step) continue;
-      mark(x0 + dx * i, step < 12 ? MONTHS[c % 12] + ' ' + (1970 + (c / 12 | 0)) : String(1970 + (c / 12 | 0)));
-    }
-  } else {
-    for (let i = POINTS - 1 - 100; i > 0; i -= 100) mark(x0 + dx * i, '−' + (POINTS - 1 - i) * TICK / 1000 + ' с');
-  }
-
-  const up = price >= hist[head];               // hist[head] — самая старая точка
-  ctx.beginPath();
-  ctx.moveTo(x0, y(hist[head]));
-  for (let i = 1; i < POINTS; i++) ctx.lineTo(x0 + dx * i, y(hist[(head + i) % POINTS]));
-  ctx.strokeStyle = up ? '#2ea043' : '#e5534b';
-  ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  ctx.stroke();
-
-  ctx.lineTo(x0 + dx * (POINTS - 1), H); ctx.lineTo(x0, H); ctx.closePath();
-  ctx.fillStyle = up ? upFill : downFill;
-  ctx.fill();
-
-  if (shares) {                                  // средняя цена позиции
-    const yy = Math.round(y(avg)) + .5;
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = '#8b949e';
-    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(PW, yy); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  const yp = Math.min(Math.max(y(price), 9), H - 9);   // ценник у правого края
-  ctx.fillStyle = up ? '#2ea043' : '#e5534b';
-  ctx.fillRect(PW, yp - 9, W - PW, 18);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(price >= 1000 ? Math.round(price) : price.toFixed(2), PW + 6, yp);
-}
-
-function mark(x, text) {                 // вертикальная риска с подписью времени
-  if (x < 24 || x > PW - 46) return;
-  const xx = Math.round(x) + .5;
-  ctx.strokeStyle = '#232a35';
-  ctx.beginPath(); ctx.moveTo(xx, 0); ctx.lineTo(xx, H - 18); ctx.stroke();
-  ctx.fillStyle = '#8b949e';
-  ctx.fillText(text, x + 4, H - 9);
-}
-
-function frame(now) {
-  if (!dead) {
-    if (now - tickAt > 1000) tickAt = now - TICK;   // вкладка была свёрнута — не догоняем
-    let ticks = 0;
-    while (now - tickAt >= TICK && !dead) { tickAt += TICK; step(now); ticks++; }
-    if (ticks) hud();
-  }
-  draw(dead ? 1 : (now - tickAt) / TICK);
-  requestAnimationFrame(frame);
-}
-
-// --- выбор бумаги и периода -----------------------------------------------
-const sel = $('src'), ySel = $('year'), mSel = $('month'), mode = $('mode');
-let periods = [];                      // [год, месяц, номер бара] — откуда можно начать партию
-
-// ряды лежат по файлу на бумагу и грузятся по требованию: история глубокая, старт лёгкий
-const loading = {};
-function load(key, done) {
-  if (!TICKERS[key] || QUOTES[key]) return done();
-  if (loading[key]) return;            // уже в пути — сработает тот же колбэк
-  loading[key] = 1;
-  const el = document.createElement('script');
-  el.src = 'data/' + key + '.js';
-  el.onload = el.onerror = () => { delete loading[key]; done(); };
-  document.head.appendChild(el);
-}
-
-function start() { reset(); buildPeriods(); }
-
-// начала месяцев, доступные для старта: раньше POINTS баров нет предыстории на весь экран
-function buildPeriods() {
-  periods = [];
-  ySel.hidden = mode.hidden = !series;   // у выдуманной бумаги нет ни дат, ни настоящей цены
-  mSel.hidden = true;
-  ySel.textContent = '';
-  if (!series) return;
-  ySel.add(new Option('любой', -1));
-  for (let i = 0, t = src.t0, m = -1, y = 0; i < series.length; t += (src.dh[i] || 0) * 3600, i++) {
-    if (i < POINTS) continue;
-    const d = new Date(t * 1000);
-    if (d.getUTCMonth() === m) continue;
-    m = d.getUTCMonth();
-    periods.push([d.getUTCFullYear(), m, i]);
-    if (d.getUTCFullYear() !== y) ySel.add(new Option(y = d.getUTCFullYear(), y));
-  }
-  ySel.value = -1;
-}
-
-sel.add(new Option('Выдуманная', SIM));
-for (const k in TICKERS) sel.add(new Option(TICKERS[k] + ' · ' + k, k));
-srcKey = TICKERS[DEFAULT] ? DEFAULT : SIM;
-if (saved.src === SIM || TICKERS[saved.src]) srcKey = saved.src;
-sel.value = srcKey;
-sel.onchange = () => {
-  srcKey = saved.src = sel.value; startAt = -1; persist();
-  load(srcKey, start);
-};
-ySel.onchange = () => {
-  const y = +ySel.value;
-  mSel.hidden = y < 0;
-  mSel.textContent = '';
-  if (y > 0) for (const [py, pm, i] of periods) if (py === y) mSel.add(new Option(MONTHS[pm], i));
-  startAt = y < 0 ? -1 : +mSel.value;
-  reset();
-};
-mSel.onchange = () => { startAt = +mSel.value; reset(); };
-mode.value = saved.real === false ? 'norm' : 'real';   // по умолчанию — настоящие котировки
-mode.onchange = () => { saved.real = mode.value === 'real'; persist(); reset(); };
-
-$('buy').onclick = buy;
-$('sell').onclick = sell;
-$('restart').onclick = reset;
-addEventListener('keydown', e => {
-  if (e.target.tagName === 'SELECT') return;   // там стрелками листают список, а не торгуют
-  if (e.key === 'ArrowUp') buy();
-  if (e.key === 'ArrowDown') sell();
-});
-new ResizeObserver(resize).observe(cv);
-addEventListener('pagehide', persist);   // уходим со страницы — дописываем рекорд
-
-resize();
-reset();                 // пока грузится история, показываем выдуманную бумагу
-load(srcKey, start);
-requestAnimationFrame(frame);
-</script>
 </body>
 </html>

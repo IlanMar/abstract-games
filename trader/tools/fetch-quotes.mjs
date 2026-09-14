@@ -1,4 +1,4 @@
-// Разовая загрузка исторических котировок: node tools/fetch-quotes.mjs
+// Разовая загрузка исторических котировок: node trader/tools/fetch-quotes.mjs
 //
 // Пишет data/index.js со списком бумаг и по файлу data/<КОД>.js на каждую бумагу:
 //   window.QUOTES.<КОД> = { cur: значок валюты,
@@ -8,6 +8,9 @@
 // Файлы грузятся по требованию, поэтому глубокая история не утяжеляет старт игры.
 // Время сдвинуто к часовому поясу биржи, чтобы в игре его можно было печатать как есть.
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const DIR = fileURLToPath(new URL('../data/', import.meta.url));   // рядом с игрой, а не с cwd
 
 const FROM = '1990-01-01';
 const UA = { 'User-Agent': 'Mozilla/5.0' };
@@ -71,12 +74,12 @@ function pack({ cur, rows }) {
 }
 
 const names = {};
-mkdirSync('data', { recursive: true });
+mkdirSync(DIR, { recursive: true });
 
 for (const [key, name, symbol] of [...YAHOO, ...MOEX]) {
   const q = pack(symbol ? await yahoo(symbol) : await moex(key));
   names[key] = name;
-  writeFileSync(`data/${key}.js`, `window.QUOTES.${key} = ${JSON.stringify(q)};\n`);
+  writeFileSync(`${DIR}${key}.js`, `window.QUOTES.${key} = ${JSON.stringify(q)};\n`);
 
   // на глаза: глубина истории и самый резкий день — так видно склейки и битые бары
   let jump = 0;
@@ -86,5 +89,5 @@ for (const [key, name, symbol] of [...YAHOO, ...MOEX]) {
               '· самый резкий день', (Math.expm1(jump) * 100).toFixed(0) + '%');
 }
 
-writeFileSync('data/index.js', 'window.QUOTES = {};\nwindow.TICKERS = ' + JSON.stringify(names) + ';\n');
-console.log('data/index.js + ' + Object.keys(names).length + ' файлов записано');
+writeFileSync(DIR + 'index.js', 'window.QUOTES = {};\nwindow.TICKERS = ' + JSON.stringify(names) + ';\n');
+console.log(DIR + ': индекс + ' + Object.keys(names).length + ' файлов записано');
