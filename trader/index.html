@@ -62,22 +62,17 @@
     <select id="src"></select>
     <select id="year" hidden></select>
     <select id="month" hidden></select>
-    <select id="mode" hidden title="Приводить цену к $10 или играть настоящими котировками">
-      <option value="norm">к $10</option>
-      <option value="real">как есть</option>
-    </select>
   </div>
   <div class="row">
     <span>
       <span class="price" id="price">$10.00</span>
       <span class="num" id="chg">0.00%</span>
-      <span class="hint" id="ref"></span>
     </span>
     <span class="hint" id="hint" title="Один тик — один торговый день"></span>
   </div>
   <div class="stats">
-    <div>Кэш<b id="cash">$1000</b></div>
-    <div>Акции<b id="shares">0</b></div>
+    <div>Кэш<b id="cash">$0</b></div>
+    <div>Акции<b id="shares">100</b></div>
     <div>Капитал<b id="equity">$1000</b></div>
     <div>Купи и держи<b id="hold">$1000</b></div>
   </div>
@@ -105,8 +100,8 @@
 const TICK   = 100;    // мс на одну котировку
 const POINTS = 600;    // точек в окне графика (= 60 секунд истории)
 const LOT    = 10;     // акций в одной сделке
-const START  = { price: 10, cash: 1000, shares: 0 };    // режим нормированной цены
-const REAL   = { cash: 0, shares: 100 };               // режим настоящих котировок
+const START  = { price: 10, cash: 1000, shares: 0 };    // выдуманная бумага: денег дали, акций нет
+const REAL   = { cash: 0, shares: 100 };               // настоящая: наоборот, сто акций и ноль денег
 const RUIN   = 0.1;    // банкротство, если осталась десятая часть стартового капитала
 
 // --- модель случайного рынка ----------------------------------------------
@@ -115,8 +110,7 @@ const PULL  = 0.0008;  // возврат к справедливой цене
 const AXIS  = 54;      // ширина шкалы цен, px
 
 // --- источники котировок --------------------------------------------------
-// SIM — генератор; остальное — дневные бары реальных бумаг из data/quotes.js.
-// Играем не абсолютной ценой, а доходностями бумаги, поэтому старт всегда $10.
+// SIM — генератор, остальное — дневные бары реальных бумаг, цены настоящие.
 const SIM = 'SIM';
 const DEFAULT = 'GOOGL';               // что показываем новому игроку
 const TICKERS = window.TICKERS || {};   // код бумаги -> название
@@ -132,8 +126,8 @@ let drift, regimeEnd, tickAt;
 let srcKey = SIM, src = null, series = null, idx = 0, ts = 0;
 let startAt = -1;                          // -1 — начинать со случайного места истории
 let factor = 1;                            // накопленное дробление акций
-let real = false, base = START.price, startEq = 0;
-let curAcc = '$', curSec = '$';        // валюта счёта и валюта самой бумаги
+let base = START.price, startEq = 0;
+let cur = '$';                         // валюта бумаги, она же валюта счёта
 let cents = false;                     // на старой истории цены центовые — печатаем копейки
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
@@ -157,8 +151,8 @@ const short = v =>                     // 1 234 · 12k · 3.4M — иначе н
   v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' :   // десятая доля: без неё капитал и «купи и держи» сливаются
   cents && v < 1000 ? v.toFixed(2) : NUM.format(Math.round(v));
 const sign = (txt, cur) => cur === '$' ? '$' + txt : txt + ' ' + cur;   // ₽ пишется после суммы
-const money = v => sign(short(v), curAcc);
-const quote = (v, cur) => sign(v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2), cur);
+const money = v => sign(short(v), cur);
+const quote = v => sign(v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2), cur);
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const STEPS = [1, 2, 3, 6, 12, 24, 60, 120];   // сколько месяцев между подписями на оси времени
@@ -197,7 +191,7 @@ function step(now) {
   hist[head] = price;
   if (series) months[head] = monthOf(ts);
   head = (head + 1) % POINTS;
-  if (!real) {                          // настоящие котировки не трогаем
+  if (!series) {                        // настоящие котировки не трогаем
     if (price > base * 2) rescale(2);
     else if (price < base / 2) rescale(0.5);
   }
@@ -227,17 +221,15 @@ function reset() {
   factor = 1;
   src = QUOTES[srcKey] || null;
   series = src ? src.c : null;
-  real = !!series && $('mode').value === 'real';
-  curSec = src && src.cur || '$';
-  curAcc = real ? curSec : '$';        // с нормировкой к $10 счёт всегда долларовый
+  cur = series && src.cur || '$';
   price = base = START.price;
-  cash = real ? REAL.cash : START.cash;
-  shares = real ? REAL.shares : START.shares;
+  cash = series ? REAL.cash : START.cash;
+  shares = series ? REAL.shares : START.shares;
   if (series) {
     // отрезок реальной истории; окно перед ним — уже готовая предыстория
     idx = startAt >= 0 ? startAt : POINTS + Math.floor(Math.random() * (series.length - POINTS));
     const from = idx - POINTS + 1;
-    if (real) price = base = series[idx];
+    price = base = series[idx];
     ts = src.t0;
     for (let i = 0; i < from; i++) ts += src.dh[i] * 3600;
     for (let i = 0; i < POINTS; i++) {
@@ -272,9 +264,7 @@ function gameOver() {
 // --- интерфейс ------------------------------------------------------------
 function hud() {
   const eq = equity(), mult = price * factor / base, chg = (mult - 1) * 100;
-  $('price').textContent = quote(price, curAcc);
-  // для справки — настоящая котировка бумаги в этот день, в её родной валюте
-  $('ref').textContent = series && !real ? '(' + quote(series[idx], curSec) + ')' : '';
+  $('price').textContent = quote(price);
   // в затяжных партиях проценты вырождаются в пять цифр — печатаем кратность
   $('chg').textContent = Math.abs(chg) < 1000 ? (chg < 0 ? '' : '+') + chg.toFixed(2) + '%'
                                               : '×' + NUM.format(Math.round(mult));
@@ -398,7 +388,7 @@ function frame(now) {
 }
 
 // --- выбор бумаги и периода -----------------------------------------------
-const sel = $('src'), ySel = $('year'), mSel = $('month'), mode = $('mode');
+const sel = $('src'), ySel = $('year'), mSel = $('month');
 let periods = [];                      // [год, месяц, номер бара] — откуда можно начать партию
 
 // ряды лежат по файлу на бумагу и грузятся по требованию: история глубокая, старт лёгкий
@@ -418,7 +408,7 @@ function start() { reset(); buildPeriods(); }
 // начала месяцев, доступные для старта: раньше POINTS баров нет предыстории на весь экран
 function buildPeriods() {
   periods = [];
-  ySel.hidden = mode.hidden = !series;   // у выдуманной бумаги нет ни дат, ни настоящей цены
+  ySel.hidden = !series;                 // у выдуманной бумаги нет дат
   mSel.hidden = true;
   ySel.textContent = '';
   if (!series) return;
@@ -451,9 +441,6 @@ ySel.onchange = () => {
   reset();
 };
 mSel.onchange = () => { startAt = +mSel.value; reset(); };
-mode.value = 'real';                   // по умолчанию — настоящие котировки
-mode.onchange = reset;
-
 $('buy').onclick = buy;
 $('sell').onclick = sell;
 $('restart').onclick = reset;
