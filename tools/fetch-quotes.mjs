@@ -14,6 +14,7 @@ const YAHOO = [
   ['NVDA', 'Nvidia', 'NVDA'],
   ['GME', 'GameStop', 'GME'],
   ['KO', 'Coca-Cola', 'KO'],
+  ['INTC', 'Intel', 'INTC'],
   ['BTC', 'Bitcoin', 'BTC-USD'],
 ];
 

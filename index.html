@@ -21,13 +21,13 @@
     user-select: none; -webkit-user-select: none; -webkit-text-size-adjust: 100%;
   }
   header { padding: 10px 14px; border-bottom: 1px solid var(--line) }
-  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px }
+  .row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 10px }
   .row + .row { margin-top: 4px }
   .price { font-size: 26px; font-weight: 600 }
   .hint { font-size: 11px; color: var(--dim) }
   select {
-    max-width: 62%; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--panel); color: var(--fg); font: 600 13px/1 inherit; cursor: pointer;
+    max-width: 62%; padding: 5px 4px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); color: var(--fg); font: 600 12px/1 inherit; cursor: pointer;
   }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--dim) }
   .stats b { display: block; font-size: 15px; font-weight: 600; color: var(--fg) }
@@ -58,11 +58,16 @@
   <div class="row">
     <select id="src"></select>
     <select id="when" hidden></select>
+    <select id="mode" hidden title="Нормировать цену к $10 или играть настоящими котировками">
+      <option value="norm">цена $10</option>
+      <option value="real">цена как есть</option>
+    </select>
   </div>
   <div class="row">
     <span>
       <span class="price" id="price">$10.00</span>
       <span class="num" id="chg">0.00%</span>
+      <span class="hint" id="ref"></span>
     </span>
     <span class="hint" id="hint" title="Один тик — один торговый день. Игра идёт на доходностях бумаги: старт всегда $10, а форма графика настоящая"></span>
   </div>
@@ -96,8 +101,9 @@
 const TICK   = 100;    // мс на одну котировку
 const POINTS = 600;    // точек в окне графика (= 60 секунд истории)
 const LOT    = 10;     // акций в одной сделке
-const START  = { price: 10, cash: 1000, shares: 0 };
-const RUIN   = 100;    // капитал, ниже которого — банкротство
+const START  = { price: 10, cash: 1000, shares: 0 };    // режим нормированной цены
+const REAL   = { cash: 0, shares: 100 };               // режим настоящих котировок
+const RUIN   = 0.1;    // банкротство, если осталась десятая часть стартового капитала
 
 // --- модель случайного рынка ----------------------------------------------
 const SIGMA = 0.003;   // волатильность за тик (в лог-доходности)
@@ -120,6 +126,7 @@ let drift, regimeEnd, tickAt;
 let srcKey = SIM, src = null, series = null, idx = 0, ts = 0;
 let startAt = -1;                          // -1 — начинать со случайного места истории
 let factor = 1;                            // накопленное дробление акций
+let real = false, base = START.price, startEq = 0, rec = SIM;
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- результат в localStorage ---------------------------------------------
@@ -144,7 +151,12 @@ function newRegime(now) {              // новый тренд длиной 2..
 }
 
 const NUM = new Intl.NumberFormat('ru-RU');
-const money = v => '$' + NUM.format(Math.round(v));
+const short = v => {                   // 1 234 · 12k · 3.4M — иначе настоящие котировки не влезают
+  v = Math.round(v);
+  return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? Math.round(v / 1e3) + 'k' : NUM.format(v);
+};
+const money = v => '$' + short(v);
+const quote = v => '$' + (v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2));
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const monthOf = sec => { const d = new Date(sec * 1000); return (d.getUTCFullYear() - 2000) * 12 + d.getUTCMonth(); };
@@ -182,12 +194,14 @@ function step(now) {
   hist[head] = price;
   if (series) months[head] = monthOf(ts);
   head = (head + 1) % POINTS;
-  if (price > START.price * 2) rescale(2);
-  else if (price < START.price / 2) rescale(0.5);
+  if (!real) {                          // настоящие котировки не трогаем
+    if (price > base * 2) rescale(2);
+    else if (price < base / 2) rescale(0.5);
+  }
 
   const eq = equity();
   if (eq > peak) peak = eq;
-  if (eq < RUIN || (!shares && cash < LOT * price)) gameOver();
+  if (eq < startEq * RUIN || (!shares && cash < LOT * price)) gameOver();
 }
 
 // --- сделки ---------------------------------------------------------------
@@ -207,18 +221,23 @@ function sell() {
 
 // --- партия ---------------------------------------------------------------
 function reset() {
-  price = START.price; cash = START.cash; shares = START.shares; avg = START.price;
   factor = 1;
   src = QUOTES[srcKey] || null;
   series = src ? src.c : null;
+  real = !!series && $('mode').value === 'real';
+  rec = srcKey + (real ? '·real' : '');
+  price = base = START.price;
+  cash = real ? REAL.cash : START.cash;
+  shares = real ? REAL.shares : START.shares;
   if (series) {
     // отрезок реальной истории; окно перед ним — уже готовая предыстория
     idx = startAt >= 0 ? startAt : POINTS + Math.floor(Math.random() * (series.length - POINTS));
-    const from = idx - POINTS + 1, base = series[idx];
+    const from = idx - POINTS + 1;
+    if (real) price = base = series[idx];
     ts = src.t0;
     for (let i = 0; i < from; i++) ts += src.dh[i] * 3600;
     for (let i = 0; i < POINTS; i++) {
-      hist[i] = price * series[from + i] / base;
+      hist[i] = price * series[from + i] / series[idx];
       months[i] = monthOf(ts);
       if (i < POINTS - 1) ts += src.dh[from + i] * 3600;   // в конце ts — время текущего бара
     }
@@ -230,7 +249,8 @@ function reset() {
     }
   }
   head = 0;
-  peak = equity(); dead = false;
+  avg = price;
+  peak = startEq = equity(); dead = false;
   tickAt = performance.now(); newRegime(tickAt);
   $('over').classList.remove('show');
   hud();
@@ -239,18 +259,20 @@ function reset() {
 function gameOver() {
   dead = true;
   saved.last = Math.round(peak);
-  saved.best[srcKey] = Math.max(saved.best[srcKey] || 0, saved.last);
+  saved.best[rec] = Math.max(saved.best[rec] || 0, saved.last);
   persist();
-  $('verdict').textContent = equity() < RUIN ? 'Банкрот' : 'Не на что торговать';
-  $('result').textContent = 'Результат: ' + money(saved.last) + ' · Рекорд: ' + money(saved.best[srcKey]);
+  $('verdict').textContent = equity() < startEq * RUIN ? 'Банкрот' : 'Не на что торговать';
+  $('result').textContent = 'Результат: ' + money(saved.last) + ' · Рекорд: ' + money(saved.best[rec]);
   $('over').classList.add('show');
   hud();
 }
 
 // --- интерфейс ------------------------------------------------------------
 function hud() {
-  const eq = equity(), mult = price * factor / START.price, chg = (mult - 1) * 100;
-  $('price').textContent = '$' + price.toFixed(2);
+  const eq = equity(), mult = price * factor / base, chg = (mult - 1) * 100;
+  $('price').textContent = quote(price);
+  // для справки — настоящая котировка бумаги в этот день
+  $('ref').textContent = series && !real ? '(' + quote(series[idx]) + ')' : '';
   // в затяжных партиях проценты вырождаются в пять цифр — печатаем кратность
   $('chg').textContent = Math.abs(chg) < 1000 ? (chg < 0 ? '' : '+') + chg.toFixed(2) + '%'
                                               : '×' + NUM.format(Math.round(mult));
@@ -258,8 +280,8 @@ function hud() {
   $('cash').textContent = money(cash);
   $('shares').textContent = NUM.format(shares);
   $('equity').textContent = money(eq);
-  $('equity').style.color = eq < START.cash + START.shares * START.price ? 'var(--down)' : 'var(--up)';
-  $('best').textContent = saved.best[srcKey] ? money(saved.best[srcKey]) : '—';
+  $('equity').style.color = eq < startEq ? 'var(--down)' : 'var(--up)';
+  $('best').textContent = saved.best[rec] ? money(saved.best[rec]) : '—';
   $('hint').textContent = series ? stamp(ts) : 'выдуманная бумага';
 
   const cost = LOT * price;              // цену лота пишем на кнопке: видно, почему она гаснет
@@ -306,7 +328,7 @@ function draw(f) {
     ctx.strokeStyle = '#232a35';
     ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(PW, yy); ctx.stroke();
     ctx.fillStyle = '#8b949e';
-    ctx.fillText(v.toFixed(2), PW + 6, Math.min(Math.max(yy, 8), H - 8));
+    ctx.fillText(v >= 1000 ? Math.round(v) : v.toFixed(2), PW + 6, Math.min(Math.max(yy, 8), H - 8));
   }
 
   // ось времени: границы месяцев для реальной истории, секунды — для выдуманной
@@ -347,7 +369,7 @@ function draw(f) {
   ctx.fillStyle = up ? '#2ea043' : '#e5534b';
   ctx.fillRect(PW, yp - 9, W - PW, 18);
   ctx.fillStyle = '#fff';
-  ctx.fillText(price.toFixed(2), PW + 6, yp);
+  ctx.fillText(price >= 1000 ? Math.round(price) : price.toFixed(2), PW + 6, yp);
 }
 
 function mark(x, text) {                 // вертикальная риска с подписью времени
@@ -371,14 +393,14 @@ function frame(now) {
 }
 
 // --- выбор бумаги и периода -----------------------------------------------
-const sel = $('src'), when = $('when');
+const sel = $('src'), when = $('when'), mode = $('mode');
 
 // месяцы, с которых можно начать партию: раньше POINTS баров нет предыстории
 function buildWhen() {
-  when.hidden = !series;
+  when.hidden = mode.hidden = !series;    // у выдуманной бумаги нет ни дат, ни настоящей цены
   when.textContent = '';
   if (!series) return;
-  when.add(new Option('Случайный период', -1));
+  when.add(new Option('Случайно', -1));
   for (let i = 0, t = src.t0, month = -1; i < series.length; t += (src.dh[i] || 0) * 3600, i++) {
     const d = new Date(t * 1000);
     if (i >= POINTS && d.getUTCMonth() !== month) {
@@ -398,6 +420,8 @@ sel.onchange = () => {
   reset(); buildWhen();
 };
 when.onchange = () => { startAt = +when.value; reset(); };
+mode.value = saved.real ? 'real' : 'norm';
+mode.onchange = () => { saved.real = mode.value === 'real'; persist(); reset(); };
 
 $('buy').onclick = buy;
 $('sell').onclick = sell;
