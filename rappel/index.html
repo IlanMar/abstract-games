@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<title>Abstract Rappel</title>
+<style>
+  /* touch-action не наследуется, поэтому ставим всем: убирает зум по двойному тапу */
+  * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation }
+  :root {
+    --bg:#0e1116; --panel:#161b22; --line:#232a35;
+    --fg:#e6edf3; --dim:#8b949e; --up:#2ea043; --down:#e5534b;
+    color-scheme: dark;
+  }
+  body {
+    display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font: 14px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    user-select: none; -webkit-user-select: none; -webkit-text-size-adjust: 100%;
+  }
+  header { padding: 10px 14px; border-bottom: 1px solid var(--line) }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px }
+  .depth { font-size: 26px; font-weight: 600 }
+  .unit { color: var(--dim) }
+  .hint { font-size: 11px; color: var(--dim); text-align: right }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--dim) }
+  .stats b { display: block; font-size: 15px; font-weight: 600; color: var(--fg) }
+  .depth, .stats b { font-variant-numeric: tabular-nums }
+  main { position: relative; flex: 1; min-height: 0; touch-action: none; -webkit-tap-highlight-color: transparent }
+  canvas { display: block; width: 100%; height: 100% }
+  #over {
+    position: absolute; inset: 0; display: none; flex-direction: column; gap: 14px;
+    align-items: center; justify-content: center; text-align: center; padding: 0 28px;
+    background: rgba(14,17,22,.92);
+  }
+  #over.show { display: flex }
+  #over h1 { font-size: 22px }
+  #over p { color: var(--dim); max-width: 22em }
+  button {
+    padding: 14px 26px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); color: var(--fg); cursor: pointer;
+    font: 600 16px/1 inherit; -webkit-tap-highlight-color: transparent;
+  }
+  button:active { transform: translateY(1px) }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="row">
+    <span><span class="depth" id="depth">0</span><span class="unit"> м</span></span>
+    <span class="hint">тапай в момент,<br>когда ноги встали на скалу</span>
+  </div>
+  <div class="stats">
+    <div>Скорость<b id="spd">0.0 м/с</b></div>
+    <div>Толчков<b id="kicks">0</b></div>
+    <div>Рекорд<b id="best">&mdash;</b></div>
+  </div>
+</header>
+
+<main>
+  <canvas id="c"></canvas>
+  <div id="over" class="show">
+    <h1 id="verdict">Дюльфер</h1>
+    <p id="result">Спуск по верёвке в каньоне. Один тап — толчок ногами от скалы: человек уходит маятником и стравливает верёвку. Выступы скалы надо проходить в дальней точке дуги.</p>
+    <button id="go">Погнали</button>
+  </div>
+</main>
+
+<script>
+'use strict';
+
+// Всё, что касается физики, считается в метрах: пиксели живут только в отрисовке.
+
+// --- человек и снаряжение -------------------------------------------------
+const SCALE = 19;      // метров по высоте экрана — отсюда масштаб в пикселях
+const CYF   = 0.46;    // где висит человек, доля высоты экрана
+const PXF   = 0.31;    // где проходит отвес верёвки, доля ширины
+const ROPE  = 7;       // длина маятника: от неё зависит форма дуги
+const REACH = 0.95;    // от бёдер до носка вытянутой ноги
+const BODY  = 0.38;    // радиус корпуса: скала ближе — удар
+const FOOT  = 0.25;    // ступни ниже бёдер
+const THIGH = 0.5, SHIN = 0.5;
+const TMAX  = 0.62;    // рад: дальше человека унесло бы за край экрана
+
+// --- маятник и толчок -----------------------------------------------------
+const OM2     = 15.5;  // «g/L» маятника: период 2π/√OM2 ≈ 1.6 с, полудуга — 0.8 с
+const DAMP    = 0.25;  // трение, 1/с
+const KICK    = 1.05;  // рад/с, которые даёт сам толчок ногами
+const BOUNCE  = 0.55;  // и доля скорости удара, возвращённая в дугу
+const WIN     = 0.24;  // с: окно, в котором толчок ещё ловит этот удар
+const PUSHMAX = 2.5;   // рад/с: предел, с которым порода выталкивает наружу
+
+// --- спуск ----------------------------------------------------------------
+const V0 = 2.6, VK = 0.009, VMAX = 6.4;   // м/с: база и разгон с каждым метром
+const BRAKE = 0.6;     // ногами на скале спуск придерживается
+const DROP  = 1.1;     // толчок стравливает верёвку: +м/с на каждый рад/с
+const FEED  = 3.2;     // и эта добавка гаснет, 1/с
+const STEP  = 1 / 120; // шаг физики, с
+
+const $ = id => document.getElementById(id);
+const cv = $('c'), ctx = cv.getContext('2d');
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+let W = 0, H = 0, M = 0, PX = 0, CY = 0;   // экран: ширина, высота, px в метре, отвес, линия бёдер
+let depth, base, th, w, feed, plant, imp, winT, limPrev, ext;
+let dead, started, kicks, flash, hitT, hitX, hitY, last, hudAt;
+
+// --- рекорд в localStorage ------------------------------------------------
+const KEY = 'abstract-rappel';
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+function persist() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
+
+// --- профиль скалы --------------------------------------------------------
+// Порода задана шумом от глубины, а не массивом: скала бесконечна и одинакова
+// при любом кадре, так что её не нужно нигде хранить.
+function rnd(i, seed) {                // детерминированный хеш -> [0,1)
+  let h = Math.imul(i | 0, 374761393) ^ Math.imul(seed, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+function noise(x, seed) {               // сглаженный value-noise с периодом 1
+  const i = Math.floor(x), f = x - i, s = f * f * (3 - 2 * f);
+  return rnd(i, seed) * (1 - s) + rnd(i + 1, seed) * s;
+}
+
+// Вылет породы в метрах: 0 — средняя стена, плюс — выступ, минус — ниша.
+// Ниши вдвое мельче выступов, иначе скала уезжает за левый край экрана.
+function wall(d) {
+  const v = 0.72 * (noise(d / 9, 11) * 2 - 1) + 0.28 * (noise(d / 4.5, 29) * 2 - 1);
+  return v > 0 ? v * 2.4 : v * 1.15;
+}
+
+// Мелкая шероховатость — только для картинки: зазубрина меньше ботинка
+// не должна решать судьбу партии, поэтому в столкновения она не входит.
+const rough = d => 0.11 * (noise(d, 53) * 2 - 1) + 0.05 * (noise(d * 3.1, 71) * 2 - 1);
+
+// самый близкий к человеку камень на отрезке глубин
+function peak(a, b) {
+  let m = -9;
+  for (let i = 0; i <= 5; i++) { const v = wall(a + (b - a) * i / 5); if (v > m) m = v; }
+  return m;
+}
+
+// Куда дотягиваются ноги и что задевает корпус. Человек висит на отвесе,
+// поднимаясь над линией покоя на ROPE*(1-cos th), поэтому глубины считаем от неё.
+const rise = () => ROPE * (1 - Math.cos(th));
+const footWall = () => peak(depth + 0.10 - rise(), depth + 0.45 - rise());
+const bodyWall = () => peak(depth - 0.95 - rise(), depth + 0.10 - rise());
+
+// --- партия ---------------------------------------------------------------
+// Стартовать надо там, где стена в пределах досягаемости и без карниза над
+// головой: иначе первый же кадр — удар, и играть не в чем.
+function hostile(d) {
+  const f = peak(d + 0.10, d + 0.45);
+  return f < -0.9 || peak(d - 0.95, d + 0.10) > f + 0.5;
+}
+
+function reset() {
+  base = Math.random() * 1e5;            // у каждой партии своя скала
+  while (hostile(base) || hostile(base + 2) || hostile(base + 4)) base += 0.4;
+  depth = base;
+  th = 0; w = 0; feed = 0; ext = 1; plant = false; imp = 0; winT = 0;
+  limPrev = footLimit();
+  dead = false; started = false; kicks = 0; flash = 0; hitT = 0;
+  last = performance.now(); hudAt = 0;
+  over('Дюльфер', 'Спуск по верёвке в каньоне. Один тап — толчок ногами от скалы: человек уходит маятником и стравливает верёвку. Выступы скалы надо проходить в дальней точке дуги.', 'Погнали');
+  hud();
+}
+
+const score = () => depth - base;
+
+function over(title, text, btn) {
+  $('verdict').textContent = title;
+  $('result').textContent = text;
+  $('go').textContent = btn;
+  $('over').classList.add('show');
+}
+
+function begin() {
+  if (dead) reset();
+  $('over').classList.remove('show');
+  started = true;
+  last = performance.now();
+  kick();                                // первый тап сразу и отталкивает
+}
+
+function crash() {
+  dead = true;
+  const m = Math.round(score());
+  saved.best = Math.max(saved.best || 0, m);
+  persist();
+  hitX = ROPE * Math.sin(th); hitY = -rise(); hitT = 0;
+  over('Впечатался в скалу',
+       'Глубина: ' + m + ' м · рекорд: ' + saved.best + ' м. Карниз надо облетать по дуге: толчок посильнее и на такт раньше.',
+       'Ещё раз');
+  hud();
+}
+
+// --- толчок ---------------------------------------------------------------
+// Ноги на скале — можно оттолкнуться, и чем точнее по времени, тем больше от
+// удара уходит обратно в дугу. В воздухе тап только болтает ногами.
+function kick() {
+  if (dead || !started) return;
+  if (!plant) { flash = -0.14; return; }
+  const out = KICK + BOUNCE * imp * Math.max(0, winT / WIN);
+  w = Math.max(w, out);
+  feed += DROP * out;
+  imp = 0; winT = 0; flash = 0.18; kicks++;
+}
+
+// --- физика ---------------------------------------------------------------
+// Какой угол не пускает порода: ноги упираются, когда носок достаёт до камня,
+// то есть при ROPE*sin(th) - REACH <= wall - REACH. Пиксели тут не нужны.
+function footLimit() {
+  const s = footWall() / ROPE;
+  return s <= -1 ? -1.4 : s >= 1 ? 1.4 : Math.asin(s);
+}
+
+function sim(dt) {
+  // спуск: база растёт с глубиной, ноги на скале придерживают, толчок стравливает
+  const v = speed();
+  depth += v * dt;
+  feed -= feed * Math.min(FEED * dt, 1);
+
+  // маятник
+  w -= OM2 * Math.sin(th) * dt;
+  w -= w * Math.min(DAMP * dt, 1);
+  th += w * dt;
+  if (th > TMAX) { th = TMAX; if (w > 0) w = 0; }
+
+  // скала под ногами внутрь не пускает, а наезжая — выталкивает наружу
+  const lim = footLimit(), was = plant;
+  plant = th <= lim;
+  if (plant) {
+    if (!was) { imp = Math.max(0, -w); winT = WIN; }
+    th = lim;
+    w = Math.max(w, Math.min((lim - limPrev) / dt, PUSHMAX));
+  }
+  limPrev = lim;
+  if (winT > 0) winT -= dt;
+
+  // ноги в кадре: на скале вытянуты, в воздухе поджаты и тянутся к породе
+  const target = plant ? 1 : 0.68 + 0.32 * Math.max(0, flash / 0.18);
+  ext += (target - ext) * Math.min(dt * 16, 1);
+  if (flash > 0) flash = Math.max(0, flash - dt);
+  if (flash < 0) flash = Math.min(0, flash + dt);
+
+  // удар корпусом о камень — единственный способ проиграть
+  if (ROPE * Math.sin(th) < bodyWall() - REACH + BODY) crash();
+}
+
+function speed() {
+  return Math.min(V0 + score() * VK, VMAX) * (plant ? BRAKE : 1) + feed;
+}
+
+// --- интерфейс ------------------------------------------------------------
+function hud() {
+  $('depth').textContent = Math.round(score());
+  $('spd').textContent = (started && !dead ? speed() : 0).toFixed(1) + ' м/с';
+  $('kicks').textContent = kicks;
+  $('best').textContent = saved.best ? saved.best + ' м' : '—';
+}
+
+function resize() {
+  const r = cv.getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 2);
+  W = r.width; H = r.height;
+  // масштаб задаёт высота, но по ширине должны уместиться и ниши, и вынос дуги
+  M = Math.min(H / SCALE, W * 0.14);
+  PX = W * PXF; CY = H * CYF;
+  cv.width = Math.round(W * d); cv.height = Math.round(H * d);
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+}
+
+// экран -> глубина и глубина -> экран
+const atY = y => depth + (y - CY) / M;
+const yOf = d => CY + (d - depth) * M;
+const surfPx = d => PX + (wall(d) + rough(d) - REACH) * M;
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+
+  rock();
+  axis();
+  ropeLine();
+  person();
+  if (dead) burst();
+}
+
+function rock() {
+  ctx.beginPath();
+  ctx.moveTo(0, -20);
+  for (let y = -20; y <= H + 20; y += 5) ctx.lineTo(surfPx(atY(y)), y);
+  ctx.lineTo(0, H + 20);
+  ctx.closePath();
+  ctx.fillStyle = '#1a212b';
+  ctx.fill();
+
+  // штрихи вдоль края и крапины: по ним видно, что скала едет наверх
+  ctx.lineWidth = 1;
+  const top = atY(-1), bot = atY(H + 1);
+  for (let k = Math.floor(top / 0.8) * 0.8; k <= bot; k += 0.8) {
+    const r = rnd(Math.round(k / 0.8), 91), x = surfPx(k), y = yOf(k);
+    ctx.strokeStyle = 'rgba(230,237,243,' + (0.03 + r * 0.05).toFixed(3) + ')';
+    ctx.beginPath();
+    ctx.moveTo(Math.max(0, x - (0.5 + r * 2.2) * M), y);
+    ctx.lineTo(x - 2, y);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(230,237,243,.05)';
+    ctx.fillRect(Math.max(1, x - (0.3 + rnd(Math.round(k / 0.8), 97) * 3) * M), y + 0.35 * M, 2, 2);
+  }
+
+  // кромка: по ней читается форма выступа, поэтому она ярче самой породы
+  ctx.beginPath();
+  for (let y = -20; y <= H + 20; y += 5) {
+    const x = surfPx(atY(y));
+    y === -20 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#3b4553';
+  ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+function axis() {
+  const s = score(), top = s - CY / M, bot = top + H / M;
+  ctx.textAlign = 'right';
+  for (let k = Math.ceil(top / 2) * 2; k <= bot; k += 2) {
+    const y = Math.round(CY + (k - s) * M) + .5, big = k % 10 === 0;
+    if (k < 0) continue;
+    ctx.strokeStyle = '#232a35';
+    ctx.beginPath(); ctx.moveTo(W - (big ? 40 : 10), y); ctx.lineTo(W, y); ctx.stroke();
+    if (big) { ctx.fillStyle = '#8b949e'; ctx.fillText(k + ' м', W - 44, y); }
+  }
+  ctx.textAlign = 'left';
+}
+
+// Верёвка уходит вверх по линии маятника и теряется за верхним краем: якорь
+// остался далеко наверху, и видеть его не нужно.
+function ropeLine() {
+  const s = Math.sin(th), c = Math.cos(th);
+  const hx = PX + ROPE * s * M, hy = CY - ROPE * (1 - c) * M;
+  const gx = hx - 1.15 * s * M, gy = hy - 1.15 * c * M;   // рука на верёвке
+  const len = (gy + 30) / Math.max(c, 0.2);
+  ctx.strokeStyle = '#c99a3c';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - s * len, gy - c * len); ctx.stroke();
+
+  // и свободный конец, который человек держит тормозящей рукой
+  const bx = hx + (0.34 * c + 0.12 * s) * M, by = hy + (-0.34 * s + 0.12 * c) * M;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.quadraticCurveTo(bx + 0.5 * M + w * 6, (by + H) / 2, bx + 0.15 * M, H + 20);
+  ctx.stroke();
+}
+
+// двухкостная кисть: колено (или локоть) отводим в сторону bend
+function joint(ax, ay, bx, by, l1, l2, bend) {
+  const dx = bx - ax, dy = by - ay;
+  const d = Math.min(Math.hypot(dx, dy) || 1e-6, l1 + l2 - 1e-4);
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  return [ax + (a * dx - h * dy * bend) / d, ay + (a * dy + h * dx * bend) / d];
+}
+
+function person() {
+  const s = Math.sin(th), c = Math.cos(th);
+  const hx = PX + ROPE * s * M, hy = CY - ROPE * (1 - c) * M;
+  // локальные оси: ly — вверх по верёвке, lx — от скалы. Корпус висит по верёвке,
+  // а ноги живут в экранных координатах: они тянутся к породе по горизонтали.
+  const lp = (lx, ly) => [hx + (lx * c + ly * s) * M, hy + (-lx * s + ly * c) * M];
+  const sh = lp(0, -0.52), hd = lp(0, -0.76), gr = lp(0, -1.15), bh = lp(0.34, 0.12);
+
+  // ноги: до породы, но не дальше вытянутой ноги
+  const gap = clamp(Math.min(ROPE * s - footWall() + REACH, REACH * ext), 0.3, REACH);
+  const fx = hx - gap * M, fy = hy + FOOT * M;
+
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  // дальняя нога — тусклее и чуть ниже, так фигура читается объёмнее
+  leg(hx, hy, fx + 0.06 * M, fy + 0.07 * M, '#8f9aa8', 0.1);
+  leg(hx, hy, fx, fy, '#e6edf3', 0.12);
+
+  ctx.strokeStyle = '#e6edf3';
+  ctx.lineWidth = 0.15 * M;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(sh[0], sh[1]); ctx.stroke();   // корпус
+
+  ctx.lineWidth = 0.09 * M;
+  const el1 = joint(sh[0], sh[1], gr[0], gr[1], 0.33 * M, 0.33 * M, -1);
+  ctx.beginPath(); ctx.moveTo(sh[0], sh[1]); ctx.lineTo(el1[0], el1[1]); ctx.lineTo(gr[0], gr[1]); ctx.stroke();
+  const el2 = joint(sh[0], sh[1], bh[0], bh[1], 0.33 * M, 0.33 * M, 1);
+  ctx.beginPath(); ctx.moveTo(sh[0], sh[1]); ctx.lineTo(el2[0], el2[1]); ctx.lineTo(bh[0], bh[1]); ctx.stroke();
+
+  ctx.fillStyle = '#e6edf3';
+  ctx.beginPath(); ctx.arc(hd[0], hd[1], 0.16 * M, 0, 7); ctx.fill();
+  ctx.fillStyle = '#c99a3c';                                  // каска
+  ctx.beginPath(); ctx.arc(hd[0], hd[1], 0.17 * M, Math.PI - th, 2 * Math.PI - th); ctx.fill();
+
+  // окно точного толчка: пока кольцо у ботинка не сжалось, удар ещё можно вернуть в дугу
+  if (winT > 0 && plant) {
+    ctx.strokeStyle = 'rgba(46,160,67,' + (winT / WIN).toFixed(2) + ')';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(fx, fy, (0.2 + 0.5 * winT / WIN) * M, 0, 7); ctx.stroke();
+  }
+}
+
+function leg(hx, hy, fx, fy, color, wd) {
+  const kn = joint(hx, hy, fx, fy, THIGH * M, SHIN * M, 1);
+  ctx.strokeStyle = color; ctx.lineWidth = wd * M;
+  ctx.beginPath();
+  ctx.moveTo(hx, hy); ctx.lineTo(kn[0], kn[1]); ctx.lineTo(fx, fy);
+  ctx.moveTo(fx + 0.06 * M, fy - 0.11 * M); ctx.lineTo(fx + 0.06 * M, fy + 0.11 * M);   // подошва
+  ctx.stroke();
+}
+
+function burst() {
+  hitT += 1 / 60;
+  const r = (0.3 + hitT * 6) * M, a = Math.max(0, 1 - hitT * 1.6);
+  ctx.strokeStyle = 'rgba(229,83,75,' + a.toFixed(2) + ')';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(PX + hitX * M, CY + hitY * M, r, 0, 7); ctx.stroke();
+}
+
+// --- цикл -----------------------------------------------------------------
+function frame(now) {
+  if (started && !dead) {
+    let acc = (now - last) / 1000;
+    if (acc > 0.25) acc = STEP;          // вкладка была свёрнута — не догоняем
+    while (acc > 1e-6 && !dead) { const dt = Math.min(STEP, acc); sim(dt); acc -= dt; }
+    if (now - hudAt > 80) { hud(); hudAt = now; }
+  }
+  last = now;
+  draw();
+  requestAnimationFrame(frame);
+}
+
+$('go').onclick = begin;
+document.querySelector('main').addEventListener('pointerdown', e => {
+  if ($('over').classList.contains('show')) return;   // там своя кнопка
+  e.preventDefault();
+  kick();
+});
+addEventListener('keydown', e => {
+  if (e.key !== ' ' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+  e.preventDefault();
+  $('over').classList.contains('show') ? begin() : kick();
+});
+new ResizeObserver(resize).observe(cv);
+
+resize();
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

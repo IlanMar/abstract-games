@@ -135,6 +135,7 @@ let startAt = -1;                          // -1 — начинать со сл�
 let factor = 1;                            // накопленное дробление акций
 let real = false, base = START.price, startEq = 0, rec = SIM, saveAt = 0;
 let curAcc = '$', curSec = '$';        // валюта счёта и валюта самой бумаги
+let cents = false;                     // на старой истории цены центовые — печатаем копейки
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- результат в localStorage ---------------------------------------------
@@ -159,10 +160,10 @@ function newRegime(now) {              // новый тренд длиной 2..
 }
 
 const NUM = new Intl.NumberFormat('ru-RU');
-const short = v => {                   // 1 234 · 12k · 3.4M — иначе настоящие котировки не влезают
-  v = Math.round(v);
-  return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? Math.round(v / 1e3) + 'k' : NUM.format(v);
-};
+const short = v =>                     // 1 234 · 12k · 3.4M — иначе настоящие котировки не влезают
+  v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' :
+  v >= 1e4 ? Math.round(v / 1e3) + 'k' :
+  cents && v < 1000 ? v.toFixed(2) : NUM.format(Math.round(v));
 const sign = (txt, cur) => cur === '$' ? '$' + txt : txt + ' ' + cur;   // ₽ пишется после суммы
 const money = v => sign(short(v), curAcc);
 const quote = (v, cur) => sign(v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2), cur);
@@ -213,7 +214,7 @@ function step(now) {
   if (eq > peak) {
     peak = eq;
     if (peak > (saved.best[rec] || 0)) {       // рекорд пишем сразу, а не в конце партии
-      saved.best[rec] = Math.round(peak);
+      saved.best[rec] = Math.round(peak * 100) / 100;
       if (now > saveAt) { persist(); saveAt = now + 2000; }   // на диск — не чаще раза в 2 секунды
     }
   }
@@ -268,6 +269,7 @@ function reset() {
   }
   head = 0;
   avg = price;
+  cents = base < 10;                   // Apple в 1993-м стоила 33 цента — округление до доллара врёт
   peak = startEq = equity(); dead = false;
   tickAt = performance.now(); newRegime(tickAt);
   $('over').classList.remove('show');
@@ -276,7 +278,7 @@ function reset() {
 
 function gameOver() {
   dead = true;
-  saved.last = Math.round(peak);
+  saved.last = Math.round(peak * 100) / 100;
   saved.best[rec] = Math.max(saved.best[rec] || 0, saved.last);
   persist();
   $('verdict').textContent = equity() < startEq * RUIN ? 'Банкрот' : 'Не на что торговать';
