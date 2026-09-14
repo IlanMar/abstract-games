@@ -137,12 +137,6 @@ let curAcc = '$', curSec = '$';        // валюта счёта и валют�
 let cents = false;                     // на старой истории цены центовые — печатаем копейки
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
-// --- результат в localStorage ---------------------------------------------
-const KEY = 'abstract-trader';
-let saved = {};
-try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
-function persist() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
-
 // --- рынок ----------------------------------------------------------------
 let spare = null;
 function gauss() {                     // Бокс—Мюллер, вторую величину кэшируем
@@ -269,10 +263,8 @@ function reset() {
 
 function gameOver() {
   dead = true;
-  saved.last = Math.round(peak * 100) / 100;
-  persist();
   $('verdict').textContent = equity() < startEq * RUIN ? 'Банкрот' : 'Не на что торговать';
-  $('result').textContent = 'Результат: ' + money(saved.last);
+  $('result').textContent = 'Результат: ' + money(peak);
   $('over').classList.add('show');
   hud();
 }
@@ -445,10 +437,9 @@ function buildPeriods() {
 sel.add(new Option('Выдуманная', SIM));
 for (const k in TICKERS) sel.add(new Option(TICKERS[k] + ' · ' + k, k));
 srcKey = TICKERS[DEFAULT] ? DEFAULT : SIM;
-if (saved.src === SIM || TICKERS[saved.src]) srcKey = saved.src;
 sel.value = srcKey;
 sel.onchange = () => {
-  srcKey = saved.src = sel.value; startAt = -1; persist();
+  srcKey = sel.value; startAt = -1;
   load(srcKey, start);
 };
 ySel.onchange = () => {
@@ -460,8 +451,8 @@ ySel.onchange = () => {
   reset();
 };
 mSel.onchange = () => { startAt = +mSel.value; reset(); };
-mode.value = saved.real === false ? 'norm' : 'real';   // по умолчанию — настоящие котировки
-mode.onchange = () => { saved.real = mode.value === 'real'; persist(); reset(); };
+mode.value = 'real';                   // по умолчанию — настоящие котировки
+mode.onchange = reset;
 
 $('buy').onclick = buy;
 $('sell').onclick = sell;
