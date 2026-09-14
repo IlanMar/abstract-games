@@ -32,7 +32,7 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%238b949e' stroke-width='1.6'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 4px center; background-size: 8px 5px;
   }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--dim) }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; font-size: 11px; color: var(--dim) }
   .stats b { display: block; font-size: 15px; font-weight: 600; color: var(--fg) }
   .num, .price, .stats b { font-variant-numeric: tabular-nums }
   main { position: relative; flex: 1; min-height: 0 }
@@ -79,6 +79,7 @@
     <div>Кэш<b id="cash">$1000</b></div>
     <div>Акции<b id="shares">0</b></div>
     <div>Капитал<b id="equity">$1000</b></div>
+    <div>Без сделок<b id="hold">$1000</b></div>
     <div>Рекорд<b id="best">&mdash;</b></div>
   </div>
 </header>
@@ -298,6 +299,8 @@ function hud() {
   $('shares').textContent = NUM.format(shares);
   $('equity').textContent = money(eq);
   $('equity').style.color = eq < startEq ? 'var(--down)' : 'var(--up)';
+  // сколько было бы, если бы стартовый капитал просто лежал в акциях и его не трогали
+  $('hold').textContent = money(startEq * mult);
   $('best').textContent = saved.best[rec] ? money(saved.best[rec]) : '—';
   $('hint').textContent = series ? stamp(ts) : 'выдуманная бумага';
 
