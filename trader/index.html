@@ -32,6 +32,17 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%238b949e' stroke-width='1.6'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 4px center; background-size: 8px 5px;
   }
+  #what {
+    width: 26px; padding: 5px 0; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); color: var(--dim); font: 600 12px/1 inherit;
+  }
+  #info {
+    position: absolute; z-index: 2; top: 10px; left: 10px; right: 10px;
+    padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); font-size: 13px; line-height: 1.45; cursor: pointer;
+  }
+  #info p + p { margin-top: 8px }
+  #info .dim { color: var(--dim) }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--dim) }
   .stats b { display: block; font-size: 15px; font-weight: 600; color: var(--fg) }
   .num, .price, .stats b { font-variant-numeric: tabular-nums }
@@ -72,6 +83,7 @@
     <select id="src"></select>
     <select id="year" hidden></select>
     <select id="month" hidden></select>
+    <button id="what" title="Что тут происходит">i</button>
   </div>
   <div class="row">
     <span>
@@ -90,6 +102,13 @@
 
 <main>
   <canvas id="c"></canvas>
+  <div id="info" hidden>
+    <p><b>Настоящая биржа.</b> Один тик — один торговый день из истории выбранной бумаги.</p>
+    <p><b>Две кнопки.</b> Купить или продать 10 акций.</p>
+    <p><b>Цель — обогнать «купи и держи».</b> Столбец в шапке показывает, сколько было бы,
+       если бы вы просто держали стартовые акции и не торговали вовсе.</p>
+    <p class="dim">Нажмите, чтобы закрыть. Пока открыто — время стоит.</p>
+  </div>
   <div id="over">
     <h1 id="verdict">Банкрот</h1>
     <p id="result"></p>
@@ -139,6 +158,7 @@ let factor = 1;                            // накопленное дробл�
 let base = START.price, startEq = 0;
 let cur = '$';                         // валюта бумаги, она же валюта счёта
 let cents = false;                     // на старой истории цены центовые — печатаем копейки
+let paused = false;                    // пока открыта справка, время стоит
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- рынок ----------------------------------------------------------------
@@ -400,7 +420,7 @@ function mark(x, text) {                 // вертикальная риска 
 }
 
 function frame(now) {
-  if (!dead) {
+  if (!dead && !paused) {
     if (now - tickAt > 1000) tickAt = now - TICK;   // вкладка была свёрнута — не догоняем
     let ticks = 0;
     while (now - tickAt >= TICK && !dead) { tickAt += TICK; step(now); ticks++; }
@@ -464,6 +484,11 @@ ySel.onchange = () => {
   reset();
 };
 mSel.onchange = () => { startAt = +mSel.value; reset(); };
+const info = $('info');
+function showInfo(on) { info.hidden = !on; paused = on; tickAt = performance.now(); }
+$('what').onclick = () => showInfo(info.hidden);
+info.onclick = () => showInfo(false);
+
 $('buy').onclick = buy;
 $('sell').onclick = sell;
 $('restart').onclick = reset;
