@@ -276,7 +276,7 @@ function reset() {
     ts = src.t0;
     for (let i = 0; i < from; i++) ts += src.dh[i] * 3600;
     for (let i = 0; i < POINTS; i++) {
-      hist[i] = price * series[from + i] / series[idx];
+      hist[i] = series[from + i];
       months[i] = monthOf(ts);
       if (i < POINTS - 1) ts += src.dh[from + i] * 3600;   // в конце ts — время текущего бара
     }
@@ -293,6 +293,7 @@ function reset() {
   peak = startEq = equity(); dead = false;
   tickAt = performance.now(); newRegime(tickAt);
   $('over').classList.remove('show');
+  showInfo(false);
   hud();
 }
 
@@ -426,7 +427,8 @@ function frame(now) {
     while (now - tickAt >= TICK && !dead) { tickAt += TICK; step(now); ticks++; }
     if (ticks) hud();
   }
-  draw(dead ? 1 : (now - tickAt) / TICK);
+  // доля тика: пока идёт партия — плавный ход, на паузе и после проигрыша — стоп-кадр
+  draw(dead || paused ? 1 : (now - tickAt) / TICK);
   requestAnimationFrame(frame);
 }
 
@@ -442,7 +444,8 @@ function load(key, done) {
   loading[key] = 1;
   const el = document.createElement('script');
   el.src = 'data/' + key + '.js';
-  el.onload = el.onerror = () => { delete loading[key]; done(); };
+  // бумагу могли переключить, пока файл летел: тогда партию не трогаем
+  el.onload = el.onerror = () => { delete loading[key]; if (key === srcKey) done(); };
   document.head.appendChild(el);
 }
 
