@@ -6,22 +6,29 @@
 <meta name="theme-color" content="#0e1116">
 <title>Abstract Trader</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0 }
+  /* touch-action не наследуется, поэтому ставим всем: убирает зум по двойному тапу */
+  * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation }
   :root {
     --bg:#0e1116; --panel:#161b22; --line:#232a35;
     --fg:#e6edf3; --dim:#8b949e; --up:#2ea043; --down:#e5534b;
+    color-scheme: dark;
   }
   body {
     display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
     background: var(--bg); color: var(--fg);
     font: 14px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    user-select: none; -webkit-user-select: none; touch-action: manipulation;
+    user-select: none; -webkit-user-select: none; -webkit-text-size-adjust: 100%;
   }
   header { padding: 10px 14px; border-bottom: 1px solid var(--line) }
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px }
-  .tkr { font-weight: 600; letter-spacing: .4px }
+  .row + .row { margin-top: 4px }
   .price { font-size: 26px; font-weight: 600 }
+  .hint { font-size: 11px; color: var(--dim) }
+  select {
+    max-width: 62%; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); color: var(--fg); font: 600 13px/1 inherit; cursor: pointer;
+  }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--dim) }
   .stats b { display: block; font-size: 15px; font-weight: 600; color: var(--fg) }
   .num, .price, .stats b { font-variant-numeric: tabular-nums }
@@ -49,14 +56,17 @@
 
 <header>
   <div class="row">
-    <span class="tkr">ABST &middot; Abstract Inc.</span>
+    <select id="src"></select>
     <span class="num" id="chg">0.00%</span>
   </div>
-  <div class="price" id="price">$10.00</div>
+  <div class="row">
+    <span class="price" id="price">$10.00</span>
+    <span class="hint" id="hint" title="Игра идёт на доходностях бумаги: старт всегда $10, а форма графика — настоящая"></span>
+  </div>
   <div class="stats">
     <div>Кэш<b id="cash">$1000</b></div>
-    <div>Акции<b id="shares">100</b></div>
-    <div>Капитал<b id="equity">$2000</b></div>
+    <div>Акции<b id="shares">0</b></div>
+    <div>Капитал<b id="equity">$1000</b></div>
     <div>Рекорд<b id="best">&mdash;</b></div>
   </div>
 </header>
@@ -64,7 +74,7 @@
 <main>
   <canvas id="c"></canvas>
   <div id="over">
-    <h1>Банкрот</h1>
+    <h1 id="verdict">Банкрот</h1>
     <p id="result"></p>
     <button id="restart">Начать заново</button>
   </div>
@@ -75,6 +85,7 @@
   <button id="sell">Продать 10</button>
 </footer>
 
+<script src="data/quotes.js"></script>
 <script>
 'use strict';
 
@@ -82,13 +93,19 @@
 const TICK   = 100;    // мс на одну котировку
 const POINTS = 600;    // точек в окне графика (= 60 секунд истории)
 const LOT    = 10;     // акций в одной сделке
-const START  = { price: 10, cash: 1000, shares: 100 };
+const START  = { price: 10, cash: 1000, shares: 0 };
 const RUIN   = 100;    // капитал, ниже которого — банкротство
 
-// --- модель цены ----------------------------------------------------------
+// --- модель случайного рынка ----------------------------------------------
 const SIGMA = 0.003;   // волатильность за тик (в лог-доходности)
 const PULL  = 0.0008;  // возврат к справедливой цене
 const AXIS  = 54;      // ширина шкалы цен, px
+
+// --- источники котировок --------------------------------------------------
+// SIM — генератор; остальное — часовые бары реальных бумаг из data/quotes.js.
+// Играем не абсолютной ценой, а доходностями бумаги, поэтому старт всегда $10.
+const SIM = 'SIM';
+const QUOTES = window.QUOTES || {};
 
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
@@ -96,12 +113,14 @@ const hist = new Float32Array(POINTS);   // кольцевой буфер кот
 
 let head = 0, price, cash, shares, avg, peak, dead;
 let drift, regimeEnd, tickAt;
+let srcKey = SIM, series = null, idx = 0;   // series = null — играем на симуляции
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- результат в localStorage ---------------------------------------------
 const KEY = 'abstract-trader';
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+if (!saved.best || typeof saved.best !== 'object') saved.best = {};   // рекорд — свой у каждой бумаги
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
 
 // --- рынок ----------------------------------------------------------------
@@ -120,10 +139,19 @@ function newRegime(now) {              // новый тренд длиной 2..
 
 const equity = () => cash + shares * price;
 
-function step(now) {
+function simReturn(now) {              // тренд + возврат к среднему + случайный шок
   if (now >= regimeEnd) newRegime(now);
-  // тренд + возврат к среднему + случайный шок
-  price *= Math.exp(drift + PULL * Math.log(START.price / price) + SIGMA * gauss());
+  return drift + PULL * Math.log(START.price / price) + SIGMA * gauss();
+}
+
+function realReturn() {                // следующий бар реальной истории
+  const prev = series[idx];
+  idx = (idx + 1) % series.length;
+  return idx ? Math.log(series[idx] / prev) : 0;   // на склейке цикла — без разрыва
+}
+
+function step(now) {
+  price *= Math.exp(series ? realReturn() : simReturn(now));
   hist[head] = price;
   head = (head + 1) % POINTS;
 
@@ -150,14 +178,23 @@ function sell() {
 // --- партия ---------------------------------------------------------------
 function reset() {
   price = START.price; cash = START.cash; shares = START.shares; avg = START.price;
-  // предыстория: идём от текущей цены назад, чтобы график сразу выглядел живым
-  for (let i = POINTS - 1, p = price; i >= 0; i--) {
-    hist[i] = p;
-    p *= Math.exp(SIGMA * gauss() - PULL * Math.log(START.price / p));
+  series = QUOTES[srcKey] ? QUOTES[srcKey].c : null;
+  if (series) {
+    // случайный отрезок реальной истории; окно перед ним — уже готовая предыстория
+    idx = POINTS + Math.floor(Math.random() * (series.length - POINTS));
+    const base = series[idx];
+    for (let i = 0; i < POINTS; i++) hist[i] = price * series[idx - POINTS + 1 + i] / base;
+  } else {
+    // предыстория: идём от текущей цены назад, чтобы график сразу выглядел живым
+    for (let i = POINTS - 1, p = price; i >= 0; i--) {
+      hist[i] = p;
+      p *= Math.exp(SIGMA * gauss() - PULL * Math.log(START.price / p));
+    }
   }
   head = 0;
   peak = equity(); dead = false;
   tickAt = performance.now(); newRegime(tickAt);
+  $('hint').textContent = series ? 'реальная история · 1 час на тик' : 'случайный рынок';
   $('over').classList.remove('show');
   hud();
 }
@@ -165,9 +202,10 @@ function reset() {
 function gameOver() {
   dead = true;
   saved.last = Math.round(peak);
-  saved.best = Math.max(saved.best || 0, saved.last);
+  saved.best[srcKey] = Math.max(saved.best[srcKey] || 0, saved.last);
   persist();
-  $('result').textContent = 'Результат: $' + saved.last + ' · Рекорд: $' + saved.best;
+  $('verdict').textContent = equity() < RUIN ? 'Банкрот' : 'Не на что торговать';
+  $('result').textContent = 'Результат: $' + saved.last + ' · Рекорд: $' + saved.best[srcKey];
   $('over').classList.add('show');
   hud();
 }
@@ -182,7 +220,7 @@ function hud() {
   $('shares').textContent = shares;
   $('equity').textContent = '$' + Math.round(eq);
   $('equity').style.color = eq < START.cash + START.shares * START.price ? 'var(--down)' : 'var(--up)';
-  $('best').textContent = saved.best ? '$' + saved.best : '—';
+  $('best').textContent = saved.best[srcKey] ? '$' + saved.best[srcKey] : '—';
   $('buy').disabled = dead || cash < LOT * price;
   $('sell').disabled = dead || shares < LOT;
 }
@@ -264,6 +302,14 @@ function frame(now) {
   draw(dead ? 1 : (now - tickAt) / TICK);
   requestAnimationFrame(frame);
 }
+
+// --- выбор бумаги ---------------------------------------------------------
+const sel = $('src');
+sel.add(new Option('Случайная бумага', SIM));
+for (const k in QUOTES) sel.add(new Option(QUOTES[k].name + ' · ' + k, k));
+if (saved.src === SIM || QUOTES[saved.src]) srcKey = saved.src;
+sel.value = srcKey;
+sel.onchange = () => { srcKey = saved.src = sel.value; persist(); reset(); };
 
 $('buy').onclick = buy;
 $('sell').onclick = sell;
