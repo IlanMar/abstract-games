@@ -122,14 +122,14 @@ const QUOTES = window.QUOTES || {};    // сюда попадают уже за�
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
 const hist = new Float32Array(POINTS);    // кольцевой буфер котировок
-const months = new Uint16Array(POINTS);  // и код месяца каждого бара: (год - 2000) * 12 + месяц
+const months = new Uint16Array(POINTS);  // и код месяца каждого бара: (год - 1970) * 12 + месяц
 
 let head = 0, price, cash, shares, avg, peak, dead;
 let drift, regimeEnd, tickAt;
 let srcKey = SIM, src = null, series = null, idx = 0, ts = 0;
 let startAt = -1;                          // -1 — начинать со случайного места истории
 let factor = 1;                            // накопленное дробление акций
-let real = false, base = START.price, startEq = 0, rec = SIM;
+let real = false, base = START.price, startEq = 0, rec = SIM, saveAt = 0;
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- результат в localStorage ---------------------------------------------
@@ -162,7 +162,8 @@ const money = v => '$' + short(v);
 const quote = v => '$' + (v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2));
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-const monthOf = sec => { const d = new Date(sec * 1000); return (d.getUTCFullYear() - 2000) * 12 + d.getUTCMonth(); };
+const STEPS = [1, 2, 3, 6, 12, 24, 60, 120];   // сколько месяцев между подписями на оси времени
+const monthOf = sec => { const d = new Date(sec * 1000); return (d.getUTCFullYear() - 1970) * 12 + d.getUTCMonth(); };
 const stamp = sec => {                 // время хранится в часовом поясе биржи — печатаем как есть
   const d = new Date(sec * 1000);
   return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
@@ -203,7 +204,13 @@ function step(now) {
   }
 
   const eq = equity();
-  if (eq > peak) peak = eq;
+  if (eq > peak) {
+    peak = eq;
+    if (peak > (saved.best[rec] || 0)) {       // рекорд пишем сразу, а не в конце партии
+      saved.best[rec] = Math.round(peak);
+      if (now > saveAt) { persist(); saveAt = now + 2000; }   // на диск — не чаще раза в 2 секунды
+    }
+  }
   if (eq < startEq * RUIN || (!shares && cash < LOT * price)) gameOver();
 }
 
@@ -336,13 +343,14 @@ function draw(f) {
 
   // ось времени: границы месяцев для реальной истории, секунды — для выдуманной
   if (series) {
-    let count = 0, n = 0;
-    for (let i = 1; i < POINTS; i++) if (months[(head + i) % POINTS] !== months[(head + i - 1) % POINTS]) count++;
-    const stride = Math.ceil(count / 4) || 1;    // оставляем не больше 4-5 подписей
+    // шаг подписей выбираем из круглых значений и привязываем к самому месяцу (c % step),
+    // а не к его номеру в окне — иначе при уходе месяца за край съезжал бы весь набор
+    const span = months[(head + POINTS - 1) % POINTS] - months[head];
+    const step = STEPS.find(v => span / v <= 4) || 240;
     for (let i = 1; i < POINTS; i++) {
       const c = months[(head + i) % POINTS];
-      if (c === months[(head + i - 1) % POINTS] || n++ % stride) continue;
-      mark(x0 + dx * i, MONTHS[c % 12] + ' ' + (2000 + (c / 12 | 0)));
+      if (c === months[(head + i - 1) % POINTS] || c % step) continue;
+      mark(x0 + dx * i, step < 12 ? MONTHS[c % 12] + ' ' + (1970 + (c / 12 | 0)) : String(1970 + (c / 12 | 0)));
     }
   } else {
     for (let i = POINTS - 1 - 100; i > 0; i -= 100) mark(x0 + dx * i, '−' + (POINTS - 1 - i) * TICK / 1000 + ' с');
@@ -461,6 +469,7 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowDown') sell();
 });
 new ResizeObserver(resize).observe(cv);
+addEventListener('pagehide', persist);   // уходим со страницы — дописываем рекорд
 
 resize();
 reset();                 // пока грузится история, показываем выдуманную бумагу
