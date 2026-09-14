@@ -9,6 +9,7 @@ const UA = { 'User-Agent': 'Mozilla/5.0' };
 
 // Yahoo Finance: дневные бары за 10 лет
 const YAHOO = [
+  ['GOOGL', 'Google', 'GOOGL'],
   ['AAPL', 'Apple', 'AAPL'],
   ['TSLA', 'Tesla', 'TSLA'],
   ['NVDA', 'Nvidia', 'NVDA'],

@@ -114,6 +114,7 @@ const AXIS  = 54;      // ширина шкалы цен, px
 // SIM — генератор; остальное — дневные бары реальных бумаг из data/quotes.js.
 // Играем не абсолютной ценой, а доходностями бумаги, поэтому старт всегда $10.
 const SIM = 'SIM';
+const DEFAULT = 'GOOGL';               // что показываем новому игроку
 const QUOTES = window.QUOTES || {};
 
 const $ = id => document.getElementById(id);
@@ -413,6 +414,7 @@ function buildWhen() {
 
 sel.add(new Option('Выдуманная бумага', SIM));
 for (const k in QUOTES) sel.add(new Option(QUOTES[k].name + ' · ' + k, k));
+srcKey = QUOTES[DEFAULT] ? DEFAULT : SIM;
 if (saved.src === SIM || QUOTES[saved.src]) srcKey = saved.src;
 sel.value = srcKey;
 sel.onchange = () => {
@@ -420,7 +422,7 @@ sel.onchange = () => {
   reset(); buildWhen();
 };
 when.onchange = () => { startAt = +when.value; reset(); };
-mode.value = saved.real ? 'real' : 'norm';
+mode.value = saved.real === false ? 'norm' : 'real';   // по умолчанию — настоящие котировки
 mode.onchange = () => { saved.real = mode.value === 'real'; persist(); reset(); };
 
 $('buy').onclick = buy;
