@@ -57,9 +57,10 @@
 <header>
   <div class="row">
     <select id="src"></select>
-    <select id="when" hidden></select>
-    <select id="mode" hidden title="Нормировать цену к $10 или играть настоящими котировками">
-      <option value="norm">цена $10</option>
+    <select id="year" hidden></select>
+    <select id="month" hidden></select>
+    <select id="mode" hidden title="Приводить цену к $10 или играть настоящими котировками">
+      <option value="norm">приведена к 10$</option>
       <option value="real">цена как есть</option>
     </select>
   </div>
@@ -93,7 +94,7 @@
   <button id="sell">Продать 10</button>
 </footer>
 
-<script src="data/quotes.js"></script>
+<script src="data/index.js"></script>
 <script>
 'use strict';
 
@@ -115,7 +116,8 @@ const AXIS  = 54;      // ширина шкалы цен, px
 // Играем не абсолютной ценой, а доходностями бумаги, поэтому старт всегда $10.
 const SIM = 'SIM';
 const DEFAULT = 'GOOGL';               // что показываем новому игроку
-const QUOTES = window.QUOTES || {};
+const TICKERS = window.TICKERS || {};   // код бумаги -> название
+const QUOTES = window.QUOTES || {};    // сюда попадают уже загруженные ряды
 
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
@@ -394,34 +396,60 @@ function frame(now) {
 }
 
 // --- выбор бумаги и периода -----------------------------------------------
-const sel = $('src'), when = $('when'), mode = $('mode');
+const sel = $('src'), ySel = $('year'), mSel = $('month'), mode = $('mode');
+let periods = [];                      // [год, месяц, номер бара] — откуда можно начать партию
 
-// месяцы, с которых можно начать партию: раньше POINTS баров нет предыстории
-function buildWhen() {
-  when.hidden = mode.hidden = !series;    // у выдуманной бумаги нет ни дат, ни настоящей цены
-  when.textContent = '';
+// ряды лежат по файлу на бумагу и грузятся по требованию: история глубокая, старт лёгкий
+const loading = {};
+function load(key, done) {
+  if (!TICKERS[key] || QUOTES[key]) return done();
+  if (loading[key]) return;            // уже в пути — сработает тот же колбэк
+  loading[key] = 1;
+  const el = document.createElement('script');
+  el.src = 'data/' + key + '.js';
+  el.onload = el.onerror = () => { delete loading[key]; done(); };
+  document.head.appendChild(el);
+}
+
+function start() { reset(); buildPeriods(); }
+
+// начала месяцев, доступные для старта: раньше POINTS баров нет предыстории на весь экран
+function buildPeriods() {
+  periods = [];
+  ySel.hidden = mode.hidden = !series;   // у выдуманной бумаги нет ни дат, ни настоящей цены
+  mSel.hidden = true;
+  ySel.textContent = '';
   if (!series) return;
-  when.add(new Option('Случайно', -1));
-  for (let i = 0, t = src.t0, month = -1; i < series.length; t += (src.dh[i] || 0) * 3600, i++) {
+  ySel.add(new Option('Случайно', -1));
+  for (let i = 0, t = src.t0, m = -1, y = 0; i < series.length; t += (src.dh[i] || 0) * 3600, i++) {
+    if (i < POINTS) continue;
     const d = new Date(t * 1000);
-    if (i >= POINTS && d.getUTCMonth() !== month) {
-      month = d.getUTCMonth();
-      when.add(new Option(MONTHS[month] + ' ' + d.getUTCFullYear(), i));
-    }
+    if (d.getUTCMonth() === m) continue;
+    m = d.getUTCMonth();
+    periods.push([d.getUTCFullYear(), m, i]);
+    if (d.getUTCFullYear() !== y) ySel.add(new Option(y = d.getUTCFullYear(), y));
   }
-  when.value = startAt;
+  ySel.value = -1;
 }
 
 sel.add(new Option('Выдуманная бумага', SIM));
-for (const k in QUOTES) sel.add(new Option(QUOTES[k].name + ' · ' + k, k));
-srcKey = QUOTES[DEFAULT] ? DEFAULT : SIM;
-if (saved.src === SIM || QUOTES[saved.src]) srcKey = saved.src;
+for (const k in TICKERS) sel.add(new Option(TICKERS[k] + ' · ' + k, k));
+srcKey = TICKERS[DEFAULT] ? DEFAULT : SIM;
+if (saved.src === SIM || TICKERS[saved.src]) srcKey = saved.src;
 sel.value = srcKey;
 sel.onchange = () => {
   srcKey = saved.src = sel.value; startAt = -1; persist();
-  reset(); buildWhen();
+  load(srcKey, start);
 };
-when.onchange = () => { startAt = +when.value; reset(); };
+ySel.onchange = () => {
+  const y = +ySel.value;
+  mSel.hidden = y < 0;
+  mSel.textContent = '';
+  if (y > 0) for (const [py, pm, i] of periods) if (py === y) mSel.add(new Option(MONTHS[pm], i));
+  startAt = y < 0 ? -1 : +mSel.value;
+  reset();
+};
+mSel.onchange = () => { startAt = +mSel.value; reset(); };
 mode.value = saved.real === false ? 'norm' : 'real';   // по умолчанию — настоящие котировки
 mode.onchange = () => { saved.real = mode.value === 'real'; persist(); reset(); };
 
@@ -435,8 +463,8 @@ addEventListener('keydown', e => {
 new ResizeObserver(resize).observe(cv);
 
 resize();
-reset();
-buildWhen();
+reset();                 // пока грузится история, показываем выдуманную бумагу
+load(srcKey, start);
 requestAnimationFrame(frame);
 </script>
 </body>
