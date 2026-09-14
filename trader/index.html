@@ -154,7 +154,7 @@ function newRegime(now) {              // новый тренд длиной 2..
 const NUM = new Intl.NumberFormat('ru-RU');
 const short = v =>                     // 1 234 · 12k · 3.4M — иначе настоящие котировки не влезают
   v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' :
-  v >= 1e4 ? Math.round(v / 1e3) + 'k' :
+  v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' :   // десятая доля: без неё капитал и «купи и держи» сливаются
   cents && v < 1000 ? v.toFixed(2) : NUM.format(Math.round(v));
 const sign = (txt, cur) => cur === '$' ? '$' + txt : txt + ' ' + cur;   // ₽ пишется после суммы
 const money = v => sign(short(v), curAcc);
@@ -254,7 +254,7 @@ function reset() {
   }
   head = 0;
   avg = price;
-  cents = base < 10;                   // Apple в 1993-м стоила 33 цента — округление до доллара врёт
+  cents = base < 2;                    // Apple в 1993-м стоила 33 цента, лот — три доллара с копейками
   peak = startEq = equity(); dead = false;
   tickAt = performance.now(); newRegime(tickAt);
   $('over').classList.remove('show');
@@ -422,7 +422,7 @@ function buildPeriods() {
   mSel.hidden = true;
   ySel.textContent = '';
   if (!series) return;
-  ySel.add(new Option('любой', -1));
+  ySel.add(new Option('год', -1));      // свёрнутый селектор — это же подпись «год не выбран»
   for (let i = 0, t = src.t0, m = -1, y = 0; i < series.length; t += (src.dh[i] || 0) * 3600, i++) {
     if (i < POINTS) continue;
     const d = new Date(t * 1000);
