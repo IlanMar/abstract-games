@@ -112,7 +112,8 @@ const QUOTES = window.QUOTES || {};
 
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
-const hist = new Float32Array(POINTS);   // кольцевой буфер котировок
+const hist = new Float32Array(POINTS);    // кольцевой буфер котировок
+const months = new Uint16Array(POINTS);  // и код месяца каждого бара: (год - 2000) * 12 + месяц
 
 let head = 0, price, cash, shares, avg, peak, dead;
 let drift, regimeEnd, tickAt;
@@ -146,6 +147,7 @@ const NUM = new Intl.NumberFormat('ru-RU');
 const money = v => '$' + NUM.format(Math.round(v));
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const monthOf = sec => { const d = new Date(sec * 1000); return (d.getUTCFullYear() - 2000) * 12 + d.getUTCMonth(); };
 const stamp = sec => {                 // время хранится в часовом поясе биржи — печатаем как есть
   const d = new Date(sec * 1000);
   return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
@@ -165,19 +167,23 @@ function realReturn() {                // следующий бар реальн
   return Math.log(series[idx] / prev);
 }
 
-// Как настоящий эмитент: если цена ушла далеко вверх, дробим акции 2:1.
-// Капитал не меняется, форма графика тоже — меняется только масштаб цены,
-// и лот из 10 акций остаётся по карману.
-function split() {
-  price /= 2; avg /= 2; shares *= 2; factor *= 2;
-  for (let i = 0; i < POINTS; i++) hist[i] /= 2;
+// Как настоящий эмитент: если цена ушла далеко от стартовой, дробим акции (k = 2)
+// или, наоборот, консолидируем (k = 0.5). Капитал и форма графика не меняются —
+// меняется только масштаб цены, и лот из 10 акций остаётся по карману.
+function rescale(k) {
+  const odd = shares % (2 * LOT);        // при консолидации остаток не делится на лот —
+  if (k < 1) { cash += odd * price; shares -= odd; }   // отдаём его деньгами
+  shares *= k; price /= k; avg /= k; factor *= k;
+  for (let i = 0; i < POINTS; i++) hist[i] /= k;
 }
 
 function step(now) {
   price *= Math.exp(series ? realReturn() : simReturn(now));
   hist[head] = price;
+  if (series) months[head] = monthOf(ts);
   head = (head + 1) % POINTS;
-  if (price > START.price * 2) split();
+  if (price > START.price * 2) rescale(2);
+  else if (price < START.price / 2) rescale(0.5);
 
   const eq = equity();
   if (eq > peak) peak = eq;
@@ -208,10 +214,14 @@ function reset() {
   if (series) {
     // отрезок реальной истории; окно перед ним — уже готовая предыстория
     idx = startAt >= 0 ? startAt : POINTS + Math.floor(Math.random() * (series.length - POINTS));
+    const from = idx - POINTS + 1, base = series[idx];
     ts = src.t0;
-    for (let i = 0; i < idx; i++) ts += src.dh[i] * 3600;
-    const base = series[idx];
-    for (let i = 0; i < POINTS; i++) hist[i] = price * series[idx - POINTS + 1 + i] / base;
+    for (let i = 0; i < from; i++) ts += src.dh[i] * 3600;
+    for (let i = 0; i < POINTS; i++) {
+      hist[i] = price * series[from + i] / base;
+      months[i] = monthOf(ts);
+      if (i < POINTS - 1) ts += src.dh[from + i] * 3600;   // в конце ts — время текущего бара
+    }
   } else {
     // предыстория: идём от текущей цены назад, чтобы график сразу выглядел живым
     for (let i = POINTS - 1, p = price; i >= 0; i--) {
@@ -239,9 +249,11 @@ function gameOver() {
 
 // --- интерфейс ------------------------------------------------------------
 function hud() {
-  const eq = equity(), chg = (price * factor / START.price - 1) * 100;
+  const eq = equity(), mult = price * factor / START.price, chg = (mult - 1) * 100;
   $('price').textContent = '$' + price.toFixed(2);
-  $('chg').textContent = (chg < 0 ? '' : '+') + chg.toFixed(Math.abs(chg) < 1000 ? 2 : 0) + '%';
+  // в затяжных партиях проценты вырождаются в пять цифр — печатаем кратность
+  $('chg').textContent = Math.abs(chg) < 1000 ? (chg < 0 ? '' : '+') + chg.toFixed(2) + '%'
+                                              : '×' + NUM.format(Math.round(mult));
   $('chg').style.color = chg < 0 ? 'var(--down)' : 'var(--up)';
   $('cash').textContent = money(cash);
   $('shares').textContent = NUM.format(shares);
@@ -279,7 +291,7 @@ function draw(f) {
   let lo = Infinity, hi = -Infinity;
   for (let i = 0; i < POINTS; i++) { const v = hist[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
   const pad = (hi - lo) * 0.12 + 0.02;
-  lo -= pad; hi += pad;
+  lo = Math.max(0, lo - pad); hi += pad;   // цена не бывает отрицательной
 
   const k = H / (hi - lo);
   const y = v => (hi - v) * k;
@@ -295,6 +307,20 @@ function draw(f) {
     ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(PW, yy); ctx.stroke();
     ctx.fillStyle = '#8b949e';
     ctx.fillText(v.toFixed(2), PW + 6, Math.min(Math.max(yy, 8), H - 8));
+  }
+
+  // ось времени: границы месяцев для реальной истории, секунды — для выдуманной
+  if (series) {
+    let count = 0, n = 0;
+    for (let i = 1; i < POINTS; i++) if (months[(head + i) % POINTS] !== months[(head + i - 1) % POINTS]) count++;
+    const stride = Math.ceil(count / 4) || 1;    // оставляем не больше 4-5 подписей
+    for (let i = 1; i < POINTS; i++) {
+      const c = months[(head + i) % POINTS];
+      if (c === months[(head + i - 1) % POINTS] || n++ % stride) continue;
+      mark(x0 + dx * i, MONTHS[c % 12] + ' ' + (2000 + (c / 12 | 0)));
+    }
+  } else {
+    for (let i = POINTS - 1 - 100; i > 0; i -= 100) mark(x0 + dx * i, '−' + (POINTS - 1 - i) * TICK / 1000 + ' с');
   }
 
   const up = price >= hist[head];               // hist[head] — самая старая точка
@@ -322,6 +348,15 @@ function draw(f) {
   ctx.fillRect(PW, yp - 9, W - PW, 18);
   ctx.fillStyle = '#fff';
   ctx.fillText(price.toFixed(2), PW + 6, yp);
+}
+
+function mark(x, text) {                 // вертикальная риска с подписью времени
+  if (x < 24 || x > PW - 46) return;
+  const xx = Math.round(x) + .5;
+  ctx.strokeStyle = '#232a35';
+  ctx.beginPath(); ctx.moveTo(xx, 0); ctx.lineTo(xx, H - 18); ctx.stroke();
+  ctx.fillStyle = '#8b949e';
+  ctx.fillText(text, x + 4, H - 9);
 }
 
 function frame(now) {
