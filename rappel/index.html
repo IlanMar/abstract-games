@@ -86,18 +86,18 @@ const THIGH = 0.5, SHIN = 0.5;
 const TMAX  = 0.62;    // рад: дальше человека унесло бы за край экрана
 
 // --- маятник и толчок -----------------------------------------------------
-const OM2     = 15.5;  // «g/L» маятника: период 2π/√OM2 ≈ 1.6 с, полудуга — 0.8 с
-const DAMP    = 0.25;  // трение, 1/с
-const KICK    = 1.05;  // рад/с, которые даёт сам толчок ногами
-const BOUNCE  = 0.55;  // и доля скорости удара, возвращённая в дугу
-const WIN     = 0.24;  // с: окно, в котором толчок ещё ловит этот удар
-const PUSHMAX = 2.5;   // рад/с: предел, с которым порода выталкивает наружу
+const OM2     = 4.0;   // «g/L» маятника: период 2π/√OM2 ≈ 3.1 с, значит дуга от
+                       // скалы и назад — полторы секунды свободного полёта
+const DAMP    = 0.22;  // трение, 1/с
+const KICK    = 0.55;  // рад/с: толчок в самом конце окна
+const SNAP    = 0.45;  // и сколько к нему добавляет толчок в начале окна
+const WIN     = 0.35;  // с: столько ноги держат скалу — окно на толчок
+const MISS    = 0.30;  // с: столько после толчка в воздух ноги сбиты
+const SLOP    = 0.35;  // и такая доля окна остаётся, если встать пришлось сбитыми
+const DRAG    = 0.55;  // с: столько можно проехать по скале, упираясь ногами
 
 // --- спуск ----------------------------------------------------------------
-const V0 = 2.6, VK = 0.009, VMAX = 6.4;   // м/с: база и разгон с каждым метром
-const BRAKE = 0.6;     // ногами на скале спуск придерживается
-const DROP  = 1.1;     // толчок стравливает верёвку: +м/с на каждый рад/с
-const FEED  = 3.2;     // и эта добавка гаснет, 1/с
+const V0 = 2.5, VK = 0.006, VMAX = 5.5;   // м/с: база и разгон с каждым метром
 const STEP  = 1 / 120; // шаг физики, с
 
 const $ = id => document.getElementById(id);
@@ -105,7 +105,7 @@ const cv = $('c'), ctx = cv.getContext('2d');
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
 let W = 0, H = 0, M = 0, PX = 0, CY = 0;   // экран: ширина, высота, px в метре, отвес, линия бёдер
-let depth, base, th, w, feed, plant, imp, winT, limPrev, ext;
+let depth, ph, th, w, winT, dragT, miss, onRock, ext;
 let dead, started, kicks, flash, hitT, hitX, hitY, last, hudAt;
 
 // --- рекорд в localStorage ------------------------------------------------
@@ -130,14 +130,32 @@ function noise(x, seed) {               // сглаженный value-noise с �
 
 // Вылет породы в метрах: 0 — средняя стена, плюс — выступ, минус — ниша.
 // Ниши вдвое мельче выступов, иначе скала уезжает за левый край экрана.
+// К глубине выступы становятся выше — иначе игра перестаёт усложняться, как
+// только спуск упрётся в VMAX. А длина волны постоянная: если делить глубину на
+// меняющийся период, рельеф рвётся в пилу на ровном месте.
 function wall(d) {
-  const v = 0.72 * (noise(d / 9, 11) * 2 - 1) + 0.28 * (noise(d / 4.5, 29) * 2 - 1);
-  return v > 0 ? v * 2.4 : v * 1.15;
+  const v = 0.72 * (noise(ph + d / 9, 11) * 2 - 1) + 0.28 * (noise(ph + d / 4.5, 29) * 2 - 1);
+  const face = v > 0 ? v * (2.1 + clamp(d / 500, 0, 1) * 1.1) : v * 1.15;
+  return Math.max(face, shelf(d));   // не сумма: иначе карниз на выступе не облететь
+}
+
+// Карниз — полка с подрезом: сверху порода набегает плавно, а под полкой резко
+// уходит внутрь. Опасен именно подрез: над головой камень, под ногами пустота,
+// и ноги, которые идут первыми, выступа уже не чувствуют. Пройти можно только по
+// дуге, зато снизу полку видно заранее. Одна на 11 м, к глубине — чаще и выше.
+function shelf(d) {
+  const q = ph + d / 11, i = Math.floor(q), k = clamp(d / 500, 0, 1);
+  const h = rnd(i, 7);
+  if (h < 0.65 - 0.35 * k) return 0;
+  const t = (q - i - rnd(i, 13) * 0.6) * 11;          // метров ниже кромки полки
+  if (t < -1.6 || t > 0.5) return 0;
+  const top = (0.9 + h * 0.9) * (1 + 0.5 * k);
+  return t < 0 ? top * (1 + t / 1.6) : top * (1 - t / 0.5);
 }
 
 // Мелкая шероховатость — только для картинки: зазубрина меньше ботинка
 // не должна решать судьбу партии, поэтому в столкновения она не входит.
-const rough = d => 0.11 * (noise(d, 53) * 2 - 1) + 0.05 * (noise(d * 3.1, 71) * 2 - 1);
+const rough = d => 0.11 * (noise(ph + d, 53) * 2 - 1) + 0.05 * (noise(ph + d * 3.1, 71) * 2 - 1);
 
 // самый близкий к человеку камень на отрезке глубин
 function peak(a, b) {
@@ -161,18 +179,15 @@ function hostile(d) {
 }
 
 function reset() {
-  base = Math.random() * 1e5;            // у каждой партии своя скала
-  while (hostile(base) || hostile(base + 2) || hostile(base + 4)) base += 0.4;
-  depth = base;
-  th = 0; w = 0; feed = 0; ext = 1; plant = false; imp = 0; winT = 0;
-  limPrev = footLimit();
+  ph = Math.random() * 1e4;              // сдвиг шума: у каждой партии своя скала
+  while (hostile(0) || hostile(2) || hostile(4)) ph += 0.7;
+  depth = 0;
+  th = 0; w = 0; ext = 1; winT = WIN; dragT = 0; miss = 0; onRock = true;
   dead = false; started = false; kicks = 0; flash = 0; hitT = 0;
   last = performance.now(); hudAt = 0;
   over('Дюльфер', 'Спуск по верёвке в каньоне. Один тап — толчок ногами от скалы: человек уходит маятником и стравливает верёвку. Выступы скалы надо проходить в дальней точке дуги.', 'Погнали');
   hud();
 }
-
-const score = () => depth - base;
 
 function over(title, text, btn) {
   $('verdict').textContent = title;
@@ -189,43 +204,43 @@ function begin() {
   kick();                                // первый тап сразу и отталкивает
 }
 
-function crash() {
+function crash(why) {
   dead = true;
-  const m = Math.round(score());
+  const m = Math.round(depth);
   saved.best = Math.max(saved.best || 0, m);
   persist();
   hitX = ROPE * Math.sin(th); hitY = -rise(); hitT = 0;
-  over('Впечатался в скалу',
-       'Глубина: ' + m + ' м · рекорд: ' + saved.best + ' м. Карниз надо облетать по дуге: толчок посильнее и на такт раньше.',
+  const tail = ' Глубина: ' + m + ' м · рекорд: ' + saved.best + ' м.';
+  over(why === 'drag' ? 'Протащило по скале' : 'Впечатался в скалу',
+       (why === 'drag'
+         ? 'Толкаться надо в тот момент, когда ноги встали на камень: пропустил — и верёвка тащит тебя по породе.'
+         : 'Нависание надо проходить в дальней точке дуги: толчок в самом начале окна, тогда вылет выше.') + tail,
        'Ещё раз');
   hud();
 }
 
 // --- толчок ---------------------------------------------------------------
-// Ноги на скале — можно оттолкнуться, и чем точнее по времени, тем больше от
-// удара уходит обратно в дугу. В воздухе тап только болтает ногами.
+// Сила толчка абсолютная, а не считается от угла стойки: встать можно и в нишу,
+// где угол отрицательный, и дуга тогда выходила бы вдвое ниже задуманной.
+// У маятника период не зависит от амплитуды, поэтому глубина прыжка при любом
+// толчке примерно одна, а точность тапа решает ровно одно — насколько далеко от
+// скалы человек пролетит. В воздухе тап только болтает ногами.
 function kick() {
   if (dead || !started) return;
-  if (!plant) { flash = -0.14; return; }
-  const out = KICK + BOUNCE * imp * Math.max(0, winT / WIN);
-  w = Math.max(w, out);
-  feed += DROP * out;
-  imp = 0; winT = 0; flash = 0.18; kicks++;
+  if (winT <= 0) { miss = MISS; flash = -0.14; return; }   // толчок в воздух — ноги сбиты
+  w = KICK + SNAP * (winT / WIN);
+  winT = 0; flash = 0.18; kicks++;
 }
 
 // --- физика ---------------------------------------------------------------
-// Какой угол не пускает порода: ноги упираются, когда носок достаёт до камня,
-// то есть при ROPE*sin(th) - REACH <= wall - REACH. Пиксели тут не нужны.
-function footLimit() {
-  const s = footWall() / ROPE;
-  return s <= -1 ? -1.4 : s >= 1 ? 1.4 : Math.asin(s);
-}
+// Угол, на котором носок достаёт до камня: ROPE*sin(th) - REACH = wall - REACH.
+// Пиксели тут не нужны — вся физика в метрах и радианах.
+const footAngle = () => Math.asin(clamp(footWall() / ROPE, -1, 1));
 
 function sim(dt) {
   // спуск: база растёт с глубиной, ноги на скале придерживают, толчок стравливает
   const v = speed();
   depth += v * dt;
-  feed -= feed * Math.min(FEED * dt, 1);
 
   // маятник
   w -= OM2 * Math.sin(th) * dt;
@@ -233,34 +248,48 @@ function sim(dt) {
   th += w * dt;
   if (th > TMAX) { th = TMAX; if (w > 0) w = 0; }
 
-  // скала под ногами внутрь не пускает, а наезжая — выталкивает наружу
-  const lim = footLimit(), was = plant;
-  plant = th <= lim;
-  if (plant) {
-    if (!was) { imp = Math.max(0, -w); winT = WIN; }
-    th = lim;
-    w = Math.max(w, Math.min((lim - limPrev) / dt, PUSHMAX));
-  }
-  limPrev = lim;
+  // Ноги упираются в породу и не пускают внутрь — это чистая геометрия.
+  const fa = footAngle(), was = onRock;
+  onRock = th <= fa;
+  if (onRock) {
+    th = fa;
+    if (w < 0) w = 0;                       // удар погасили ноги
+    // Встал в стойку — открылось окно на толчок. Открывается только по фронту:
+    // пока ноги не оторвались от породы, второй раз встать нельзя. Если перед
+    // этим человек махнул ногами в воздух, окно откроется куцым — толкнуться
+    // можно, но слабо. Совсем закрывать нельзя, иначе один неудачный тап запирал
+    // бы игрока навсегда.
+    if (!was) winT = WIN * (miss > 0 ? SLOP : 1);
+  } else dragT = 0;
   if (winT > 0) winT -= dt;
+  if (onRock && winT <= 0) dragT += dt;     // стойка ушла — человека тащит по скале
+  if (miss > 0) miss -= dt;
 
   // ноги в кадре: на скале вытянуты, в воздухе поджаты и тянутся к породе
-  const target = plant ? 1 : 0.68 + 0.32 * Math.max(0, flash / 0.18);
+  const target = hold() ? 1 : 0.68 + 0.32 * Math.max(0, flash / 0.18);
   ext += (target - ext) * Math.min(dt * 16, 1);
   if (flash > 0) flash = Math.max(0, flash - dt);
   if (flash < 0) flash = Math.min(0, flash + dt);
 
-  // удар корпусом о камень — единственный способ проиграть
-  if (ROPE * Math.sin(th) < bodyWall() - REACH + BODY) crash();
+  // Два способа проиграть: поймать корпусом камень или проехать по скале.
+  // Второе — ровно то, чего в дюльфере и нельзя: спускаться, упираясь ногами в
+  // породу. Верёвка идёт, ноги скребут, и это кончается срывом.
+  if (ROPE * Math.sin(th) < bodyWall() - REACH + BODY) crash('rock');
+  else if (dragT > DRAG) crash('drag');
 }
 
+// Ноги держат скалу лишь мгновение, пока не ушла инерция: ровно в это время
+// верёвка стоит, и это единственная пауза в спуске. Оттолкнулся — ушёл по дуге и
+// поехал вниз. Не успел — ноги соскользнули, дуги нет, и дальше человек падает
+// вдоль самой скалы, где его достаёт любое нависание.
+const hold = () => winT > 0;
 function speed() {
-  return Math.min(V0 + score() * VK, VMAX) * (plant ? BRAKE : 1) + feed;
+  return hold() ? 0 : Math.min(V0 + depth * VK, VMAX);
 }
 
 // --- интерфейс ------------------------------------------------------------
 function hud() {
-  $('depth').textContent = Math.round(score());
+  $('depth').textContent = Math.round(depth);
   $('spd').textContent = (started && !dead ? speed() : 0).toFixed(1) + ' м/с';
   $('kicks').textContent = kicks;
   $('best').textContent = saved.best ? saved.best + ' м' : '—';
@@ -328,10 +357,10 @@ function rock() {
 }
 
 function axis() {
-  const s = score(), top = s - CY / M, bot = top + H / M;
+  const top = depth - CY / M, bot = top + H / M;
   ctx.textAlign = 'right';
   for (let k = Math.ceil(top / 2) * 2; k <= bot; k += 2) {
-    const y = Math.round(CY + (k - s) * M) + .5, big = k % 10 === 0;
+    const y = Math.round(CY + (k - depth) * M) + .5, big = k % 10 === 0;
     if (k < 0) continue;
     ctx.strokeStyle = '#232a35';
     ctx.beginPath(); ctx.moveTo(W - (big ? 40 : 10), y); ctx.lineTo(W, y); ctx.stroke();
@@ -403,10 +432,10 @@ function person() {
   ctx.beginPath(); ctx.arc(hd[0], hd[1], 0.17 * M, Math.PI - th, 2 * Math.PI - th); ctx.fill();
 
   // окно точного толчка: пока кольцо у ботинка не сжалось, удар ещё можно вернуть в дугу
-  if (winT > 0 && plant) {
-    ctx.strokeStyle = 'rgba(46,160,67,' + (winT / WIN).toFixed(2) + ')';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(fx, fy, (0.2 + 0.5 * winT / WIN) * M, 0, 7); ctx.stroke();
+  if (hold()) {
+    ctx.strokeStyle = 'rgba(46,160,67,' + (0.25 + 0.75 * winT / WIN).toFixed(2) + ');';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(fx, fy, (0.18 + 0.55 * winT / WIN) * M, 0, 7); ctx.stroke();
   }
 }
 
