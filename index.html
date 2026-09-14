@@ -130,6 +130,7 @@ let srcKey = SIM, src = null, series = null, idx = 0, ts = 0;
 let startAt = -1;                          // -1 — начинать со случайного места истории
 let factor = 1;                            // накопленное дробление акций
 let real = false, base = START.price, startEq = 0, rec = SIM, saveAt = 0;
+let curAcc = '$', curSec = '$';        // валюта счёта и валюта самой бумаги
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- результат в localStorage ---------------------------------------------
@@ -158,8 +159,9 @@ const short = v => {                   // 1 234 · 12k · 3.4M — иначе н
   v = Math.round(v);
   return v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? Math.round(v / 1e3) + 'k' : NUM.format(v);
 };
-const money = v => '$' + short(v);
-const quote = v => '$' + (v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2));
+const sign = (txt, cur) => cur === '$' ? '$' + txt : txt + ' ' + cur;   // ₽ пишется после суммы
+const money = v => sign(short(v), curAcc);
+const quote = (v, cur) => sign(v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2), cur);
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const STEPS = [1, 2, 3, 6, 12, 24, 60, 120];   // сколько месяцев между подписями на оси времени
@@ -235,6 +237,8 @@ function reset() {
   src = QUOTES[srcKey] || null;
   series = src ? src.c : null;
   real = !!series && $('mode').value === 'real';
+  curSec = src && src.cur || '$';
+  curAcc = real ? curSec : '$';        // с нормировкой к $10 счёт всегда долларовый
   rec = srcKey + (real ? '·real' : '');
   price = base = START.price;
   cash = real ? REAL.cash : START.cash;
@@ -280,9 +284,9 @@ function gameOver() {
 // --- интерфейс ------------------------------------------------------------
 function hud() {
   const eq = equity(), mult = price * factor / base, chg = (mult - 1) * 100;
-  $('price').textContent = quote(price);
-  // для справки — настоящая котировка бумаги в этот день
-  $('ref').textContent = series && !real ? '(' + quote(series[idx]) + ')' : '';
+  $('price').textContent = quote(price, curAcc);
+  // для справки — настоящая котировка бумаги в этот день, в её родной валюте
+  $('ref').textContent = series && !real ? '(' + quote(series[idx], curSec) + ')' : '';
   // в затяжных партиях проценты вырождаются в пять цифр — печатаем кратность
   $('chg').textContent = Math.abs(chg) < 1000 ? (chg < 0 ? '' : '+') + chg.toFixed(2) + '%'
                                               : '×' + NUM.format(Math.round(mult));
