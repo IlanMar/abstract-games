@@ -70,7 +70,7 @@
       <span class="num" id="chg">0.00%</span>
       <span class="hint" id="ref"></span>
     </span>
-    <span class="hint" id="hint" title="Один тик — один торговый день. Игра идёт на доходностях бумаги: старт всегда $10, а форма графика настоящая"></span>
+    <span class="hint" id="hint" title="Один тик — один торговый день"></span>
   </div>
   <div class="stats">
     <div>Кэш<b id="cash">$1000</b></div>
@@ -349,7 +349,8 @@ function draw(f) {
   if (series) {
     // шаг подписей выбираем из круглых значений и привязываем к самому месяцу (c % step),
     // а не к его номеру в окне — иначе при уходе месяца за край съезжал бы весь набор
-    const span = months[(head + POINTS - 1) % POINTS] - months[head];
+    // после круга истории в окне соседствуют две эпохи и разность уходит в минус
+    const span = Math.abs(months[(head + POINTS - 1) % POINTS] - months[head]);
     const step = STEPS.find(v => span / v <= 4) || 240;
     for (let i = 1; i < POINTS; i++) {
       const c = months[(head + i) % POINTS];
@@ -469,6 +470,7 @@ $('buy').onclick = buy;
 $('sell').onclick = sell;
 $('restart').onclick = reset;
 addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;   // там стрелками листают список, а не торгуют
   if (e.key === 'ArrowUp') buy();
   if (e.key === 'ArrowDown') sell();
 });
