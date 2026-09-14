@@ -37,7 +37,17 @@
   .num, .price, .stats b { font-variant-numeric: tabular-nums }
   main { position: relative; flex: 1; min-height: 0 }
   canvas { display: block; width: 100%; height: 100% }
-  footer { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 14px }
+  footer { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 14px }
+  /* подтверждение сделки: цифра взлетает над нажатой кнопкой и тает */
+  .pop {
+    position: absolute; bottom: 100%; width: 120px; margin-left: -60px;
+    text-align: center; font: 600 15px/1 inherit; pointer-events: none;
+    animation: rise .7s ease-out forwards;
+  }
+  @keyframes rise {
+    from { opacity: 1; transform: translateY(-2px) }
+    to   { opacity: 0; transform: translateY(-38px) }
+  }
   button {
     padding: 18px 0; border: 0; border-radius: 12px; color: #fff; cursor: pointer;
     font: 600 17px/1 inherit; -webkit-tap-highlight-color: transparent;
@@ -207,13 +217,26 @@ function buy() {
   if (dead || cash < cost) return;
   avg = (avg * shares + cost) / (shares + LOT);
   cash -= cost; shares += LOT;
+  pop($('buy'), 'buy ' + LOT, 'var(--up)');
   hud();
 }
 
 function sell() {
   if (dead || shares < LOT) return;
   cash += LOT * price; shares -= LOT;
+  pop($('sell'), 'sell ' + LOT, 'var(--down)');
   hud();
+}
+
+// всплывашка живёт ровно одну анимацию и убирает себя сама
+function pop(btn, text, color) {
+  const el = document.createElement('div');
+  el.className = 'pop';
+  el.textContent = text;
+  el.style.left = (btn.offsetLeft + btn.offsetWidth / 2) + 'px';
+  el.style.color = color;
+  el.onanimationend = () => el.remove();
+  btn.parentNode.appendChild(el);
 }
 
 // --- партия ---------------------------------------------------------------
