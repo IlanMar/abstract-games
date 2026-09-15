@@ -49,8 +49,7 @@
     background: var(--panel); font-size: 13px; line-height: 1.45;
   }
   #info p + p, #setup p + p { margin-top: 8px }
-  #info .dim, #setup .dim { color: var(--dim) }
-  .choice { display: grid; gap: 8px; margin: 10px 0 }
+  .choice { display: grid; gap: 8px; margin-top: 10px }
   .choice button {
     padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; text-align: left;
     background: var(--bg); color: var(--fg); font: 600 14px/1 inherit;
@@ -133,11 +132,10 @@
 <div id="info" hidden>
   <div class="card">
     <p><b>A real market.</b> One tick is one trading day from the chosen security's history.</p>
-    <p><b>Two buttons.</b> Buy or sell — always exactly 10 units.</p>
+    <p><b>Two buttons.</b> Buy or sell. The gear sets how much one press moves.</p>
     <p><b>Beat buy &amp; hold.</b> The column up top shows what you would have if you simply
        held the starting position and never traded at all. You cannot lose — the run ends
        when the security's history runs out.</p>
-    <p class="dim">Tap anywhere to close. While this is open, time stands still.</p>
   </div>
 </div>
 
@@ -148,7 +146,6 @@
       <button data-size="lot">10 units per press</button>
       <button data-size="max">As many as possible</button>
     </div>
-    <p class="dim">Tap anywhere to close. While this is open, time stands still.</p>
   </div>
 </div>
 
