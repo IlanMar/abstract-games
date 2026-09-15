@@ -188,6 +188,7 @@ let cents = false;                     // на старой истории це�
 let paused = false;                    // пока открыта справка, время стоит
 let done = false;                      // история кончилась — партия замерла на последнем баре
 let maxMode = true;                    // за одно нажатие: сколько влезет или ровно LOT
+let redraw = true;                     // перерисовать один раз, даже если партия замерла
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- рынок ----------------------------------------------------------------
@@ -327,7 +328,7 @@ function reset() {
 
 // история кончилась: всё замирает на последнем баре, итог — счёт против «купи и держи»
 function finish() {
-  done = true;
+  done = true; redraw = true;
   const eq = equity(), bh = hold(), diff = eq / bh - 1;
   const tie = Math.abs(diff) < 0.0005;   // не торговали вовсе — счёт сходится ровно
   $('verdict').textContent = tie ? 'Dead even with buy & hold'
@@ -367,6 +368,7 @@ function resize() {
   const r = cv.getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 2);
   W = r.width; H = r.height; PW = W - AXIS;
   cv.width = Math.round(W * d); cv.height = Math.round(H * d);
+  redraw = true;                       // канвас очистился — нужен кадр даже на паузе
   ctx.setTransform(d, 0, 0, d, 0, 0);
   upFill = fade('#2ea043'); downFill = fade('#e5534b');
 }
@@ -407,8 +409,7 @@ function draw(f) {
   if (series) {
     // шаг подписей выбираем из круглых значений и привязываем к самому месяцу (c % step),
     // а не к его номеру в окне — иначе при уходе месяца за край съезжал бы весь набор
-    // после круга истории в окне соседствуют две эпохи и разность уходит в минус
-    const span = Math.abs(months[(head + POINTS - 1) % POINTS] - months[head]);
+    const span = months[(head + POINTS - 1) % POINTS] - months[head];
     const step = STEPS.find(v => span / v <= 4) || 240;
     for (let i = 1; i < POINTS; i++) {
       const c = months[(head + i) % POINTS];
@@ -456,14 +457,16 @@ function mark(x, text) {                 // вертикальная риска 
 }
 
 function frame(now) {
-  if (!frozen()) {
+  const stop = frozen();
+  if (!stop) {
     if (now - tickAt > 1000) tickAt = now - TICK;   // вкладка была свёрнута — не догоняем
     let ticks = 0;
     while (now - tickAt >= TICK && !done) { tickAt += TICK; step(now); ticks++; }
     if (ticks) hud();
   }
-  // доля тика: пока идёт партия — плавный ход, на паузе и в конце истории — стоп-кадр
-  draw(frozen() ? 1 : (now - tickAt) / TICK);
+  // Пока партия идёт, доля тика двигает график плавно. Когда замерла, картинка больше не
+  // меняется — рисуем стоп-кадр один раз, а не 60 раз в секунду до конца сеанса.
+  if (!stop || redraw) { redraw = false; draw(stop ? 1 : (now - tickAt) / TICK); }
   requestAnimationFrame(frame);
 }
 
@@ -473,14 +476,14 @@ let periods = [];                      // [год, месяц, номер бар
 
 // ряды лежат по файлу на бумагу и грузятся по требованию: история глубокая, старт лёгкий
 const loading = {};
-function load(key, done) {
-  if (!TICKERS[key] || QUOTES[key]) return done();
+function load(key, ready) {            // ready, а не done: done — это флаг конца истории
+  if (!TICKERS[key] || QUOTES[key]) return ready();
   if (loading[key]) return;            // уже в пути — сработает тот же колбэк
   loading[key] = 1;
   const el = document.createElement('script');
   el.src = 'data/' + key + '.js';
   // бумагу могли переключить, пока файл летел: тогда партию не трогаем
-  el.onload = el.onerror = () => { delete loading[key]; if (key === srcKey) done(); };
+  el.onload = el.onerror = () => { delete loading[key]; if (key === srcKey) ready(); };
   document.head.appendChild(el);
 }
 
@@ -524,8 +527,8 @@ ySel.onchange = () => {
 mSel.onchange = () => { startAt = +mSel.value; reset(); };
 const info = $('info'), setup = $('setup');
 // пока открыта любая карточка, время стоит; tickAt сбрасываем, чтобы не было залпа тиков
-function show(el) { el.hidden = false; paused = true; tickAt = performance.now(); }
-function hideCards() { info.hidden = setup.hidden = true; paused = false; tickAt = performance.now(); }
+function show(el) { el.hidden = false; paused = true; redraw = true; tickAt = performance.now(); }
+function hideCards() { info.hidden = setup.hidden = true; paused = false; redraw = true; tickAt = performance.now(); }
 $('what').onclick = () => show(info);
 $('gear').onclick = () => {
   for (const b of setup.querySelectorAll('[data-size]'))

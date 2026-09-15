@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 const DIR = fileURLToPath(new URL('../data/', import.meta.url));   // рядом с игрой, а не с cwd
 
 const FROM = '1990-01-01';
+const MIN_BARS = 600;   // окно графика в игре: на более коротком ряду предыстории не хватит
 const UA = { 'User-Agent': 'Mozilla/5.0' };
 const SIGN = { USD: '$', RUB: '₽', EUR: '€' };
 
@@ -102,6 +103,7 @@ mkdirSync(DIR, { recursive: true });
 for (const [key, name, symbol] of [...YAHOO, ...MOEX]) {
   try {
     const q = pack(symbol ? await yahoo(symbol) : await moex(key));
+    if (q.c.length < MIN_BARS) throw new Error(`всего ${q.c.length} баров, игре нужно минимум ${MIN_BARS}`);
     writeFileSync(`${DIR}${key}.js`, `window.QUOTES.${key} = ${JSON.stringify(q)};
 `);
 
