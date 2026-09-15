@@ -33,10 +33,10 @@ const YAHOO = [
   ['GE', 'General Electric', 'GE'],
   ['F', 'Ford', 'F'],
   // товары: ключ читаемый, символ — непрерывный фьючерс Yahoo
-  ['GOLD', 'Золото', 'GC=F'],
-  ['SILVER', 'Серебро', 'SI=F'],
-  ['BRENT', 'Нефть', 'BZ=F'],
-  ['COPPER', 'Медь', 'HG=F'],
+  ['GOLD', 'Gold', 'GC=F'],
+  ['SILVER', 'Silver', 'SI=F'],
+  ['BRENT', 'Oil', 'BZ=F'],
+  ['COPPER', 'Copper', 'HG=F'],
 ];
 
 // Отбраковано намеренно:
@@ -45,8 +45,8 @@ const YAHOO = [
 
 // MOEX ISS: дневные свечи, открытый API без ключа
 const MOEX = [
-  ['SBER', 'Сбербанк'],
-  ['GAZP', 'Газпром'],
+  ['SBER', 'Sberbank'],
+  ['GAZP', 'Gazprom'],
 ];
 
 async function json(url, headers) {

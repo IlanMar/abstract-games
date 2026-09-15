@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -32,23 +32,30 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%238b949e' stroke-width='1.6'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 4px center; background-size: 8px 5px;
   }
-  #what {
-    width: 26px; padding: 5px 0; border: 1px solid var(--line); border-radius: 8px;
+  #what, #gear {
+    flex: none; width: 26px; padding: 5px 0; border: 1px solid var(--line); border-radius: 8px;
     background: var(--panel); color: var(--dim); font: 600 12px/1 inherit;
   }
-  /* справка — подложка во весь экран: тап в любом месте закрывает */
-  #info {
+  #gear svg { display: block; margin: 0 auto }
+  /* карточки справки и настроек — подложка во весь экран: тап в любом месте закрывает */
+  #info, #setup {
     position: fixed; inset: 0; z-index: 3; display: flex; align-items: center;
     padding: 16px; background: rgba(14,17,22,.55); cursor: pointer;
   }
-  #info[hidden] { display: none }   /* иначе display:flex по id перебьёт скрытие */
-  #info .card {
+  #info[hidden], #setup[hidden] { display: none }   /* иначе display:flex по id перебьёт скрытие */
+  #info .card, #setup .card {
     width: 100%; max-width: 420px; margin: 0 auto;
     padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
     background: var(--panel); font-size: 13px; line-height: 1.45;
   }
-  #info p + p { margin-top: 8px }
-  #info .dim { color: var(--dim) }
+  #info p + p, #setup p + p { margin-top: 8px }
+  #info .dim, #setup .dim { color: var(--dim) }
+  .choice { display: grid; gap: 8px; margin: 10px 0 }
+  .choice button {
+    padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; text-align: left;
+    background: var(--bg); color: var(--fg); font: 600 14px/1 inherit;
+  }
+  .choice button.on { border-color: var(--up); color: var(--up) }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-size: 12px; color: var(--dim) }
   .stats b { display: block; font-size: 15px; font-weight: 600; color: var(--fg) }
   .num, .price, .stats b { font-variant-numeric: tabular-nums }
@@ -91,20 +98,21 @@
     <select id="src"></select>
     <select id="year" hidden></select>
     <select id="month" hidden></select>
-    <button id="what" title="Что тут происходит">i</button>
+    <button id="gear" title="Trade size" aria-label="Trade size"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M19.4 13a7.8 7.8 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.6 7.6 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.8 7.8 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.6 7.6 0 0 0 1.7 1l.4 2.6a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.4-2.6a7.6 7.6 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6zM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5z"/></svg></button>
+    <button id="what" title="What's going on here">i</button>
   </div>
   <div class="row">
     <span>
       <span class="price" id="price">$10.00</span>
       <span class="num" id="chg">0.00%</span>
     </span>
-    <span class="hint" id="hint" title="Один тик — один торговый день"></span>
+    <span class="hint" id="hint" title="One tick is one trading day"></span>
   </div>
   <div class="stats">
-    <div>Кэш<b id="cash">$0</b></div>
-    <div>Позиция<b id="shares">100</b></div>
-    <div>Капитал<b id="equity">$1000</b></div>
-    <div>Купи и держи<b id="hold">$1000</b></div>
+    <div>Cash<b id="cash">$0</b></div>
+    <div>Position<b id="shares">100</b></div>
+    <div>Equity<b id="equity">$1000</b></div>
+    <div>Buy &amp; hold<b id="hold">$1000</b></div>
   </div>
 </header>
 
@@ -113,23 +121,34 @@
   <div id="over">
     <h1 id="verdict"></h1>
     <p id="result"></p>
-    <button id="restart">Начать заново</button>
+    <button id="restart">Start over</button>
   </div>
 </main>
 
 <footer>
-  <button id="buy">Купить 10</button>
-  <button id="sell">Продать 10</button>
+  <button id="buy">Buy 10</button>
+  <button id="sell">Sell 10</button>
 </footer>
 
 <div id="info" hidden>
   <div class="card">
-    <p><b>Настоящая биржа.</b> Один тик — один торговый день из истории выбранной бумаги.</p>
-    <p><b>Две кнопки.</b> Купить или продать — всегда ровно 10 штук.</p>
-    <p><b>Цель — обогнать «купи и держи»:</b> столбец в шапке показывает, сколько было бы,
-       если просто держать стартовую позицию и не торговать вовсе. Проиграть нельзя —
-       партия кончается вместе с историей бумаги.</p>
-    <p class="dim">Нажмите в любом месте, чтобы закрыть. Пока открыто — время стоит.</p>
+    <p><b>A real market.</b> One tick is one trading day from the chosen security's history.</p>
+    <p><b>Two buttons.</b> Buy or sell — always exactly 10 units.</p>
+    <p><b>Beat buy &amp; hold.</b> The column up top shows what you would have if you simply
+       held the starting position and never traded at all. You cannot lose — the run ends
+       when the security's history runs out.</p>
+    <p class="dim">Tap anywhere to close. While this is open, time stands still.</p>
+  </div>
+</div>
+
+<div id="setup" hidden>
+  <div class="card">
+    <p><b>Trade size.</b> How much one press of Buy or Sell moves.</p>
+    <div class="choice">
+      <button data-size="lot">10 units per press</button>
+      <button data-size="max">As many as possible</button>
+    </div>
+    <p class="dim">Tap anywhere to close. While this is open, time stands still.</p>
   </div>
 </div>
 
@@ -171,6 +190,7 @@ let cur = '$';                         // валюта бумаги, она же
 let cents = false;                     // на старой истории цены центовые — печатаем копейки
 let paused = false;                    // пока открыта справка, время стоит
 let done = false;                      // история кончилась — партия замерла на последнем баре
+let maxMode = false;                   // за одно нажатие: ровно LOT или сколько влезет
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- рынок ----------------------------------------------------------------
@@ -187,21 +207,20 @@ function newRegime(now) {              // новый тренд длиной 2..
   regimeEnd = now + 2000 + Math.random() * 28000;
 }
 
-const NUM = new Intl.NumberFormat('ru-RU');
+const NUM = new Intl.NumberFormat('en-US');
 const short = v =>                     // 1 234 · 12k · 3.4M — иначе настоящие котировки не влезают
   v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' :
   v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' :   // десятая доля: без неё капитал и «купи и держи» сливаются
   cents && v < 1000 ? v.toFixed(2) : NUM.format(Math.round(v));
-const sign = (txt, cur) => cur === '$' ? '$' + txt : txt + ' ' + cur;   // ₽ пишется после суммы
-const money = v => sign(short(v), cur);
-const quote = v => sign(v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2), cur);
+const money = v => cur + short(v);
+const quote = v => cur + (v >= 1000 ? NUM.format(Math.round(v)) : v.toFixed(2));
 
-const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const STEPS = [1, 2, 3, 6, 12, 24, 60, 120];   // сколько месяцев между подписями на оси времени
 const monthOf = sec => { const d = new Date(sec * 1000); return (d.getUTCFullYear() - 1970) * 12 + d.getUTCMonth(); };
 const stamp = sec => {                 // время хранится в часовом поясе биржи — печатаем как есть
   const d = new Date(sec * 1000);
-  return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+  return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
 };
 
 const equity = () => cash + shares * price;
@@ -243,18 +262,20 @@ function step(now) {
 
 // --- сделки ---------------------------------------------------------------
 function buy() {
-  const cost = LOT * price;
-  if (frozen() || cash < cost) return;
-  avg = (avg * shares + cost) / (shares + LOT);
-  cash -= cost; shares += LOT;
-  pop($('buy'), 'buy ' + LOT, 'var(--up)');
+  const n = maxMode ? Math.floor(cash / price) : LOT;
+  if (frozen() || n < 1 || cash < n * price) return;
+  const cost = Math.min(n * price, cash);   // «сколько влезет» не должно уводить кэш в минус на ulp
+  avg = (avg * shares + cost) / (shares + n);
+  cash -= cost; shares += n;
+  pop($('buy'), 'buy ' + n, 'var(--up)');
   hud();
 }
 
 function sell() {
-  if (frozen() || shares < LOT) return;
-  cash += LOT * price; shares -= LOT;
-  pop($('sell'), 'sell ' + LOT, 'var(--down)');
+  const n = maxMode ? shares : LOT;
+  if (frozen() || n < 1 || shares < n) return;
+  cash += n * price; shares -= n;
+  pop($('sell'), 'sell ' + n, 'var(--down)');
   hud();
 }
 
@@ -303,7 +324,7 @@ function reset() {
   startEq = equity(); done = false;
   tickAt = performance.now(); newRegime(tickAt);
   $('over').classList.remove('show');
-  showInfo(false);
+  hideCards();
   hud();
 }
 
@@ -312,10 +333,10 @@ function finish() {
   done = true;
   const eq = equity(), bh = hold(), diff = eq / bh - 1;
   const tie = Math.abs(diff) < 0.0005;   // не торговали вовсе — счёт сходится ровно
-  $('verdict').textContent = tie ? 'Сыграли вровень с «купи и держи»'
-    : diff > 0 ? 'Обогнали «купи и держи»' : 'Отстали от «купи и держи»';
+  $('verdict').textContent = tie ? 'Dead even with buy & hold'
+    : diff > 0 ? 'You beat buy & hold' : 'Buy & hold beat you';
   $('verdict').style.color = tie ? 'var(--fg)' : diff > 0 ? 'var(--up)' : 'var(--down)';
-  $('result').textContent = 'История кончилась. ' + money(eq) + ' против ' + money(bh)
+  $('result').textContent = 'History ran out. ' + money(eq) + ' vs ' + money(bh)
     + (tie ? '' : ' — ' + (diff < 0 ? '' : '+') + (diff * 100).toFixed(1) + '%');
   $('over').classList.add('show');
   hud();
@@ -335,13 +356,14 @@ function hud() {
   $('equity').style.color = eq < startEq ? 'var(--down)' : 'var(--up)';
   // сколько было бы, если бы стартовый капитал просто лежал в акциях и его не трогали
   $('hold').textContent = money(hold());
-  $('hint').textContent = series ? stamp(ts) : 'выдуманная бумага';
+  $('hint').textContent = series ? stamp(ts) : 'simulated stock';
 
-  const cost = LOT * price;              // цену лота пишем на кнопке: видно, почему она гаснет
-  $('buy').textContent = 'Купить 10 · ' + money(cost);
-  $('sell').textContent = 'Продать 10 · ' + money(cost);
-  $('buy').classList.toggle('off', frozen() || cash < cost);
-  $('sell').classList.toggle('off', frozen() || shares < LOT);
+  // в режиме лота цену лота пишем на кнопке: видно, почему она гаснет
+  const cost = LOT * price, least = maxMode ? 1 : LOT;
+  $('buy').textContent = maxMode ? 'Buy' : 'Buy 10 · ' + money(cost);
+  $('sell').textContent = maxMode ? 'Sell' : 'Sell 10 · ' + money(cost);
+  $('buy').classList.toggle('off', frozen() || cash < least * price);
+  $('sell').classList.toggle('off', frozen() || shares < least);
 }
 
 function resize() {
@@ -397,7 +419,7 @@ function draw(f) {
       mark(x0 + dx * i, step < 12 ? MONTHS[c % 12] + ' ' + (1970 + (c / 12 | 0)) : String(1970 + (c / 12 | 0)));
     }
   } else {
-    for (let i = POINTS - 1 - 100; i > 0; i -= 100) mark(x0 + dx * i, '−' + (POINTS - 1 - i) * TICK / 1000 + ' с');
+    for (let i = POINTS - 1 - 100; i > 0; i -= 100) mark(x0 + dx * i, '−' + (POINTS - 1 - i) * TICK / 1000 + 's');
   }
 
   const up = price >= hist[head];               // hist[head] — самая старая точка
@@ -474,7 +496,7 @@ function buildPeriods() {
   mSel.hidden = true;
   ySel.textContent = '';
   if (!series) return;
-  ySel.add(new Option('год', -1));      // свёрнутый селектор — это же подпись «год не выбран»
+  ySel.add(new Option('year', -1));      // свёрнутый селектор — это же подпись «год не выбран»
   for (let i = 0, t = src.t0, m = -1, y = 0; i < series.length; t += (src.dh[i] || 0) * 3600, i++) {
     if (i < POINTS) continue;
     const d = new Date(t * 1000);
@@ -486,7 +508,7 @@ function buildPeriods() {
   ySel.value = -1;
 }
 
-sel.add(new Option('Выдуманная', SIM));
+sel.add(new Option('Simulated', SIM));
 for (const k in TICKERS) sel.add(new Option(TICKERS[k] === k ? k : TICKERS[k] + ' · ' + k, k));
 srcKey = TICKERS[DEFAULT] ? DEFAULT : SIM;
 sel.value = srcKey;
@@ -503,10 +525,22 @@ ySel.onchange = () => {
   reset();
 };
 mSel.onchange = () => { startAt = +mSel.value; reset(); };
-const info = $('info');
-function showInfo(on) { info.hidden = !on; paused = on; tickAt = performance.now(); }
-$('what').onclick = () => showInfo(true);
-info.onclick = () => showInfo(false);
+const info = $('info'), setup = $('setup');
+// пока открыта любая карточка, время стоит; tickAt сбрасываем, чтобы не было залпа тиков
+function show(el) { el.hidden = false; paused = true; tickAt = performance.now(); }
+function hideCards() { info.hidden = setup.hidden = true; paused = false; tickAt = performance.now(); }
+$('what').onclick = () => show(info);
+$('gear').onclick = () => {
+  for (const b of setup.querySelectorAll('[data-size]'))
+    b.classList.toggle('on', (b.dataset.size === 'max') === maxMode);
+  show(setup);
+};
+info.onclick = hideCards;
+setup.onclick = e => {                 // выбор применяем и тут же закрываем — как и тап мимо
+  const b = e.target.closest('[data-size]');
+  if (b) { maxMode = b.dataset.size === 'max'; hud(); }
+  hideCards();
+};
 
 $('buy').onclick = buy;
 $('sell').onclick = sell;
