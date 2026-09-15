@@ -26,7 +26,22 @@ const YAHOO = [
   ['GME', 'GameStop', 'GME'],
   ['KO', 'Coca-Cola', 'KO'],
   ['BTC', 'Bitcoin', 'BTC-USD'],
+  // «американские горки»: взлетели, обвалились, годами стояли в боковике, снова взлетели
+  ['CSCO', 'Cisco', 'CSCO'],
+  ['AMD', 'AMD', 'AMD'],
+  ['MU', 'Micron', 'MU'],
+  ['GE', 'General Electric', 'GE'],
+  ['F', 'Ford', 'F'],
+  // товары: ключ читаемый, символ — непрерывный фьючерс Yahoo
+  ['GOLD', 'Золото', 'GC=F'],
+  ['SILVER', 'Серебро', 'SI=F'],
+  ['BRENT', 'Нефть', 'BZ=F'],
+  ['COPPER', 'Медь', 'HG=F'],
 ];
+
+// Отбраковано намеренно:
+//   CL=F (WTI) — 20 апреля 2020 расчётная цена ушла в минус, лог-доходность не считается;
+//   PL=F, NG=F — в непрерывном ряду видны склейки контрактов: скачок на треть и назад за день.
 
 // MOEX ISS: дневные свечи, открытый API без ключа
 const MOEX = [
@@ -43,12 +58,12 @@ async function json(url, headers) {
 // обе функции возвращают { cur, rows: [[время, закрытие], ...] }
 async function yahoo(symbol) {
   // именно period1/period2: с range=max Yahoo молча отдаёт месячные бары вместо дневных
-  const u = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
+  const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
           + `?period1=${Date.parse(FROM) / 1000}&period2=${Math.floor(Date.now() / 1000)}&interval=1d`;
   const r = (await json(u, UA)).chart.result[0];
   const close = r.indicators.quote[0].close, off = r.meta.gmtoffset || 0;
   const rows = [];
-  for (let i = 0; i < close.length; i++) if (close[i] != null) rows.push([r.timestamp[i] + off, close[i]]);
+  for (let i = 0; i < close.length; i++) if (close[i] > 0) rows.push([r.timestamp[i] + off, close[i]]);
   return { cur: SIGN[r.meta.currency] || r.meta.currency, rows };
 }
 

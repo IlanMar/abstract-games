@@ -36,10 +36,16 @@
     width: 26px; padding: 5px 0; border: 1px solid var(--line); border-radius: 8px;
     background: var(--panel); color: var(--dim); font: 600 12px/1 inherit;
   }
+  /* справка — подложка во весь экран: тап в любом месте закрывает */
   #info {
-    position: absolute; z-index: 2; top: 10px; left: 10px; right: 10px;
+    position: fixed; inset: 0; z-index: 3; display: flex; align-items: center;
+    padding: 16px; background: rgba(14,17,22,.55); cursor: pointer;
+  }
+  #info[hidden] { display: none }   /* иначе display:flex по id перебьёт скрытие */
+  #info .card {
+    width: 100%; max-width: 420px; margin: 0 auto;
     padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
-    background: var(--panel); font-size: 13px; line-height: 1.45; cursor: pointer;
+    background: var(--panel); font-size: 13px; line-height: 1.45;
   }
   #info p + p { margin-top: 8px }
   #info .dim { color: var(--dim) }
@@ -67,13 +73,15 @@
   button:active:not(.off) { transform: translateY(1px) }
   #buy { background: var(--up) } #sell { background: var(--down) }
   #over {
-    position: absolute; inset: 0; display: none; flex-direction: column; gap: 14px;
-    align-items: center; justify-content: center; text-align: center;
-    background: rgba(14,17,22,.92);
+    position: absolute; z-index: 1; left: 10px; right: 10px; bottom: 10px;
+    display: none; flex-direction: column; gap: 10px; align-items: center; text-align: center;
+    padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+    background: rgba(22,27,34,.96);
   }
   #over.show { display: flex }
-  #over h1 { font-size: 22px; color: var(--down) }
-  #restart { background: var(--panel); border: 1px solid var(--line); padding: 14px 26px }
+  #over h1 { font-size: 17px }
+  #over p { font-size: 13px; color: var(--dim) }
+  #restart { background: var(--panel); border: 1px solid var(--line); padding: 10px 22px; font: 600 14px/1 inherit }
 </style>
 </head>
 <body>
@@ -94,7 +102,7 @@
   </div>
   <div class="stats">
     <div>Кэш<b id="cash">$0</b></div>
-    <div>Акции<b id="shares">100</b></div>
+    <div>Позиция<b id="shares">100</b></div>
     <div>Капитал<b id="equity">$1000</b></div>
     <div>Купи и держи<b id="hold">$1000</b></div>
   </div>
@@ -102,15 +110,8 @@
 
 <main>
   <canvas id="c"></canvas>
-  <div id="info" hidden>
-    <p><b>Настоящая биржа.</b> Один тик — один торговый день из истории выбранной бумаги.</p>
-    <p><b>Две кнопки.</b> Купить или продать 10 акций.</p>
-    <p><b>Цель — обогнать «купи и держи».</b> Столбец в шапке показывает, сколько было бы,
-       если бы вы просто держали стартовые акции и не торговали вовсе.</p>
-    <p class="dim">Нажмите, чтобы закрыть. Пока открыто — время стоит.</p>
-  </div>
   <div id="over">
-    <h1 id="verdict">Банкрот</h1>
+    <h1 id="verdict"></h1>
     <p id="result"></p>
     <button id="restart">Начать заново</button>
   </div>
@@ -120,6 +121,17 @@
   <button id="buy">Купить 10</button>
   <button id="sell">Продать 10</button>
 </footer>
+
+<div id="info" hidden>
+  <div class="card">
+    <p><b>Настоящая биржа.</b> Один тик — один торговый день из истории выбранной бумаги.</p>
+    <p><b>Две кнопки.</b> Купить или продать — всегда ровно 10 штук.</p>
+    <p><b>Цель — обогнать «купи и держи»:</b> столбец в шапке показывает, сколько было бы,
+       если просто держать стартовую позицию и не торговать вовсе. Проиграть нельзя —
+       партия кончается вместе с историей бумаги.</p>
+    <p class="dim">Нажмите в любом месте, чтобы закрыть. Пока открыто — время стоит.</p>
+  </div>
+</div>
 
 <script src="data/index.js"></script>
 <script>
@@ -131,7 +143,6 @@ const POINTS = 600;    // точек в окне графика (= 60 секун
 const LOT    = 10;     // акций в одной сделке
 const START  = { price: 10, cash: 1000, shares: 0 };    // выдуманная бумага: денег дали, акций нет
 const REAL   = { cash: 0, shares: 100 };               // настоящая: наоборот, сто акций и ноль денег
-const RUIN   = 0.1;    // банкротство, если осталась десятая часть стартового капитала
 
 // --- модель случайного рынка ----------------------------------------------
 const SIGMA = 0.003;   // волатильность за тик (в лог-доходности)
@@ -150,7 +161,7 @@ const cv = $('c'), ctx = cv.getContext('2d');
 const hist = new Float32Array(POINTS);    // кольцевой буфер котировок
 const months = new Uint16Array(POINTS);  // и код месяца каждого бара: (год - 1970) * 12 + месяц
 
-let head = 0, price, cash, shares, avg, peak, dead;
+let head = 0, price, cash, shares, avg;
 let drift, regimeEnd, tickAt;
 let srcKey = SIM, src = null, series = null, idx = 0, ts = 0;
 let startAt = -1;                          // -1 — начинать со случайного места истории
@@ -159,6 +170,7 @@ let base = START.price, startEq = 0;
 let cur = '$';                         // валюта бумаги, она же валюта счёта
 let cents = false;                     // на старой истории цены центовые — печатаем копейки
 let paused = false;                    // пока открыта справка, время стоит
+let done = false;                      // история кончилась — партия замерла на последнем баре
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- рынок ----------------------------------------------------------------
@@ -193,6 +205,8 @@ const stamp = sec => {                 // время хранится в час�
 };
 
 const equity = () => cash + shares * price;
+const hold = () => startEq * price * factor / base;   // столько было бы, если не торговать вовсе
+const frozen = () => done || paused;
 
 function simReturn(now) {              // тренд + возврат к среднему + случайный шок
   if (now >= regimeEnd) newRegime(now);
@@ -200,8 +214,7 @@ function simReturn(now) {              // тренд + возврат к сре�
 }
 
 function realReturn() {                // следующий бар реальной истории
-  const prev = series[idx];
-  if (++idx === series.length) { idx = 0; ts = src.t0; return 0; }   // круг: цену не рвём
+  const prev = series[idx++];
   ts += src.dh[idx - 1] * 3600;
   return Math.log(series[idx] / prev);
 }
@@ -217,6 +230,7 @@ function rescale(k) {
 }
 
 function step(now) {
+  if (series && idx === series.length - 1) return finish();   // дальше истории нет
   price *= Math.exp(series ? realReturn() : simReturn(now));
   hist[head] = price;
   if (series) months[head] = monthOf(ts);
@@ -225,16 +239,12 @@ function step(now) {
     if (price > base * 2) rescale(2);
     else if (price < base / 2) rescale(0.5);
   }
-
-  const eq = equity();
-  if (eq > peak) peak = eq;
-  if (eq < startEq * RUIN || (!shares && cash < LOT * price)) gameOver();
 }
 
 // --- сделки ---------------------------------------------------------------
 function buy() {
   const cost = LOT * price;
-  if (dead || cash < cost) return;
+  if (frozen() || cash < cost) return;
   avg = (avg * shares + cost) / (shares + LOT);
   cash -= cost; shares += LOT;
   pop($('buy'), 'buy ' + LOT, 'var(--up)');
@@ -242,7 +252,7 @@ function buy() {
 }
 
 function sell() {
-  if (dead || shares < LOT) return;
+  if (frozen() || shares < LOT) return;
   cash += LOT * price; shares -= LOT;
   pop($('sell'), 'sell ' + LOT, 'var(--down)');
   hud();
@@ -290,17 +300,21 @@ function reset() {
   head = 0;
   avg = price;
   cents = base < 2;                    // Apple в 1993-м стоила 33 цента, лот — три доллара с копейками
-  peak = startEq = equity(); dead = false;
+  startEq = equity(); done = false;
   tickAt = performance.now(); newRegime(tickAt);
   $('over').classList.remove('show');
   showInfo(false);
   hud();
 }
 
-function gameOver() {
-  dead = true;
-  $('verdict').textContent = equity() < startEq * RUIN ? 'Банкрот' : 'Не на что торговать';
-  $('result').textContent = 'Результат: ' + money(peak);
+// история кончилась: всё замирает на последнем баре, итог — счёт против «купи и держи»
+function finish() {
+  done = true;
+  const eq = equity(), bh = hold(), win = eq >= bh;
+  $('verdict').textContent = win ? 'Обогнали «купи и держи»' : 'Отстали от «купи и держи»';
+  $('verdict').style.color = win ? 'var(--up)' : 'var(--down)';
+  $('result').textContent = 'История кончилась. ' + money(eq) + ' против ' + money(bh)
+    + ' — ' + (eq < bh ? '' : '+') + ((eq / bh - 1) * 100).toFixed(1) + '%';
   $('over').classList.add('show');
   hud();
 }
@@ -318,14 +332,14 @@ function hud() {
   $('equity').textContent = money(eq);
   $('equity').style.color = eq < startEq ? 'var(--down)' : 'var(--up)';
   // сколько было бы, если бы стартовый капитал просто лежал в акциях и его не трогали
-  $('hold').textContent = money(startEq * mult);
+  $('hold').textContent = money(hold());
   $('hint').textContent = series ? stamp(ts) : 'выдуманная бумага';
 
   const cost = LOT * price;              // цену лота пишем на кнопке: видно, почему она гаснет
   $('buy').textContent = 'Купить 10 · ' + money(cost);
   $('sell').textContent = 'Продать 10 · ' + money(cost);
-  $('buy').classList.toggle('off', dead || cash < cost);
-  $('sell').classList.toggle('off', dead || shares < LOT);
+  $('buy').classList.toggle('off', frozen() || cash < cost);
+  $('sell').classList.toggle('off', frozen() || shares < LOT);
 }
 
 function resize() {
@@ -421,14 +435,14 @@ function mark(x, text) {                 // вертикальная риска 
 }
 
 function frame(now) {
-  if (!dead && !paused) {
+  if (!frozen()) {
     if (now - tickAt > 1000) tickAt = now - TICK;   // вкладка была свёрнута — не догоняем
     let ticks = 0;
-    while (now - tickAt >= TICK && !dead) { tickAt += TICK; step(now); ticks++; }
+    while (now - tickAt >= TICK && !done) { tickAt += TICK; step(now); ticks++; }
     if (ticks) hud();
   }
-  // доля тика: пока идёт партия — плавный ход, на паузе и после проигрыша — стоп-кадр
-  draw(dead || paused ? 1 : (now - tickAt) / TICK);
+  // доля тика: пока идёт партия — плавный ход, на паузе и в конце истории — стоп-кадр
+  draw(frozen() ? 1 : (now - tickAt) / TICK);
   requestAnimationFrame(frame);
 }
 
@@ -471,7 +485,7 @@ function buildPeriods() {
 }
 
 sel.add(new Option('Выдуманная', SIM));
-for (const k in TICKERS) sel.add(new Option(TICKERS[k] + ' · ' + k, k));
+for (const k in TICKERS) sel.add(new Option(TICKERS[k] === k ? k : TICKERS[k] + ' · ' + k, k));
 srcKey = TICKERS[DEFAULT] ? DEFAULT : SIM;
 sel.value = srcKey;
 sel.onchange = () => {
@@ -489,7 +503,7 @@ ySel.onchange = () => {
 mSel.onchange = () => { startAt = +mSel.value; reset(); };
 const info = $('info');
 function showInfo(on) { info.hidden = !on; paused = on; tickAt = performance.now(); }
-$('what').onclick = () => showInfo(info.hidden);
+$('what').onclick = () => showInfo(true);
 info.onclick = () => showInfo(false);
 
 $('buy').onclick = buy;
