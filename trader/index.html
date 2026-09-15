@@ -310,11 +310,13 @@ function reset() {
 // история кончилась: всё замирает на последнем баре, итог — счёт против «купи и держи»
 function finish() {
   done = true;
-  const eq = equity(), bh = hold(), win = eq >= bh;
-  $('verdict').textContent = win ? 'Обогнали «купи и держи»' : 'Отстали от «купи и держи»';
-  $('verdict').style.color = win ? 'var(--up)' : 'var(--down)';
+  const eq = equity(), bh = hold(), diff = eq / bh - 1;
+  const tie = Math.abs(diff) < 0.0005;   // не торговали вовсе — счёт сходится ровно
+  $('verdict').textContent = tie ? 'Сыграли вровень с «купи и держи»'
+    : diff > 0 ? 'Обогнали «купи и держи»' : 'Отстали от «купи и держи»';
+  $('verdict').style.color = tie ? 'var(--fg)' : diff > 0 ? 'var(--up)' : 'var(--down)';
   $('result').textContent = 'История кончилась. ' + money(eq) + ' против ' + money(bh)
-    + ' — ' + (eq < bh ? '' : '+') + ((eq / bh - 1) * 100).toFixed(1) + '%';
+    + (tie ? '' : ' — ' + (diff < 0 ? '' : '+') + (diff * 100).toFixed(1) + '%');
   $('over').classList.add('show');
   hud();
 }
