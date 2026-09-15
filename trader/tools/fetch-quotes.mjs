@@ -7,7 +7,7 @@
 //                           dh:  [часов до следующего бара] }
 // Файлы грузятся по требованию, поэтому глубокая история не утяжеляет старт игры.
 // Время сдвинуто к часовому поясу биржи, чтобы в игре его можно было печатать как есть.
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const DIR = fileURLToPath(new URL('../data/', import.meta.url));   // рядом с игрой, а не с cwd
@@ -32,6 +32,10 @@ const YAHOO = [
   ['MU', 'Micron', 'MU'],
   ['GE', 'General Electric', 'GE'],
   ['F', 'Ford', 'F'],
+  // были дорогими, а последние полтора десятилетия лежат дёшево: пик давно позади
+  ['XRX', 'Xerox', 'XRX'],
+  ['NOK', 'Nokia', 'NOK'],
+  ['C', 'Citigroup', 'C'],
   // товары: ключ читаемый, символ — непрерывный фьючерс Yahoo
   ['GOLD', 'Gold', 'GC=F'],
   ['SILVER', 'Silver', 'SI=F'],
@@ -41,7 +45,9 @@ const YAHOO = [
 
 // Отбраковано намеренно:
 //   CL=F (WTI) — 20 апреля 2020 расчётная цена ушла в минус, лог-доходность не считается;
-//   PL=F, NG=F — в непрерывном ряду видны склейки контрактов: скачок на треть и назад за день.
+//   PL=F, NG=F — в непрерывном ряду видны склейки контрактов: скачок на треть и назад за день;
+//   SIRI — 6 января 1995 цена ровно удваивается (20.00 -> 40.00), то есть сплит не учтён;
+//   WBA, GPS — Yahoo больше не отдаёт эти символы («may be delisted»).
 
 // MOEX ISS: дневные свечи, открытый API без ключа
 const MOEX = [
@@ -91,17 +97,25 @@ function pack({ cur, rows }) {
 const names = {};
 mkdirSync(DIR, { recursive: true });
 
+// Одна упавшая бумага не должна ронять весь прогон: иначе индекс не допишется и разъедется
+// с файлами на диске. Если бумага не скачалась, но файл с прошлого раза есть, оставляем его.
 for (const [key, name, symbol] of [...YAHOO, ...MOEX]) {
-  const q = pack(symbol ? await yahoo(symbol) : await moex(key));
-  names[key] = name;
-  writeFileSync(`${DIR}${key}.js`, `window.QUOTES.${key} = ${JSON.stringify(q)};\n`);
+  try {
+    const q = pack(symbol ? await yahoo(symbol) : await moex(key));
+    writeFileSync(`${DIR}${key}.js`, `window.QUOTES.${key} = ${JSON.stringify(q)};
+`);
 
-  // на глаза: глубина истории и самый резкий день — так видно склейки и битые бары
-  let jump = 0;
-  for (let i = 1; i < q.c.length; i++) jump = Math.max(jump, Math.abs(Math.log(q.c[i] / q.c[i - 1])));
-  console.log(key.padEnd(6), q.cur, String(q.c.length).padStart(5), 'баров с',
-              new Date(q.t0 * 1000).toISOString().slice(0, 10),
-              '· самый резкий день', (Math.expm1(jump) * 100).toFixed(0) + '%');
+    // на глаза: глубина истории и самый резкий день — так видно склейки и битые бары
+    let jump = 0;
+    for (let i = 1; i < q.c.length; i++) jump = Math.max(jump, Math.abs(Math.log(q.c[i] / q.c[i - 1])));
+    console.log(key.padEnd(6), q.cur, String(q.c.length).padStart(5), 'баров с',
+                new Date(q.t0 * 1000).toISOString().slice(0, 10),
+                '· самый резкий день', (Math.expm1(jump) * 100).toFixed(0) + '%');
+  } catch (e) {
+    if (!existsSync(`${DIR}${key}.js`)) { console.log(key.padEnd(6), '!! не скачалась, файла нет:', e.message); continue; }
+    console.log(key.padEnd(6), '!! не скачалась, оставлен прежний файл:', e.message);
+  }
+  names[key] = name;
 }
 
 writeFileSync(DIR + 'index.js', 'window.QUOTES = {};\nwindow.TICKERS = ' + JSON.stringify(names) + ';\n');
