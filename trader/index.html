@@ -125,8 +125,8 @@
 </main>
 
 <footer>
-  <button id="buy">Buy 10</button>
-  <button id="sell">Sell 10</button>
+  <button id="buy">Buy</button>
+  <button id="sell">Sell</button>
 </footer>
 
 <div id="info" hidden>
@@ -187,7 +187,7 @@ let cur = '$';                         // валюта бумаги, она же
 let cents = false;                     // на старой истории цены центовые — печатаем копейки
 let paused = false;                    // пока открыта справка, время стоит
 let done = false;                      // история кончилась — партия замерла на последнем баре
-let maxMode = false;                   // за одно нажатие: ровно LOT или сколько влезет
+let maxMode = true;                    // за одно нажатие: сколько влезет или ровно LOT
 let W = 0, H = 0, PW = 0, upFill, downFill;
 
 // --- рынок ----------------------------------------------------------------
