@@ -75,24 +75,12 @@
         margin-top: 32px;
       }
       .group-head {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 12px;
         margin: 0 3px 11px;
-      }
-      .group-head h2 {
-        margin: 0;
         color: var(--sand);
         font-size: 12px;
         font-weight: 750;
         letter-spacing: 0.12em;
         text-transform: uppercase;
-      }
-      .group-count {
-        color: #82908d;
-        font-size: 12px;
-        font-variant-numeric: tabular-nums;
       }
       .cards {
         display: grid;
@@ -314,8 +302,6 @@
           name: "Атрейдесы",
           en: "Atreides",
           group: "base",
-          color: "#9cbd65",
-          glyph: "A",
           stop: [
             [
               "Торги",
@@ -335,8 +321,6 @@
           name: "Бене Гессерит",
           en: "Bene Gesserit",
           group: "base",
-          color: "#6aa9ce",
-          glyph: "Б",
           stop: [
             ["Предсказание", "Не действует."],
             ["Духовные наставницы", "Не может бесплатно высадить 1 отряд."],
@@ -358,8 +342,6 @@
           name: "Император",
           en: "Emperor",
           group: "base",
-          color: "#da785c",
-          glyph: "И",
           stop: [
             ["Торги", "Плата уходит в Банк Пряности."],
             ["Сардаукары", "Считаются как один обычный отряд."],
@@ -371,8 +353,6 @@
           name: "Фримены",
           en: "Fremen",
           group: "base",
-          color: "#e6b654",
-          glyph: "Ф",
           stop: [
             ["Передвижение", "Может передвинуться только на одну территорию."],
             ["Шай-Хулуд", "Отряды погибают."],
@@ -397,8 +377,6 @@
           name: "Харконнены",
           en: "Harkonnen",
           group: "base",
-          color: "#d8d9d5",
-          glyph: "Х",
           stop: [
             ["Предатели", "Не действует."],
             [
@@ -415,8 +393,6 @@
           name: "Гильдия",
           en: "Spacing Guild",
           group: "base",
-          color: "#e89650",
-          glyph: "Г",
           stop: [
             [
               "Три вида перевозок",
@@ -434,8 +410,6 @@
           name: "Иксианцы",
           en: "Ixians",
           group: "ix",
-          color: "#a5bd82",
-          glyph: "ИК",
           stop: [
             [
               "Движение киборгов и субоидов",
@@ -462,8 +436,6 @@
           name: "Тлейлаксу",
           en: "Bene Tleilaxu",
           group: "ix",
-          color: "#b78ad9",
-          glyph: "Т",
           stop: [
             [
               "Лицевые танцоры",
@@ -483,8 +455,6 @@
           name: "КООАМ",
           en: "CHOAM",
           group: "choam",
-          color: "#df6462",
-          glyph: "К",
           stop: [
             [
               "Благотворительность",
@@ -513,8 +483,6 @@
           name: "Ричес",
           en: "Richese",
           group: "choam",
-          color: "#d5cbb1",
-          glyph: "Р",
           stop: [
             [
               "Торги",
@@ -534,8 +502,6 @@
           name: "Эказ",
           en: "Ecaz",
           group: "ecaz",
-          color: "#bd91b8",
-          glyph: "Э",
           stop: [
             ["Послы", "В этом ходу не может размещать послов."],
             [
@@ -556,8 +522,6 @@
           name: "Моритани",
           en: "Moritani",
           group: "ecaz",
-          color: "#83c1d1",
-          glyph: "М",
           stop: [
             ["Террор", "Не может разместить или передвинуть жетон террора."],
             [
@@ -672,8 +636,7 @@
         .map(([id, title]) => {
           const members = factions.filter((faction) => faction.group === id);
           return `<section class="group" aria-labelledby="group-${id}">
-          <div class="group-head"><h2 id="group-${id}">${escapeHTML(title)}</h2>
-            <span class="group-count">${members.length}</span></div>
+          <h2 class="group-head" id="group-${id}">${escapeHTML(title)}</h2>
           <div class="cards">${members.map(card).join("")}</div>
         </section>`;
         })
@@ -691,7 +654,9 @@
 
       function updateAddress(preferredId) {
         const openCards = [...groupsElement.querySelectorAll(".card.is-open")];
-        const id = preferredId || openCards[openCards.length - 1]?.dataset.id;
+        const currentId = location.hash.slice(1);
+        const id = preferredId || (openCards.some((card) => card.dataset.id === currentId)
+          ? currentId : openCards[openCards.length - 1]?.dataset.id);
         const url = id ? `#${id}` : location.href.split("#")[0];
         try {
           history.replaceState(null, "", url);
