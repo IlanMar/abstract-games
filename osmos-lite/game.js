@@ -251,45 +251,48 @@ function reset() {
 }
 
 // ============================================================================
-// Звук. Ни одного файла — всё синтезирует Web Audio на лету. Чтобы не пищало, тоны
-// мягкие: синус с плавной атакой, верх срезан фильтром, у всего общий «водяной» хвост
-// (реверберация из затухающего шума). Ноты поглощения — из минорной пентатоники, так
-// что любые подряд звучат созвучно. Браузеры (особенно iOS Safari) дают включить звук
-// только по жесту — контекст создаётся на первом касании.
+// Звук. Ни одного файла — всё синтезирует Web Audio на лету. Мягкость держится на трёх
+// вещах: 1) атака — плавный линейный подъём 20–400 мс, без удара в начале (резкость
+// была именно в нём); 2) только синусы, ниже 1 кГц и под фильтром — ни шума, ни
+// обертонов; 3) общий длинный тёмный хвост — звук растворяется, как в толще воды.
+// Ноты поглощения — из минорной пентатоники, в тон фоновому аккорду A–E. Браузеры
+// (особенно iOS Safari) дают включить звук только по жесту — контекст создаётся на
+// первом касании.
 // ============================================================================
 
 const Sound = (() => {
-  const PENTA = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];   // полутона от A3: A C D E G …
-  const AMB_LEVEL = 0.05;                                 // фон — на пороге слышимости
+  const PENTA = [0, 3, 5, 7, 10, 12];                     // полутона от A3: A C D E G A
+  const AMB_LEVEL = 0.04;                                 // фон — на пороге слышимости
   let ac = null, out = null, wet = null, noise = null, amb = null;
-  let lastEat = -1, bubbleT = 2;
+  let lastEat = -1, bubbleT = 3;
 
   function init() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
     try { ac = new AC(); } catch (e) { return false; }
-    // Общий выход через мягкий компрессор: очередь капель и каскад поглощений не хрипят
+    // Общий выход через бережный компрессор: очередь капель не складывается в гул
     const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4;
-    comp.attack.value = 0.005; comp.release.value = 0.25;
+    comp.threshold.value = -24; comp.knee.value = 18; comp.ratio.value = 3;
+    comp.attack.value = 0.01; comp.release.value = 0.4;
     comp.connect(ac.destination);
-    out = ac.createGain(); out.gain.value = 0.8; out.connect(comp);
+    out = ac.createGain(); out.gain.value = 0.6; out.connect(comp);
 
-    // Хвост: 1.8 с затухающего шума с приглушённым верхом — звучит как толща воды
-    const sr = ac.sampleRate, len = Math.round(sr * 1.8), ir = ac.createBuffer(2, len, sr);
+    // Хвост: 2.2 с тёмного затухающего шума, без щелчка в начале — толща воды
+    const sr = ac.sampleRate, len = Math.round(sr * 2.2), fade = sr * 0.02;
+    const ir = ac.createBuffer(2, len, sr);
     for (let ch = 0; ch < 2; ch++) {
       const d = ir.getChannelData(ch);
       let lp = 0;
       for (let i = 0; i < len; i++) {
-        lp += (Math.random() * 2 - 1 - lp) * 0.3;
-        d[i] = lp * Math.pow(1 - i / len, 2.6);
+        lp += (Math.random() * 2 - 1 - lp) * 0.1;          // верх срезан сильно
+        d[i] = lp * Math.min(1, i / fade) * Math.pow(1 - i / len, 2.2);
       }
     }
     const conv = ac.createConvolver(); conv.buffer = ir;
-    wet = ac.createGain(); wet.gain.value = 0.55;
+    wet = ac.createGain(); wet.gain.value = 0.9;
     wet.connect(conv); conv.connect(out);
 
-    // Секунда белого шума — для всплесков и фонового гула
+    // Секунда белого шума — для фонового гула воды
     noise = ac.createBuffer(1, sr, sr);
     const nd = noise.getChannelData(0);
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
@@ -302,16 +305,16 @@ const Sound = (() => {
   function buildAmbience() {
     amb = ac.createGain(); amb.gain.value = 0; amb.connect(out);
     const breath = ac.createGain(); breath.gain.value = 1; breath.connect(amb);
-    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 480; lp.Q.value = 0.8;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380; lp.Q.value = 0.5;
     lp.connect(breath);
-    for (const [f, v] of [[110, 0.45], [164.9, 0.3], [220.7, 0.22], [329.2, 0.07]]) {
+    for (const [f, v] of [[110, 0.45], [164.9, 0.3], [220.7, 0.2]]) {
       const o = ac.createOscillator(), g = ac.createGain();
       o.frequency.value = f; g.gain.value = v;
       o.connect(g); g.connect(lp); o.start();
     }
     const hum = ac.createBufferSource(), hlp = ac.createBiquadFilter(), hg = ac.createGain();
     hum.buffer = noise; hum.loop = true;
-    hlp.type = 'lowpass'; hlp.frequency.value = 260; hg.gain.value = 0.35;
+    hlp.type = 'lowpass'; hlp.frequency.value = 200; hg.gain.value = 0.3;
     hum.connect(hlp); hlp.connect(hg); hg.connect(breath); hum.start();
     // Две медленные волны: фильтр открывается раз в ~17 с, громкость колышется раз в ~11 с
     const lfo = (hz, depth, param) => {
@@ -319,50 +322,33 @@ const Sound = (() => {
       o.frequency.value = hz; g.gain.value = depth;
       o.connect(g); g.connect(param); o.start();
     };
-    lfo(0.06, 220, lp.frequency);
-    lfo(0.09, 0.35, breath.gain);
+    lfo(0.06, 150, lp.frequency);
+    lfo(0.09, 0.3, breath.gain);
   }
 
   const live = () => ac && CONFIG.sound && ac.state === 'running';
 
-  // Плавная атака и экспоненциальный хвост — главное, чтобы тон не «щёлкал» и не пищал
+  // Огибающая: линейный подъём за a секунд (экспонента в конце подъёма «бьёт»), потом
+  // плавное затухание — за d секунд падает до ~1% (5 постоянных времени)
   function env(g, t, peak, a, d) {
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + a);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + a);
+    g.gain.setTargetAtTime(0, t + a, d / 5);
   }
-  function route(node, send) {
-    node.connect(out);
-    if (send > 0) {
-      const s = ac.createGain(); s.gain.value = send;
-      node.connect(s); s.connect(wet);
-    }
-  }
-  // Тон, скользящий по частоте f0 → f1 за glide секунд
-  function tone(type, f0, f1, glide, peak, a, d, cutoff, send, t) {
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.type = type;
+  // Синус, скользящий по частоте f0 → f1 за glide секунд, под фильтром cutoff;
+  // send — доля в хвост
+  function tone(f0, f1, glide, peak, a, d, cutoff, send, t) {
+    const o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
     o.frequency.setValueAtTime(f0, t);
     o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+    f.type = 'lowpass'; f.frequency.value = cutoff; f.Q.value = 0.5;
     env(g, t, peak, a, d);
-    o.connect(g);
-    let node = g;
-    if (cutoff) {
-      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
-      g.connect(f); node = f;
+    o.connect(f); f.connect(g); g.connect(out);
+    if (send > 0) {
+      const s = ac.createGain(); s.gain.value = send;
+      g.connect(s); s.connect(wet);
     }
-    route(node, send);
-    o.start(t); o.stop(t + a + d + 0.05);
-  }
-  // Всплеск: шум в полосе вокруг freq
-  function splash(freq, q, peak, a, d, send, t) {
-    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
-    src.buffer = noise; src.loop = true;
-    f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
-    env(g, t, peak, a, d);
-    src.connect(f); f.connect(g);
-    route(g, send);
-    src.start(t, Math.random() * 0.8); src.stop(t + a + d + 0.05);
+    o.start(t); o.stop(t + a + d + 0.1);
   }
 
   return {
@@ -381,54 +367,51 @@ const Sound = (() => {
     },
     sleep() { if (ac) ac.suspend().catch(() => {}); },
 
-    // Выброс капли: глухое «блуп» — пузырёк, тон падает вниз. Крупная клетка — ниже
+    // Выброс капли: тихое округлое «пуф», тон чуть оседает. Крупная клетка — ниже
     eject(r) {
       if (!live()) return;
-      const t = ac.currentTime;
-      const k = clamp(Math.pow(CONFIG.playerRadius / r, 0.3), 0.45, 1.6) * (0.94 + Math.random() * 0.12);
-      tone('sine', 520 * k, 170 * k, 0.11, 0.2, 0.004, 0.15, 1500, 0.25, t);
-      splash(1100 * k, 1.4, 0.04, 0.003, 0.06, 0.15, t);
+      const k = clamp(Math.pow(CONFIG.playerRadius / r, 0.25), 0.6, 1.3) * (0.96 + Math.random() * 0.08);
+      tone(320 * k, 210 * k, 0.2, 0.07, 0.025, 0.32, 700, 0.5, ac.currentTime);   // ниже 200 Гц динамик iPhone почти не играет
     },
 
     // Игрок кого-то проглотил. frac = r жертвы / r игрока: крупная жертва — нота ниже
-    // и громче. Своя же капля — едва слышная капель
+    // и чуть громче. Своя же капля — почти неслышный вздох
     eat(frac, own) {
       if (!live()) return;
       const t = ac.currentTime;
-      if (own) { tone('sine', 900, 1400, 0.05, 0.04, 0.004, 0.08, 0, 0.4, t); return; }
-      if (t - lastEat < 0.05) return;                     // каскад — не больше 20 нот в секунду
+      if (own) { tone(520, 560, 0.1, 0.015, 0.03, 0.2, 900, 0.6, t); return; }
+      if (t - lastEat < 0.08) return;                     // каскад — не чаще 12 нот в секунду
       lastEat = t;
-      const f = 220 * Math.pow(2, PENTA[Math.round((1 - clamp(frac, 0, 1)) * (PENTA.length - 1))] / 12);
-      const peak = 0.12 + 0.14 * clamp(frac, 0, 1);
-      tone('sine', f * 0.82, f, 0.07, peak, 0.012, 0.75, 2400, 0.55, t);          // «глоп» с подъёмом
-      tone('triangle', f * 2, f * 2, 0.01, peak * 0.18, 0.02, 0.45, 1800, 0.7, t); // обертон
-      tone('sine', f * 2.5, f * 3.6, 0.05, peak * 0.25, 0.004, 0.07, 0, 0.5, t + 0.03); // пузырёк
+      frac = clamp(frac, 0, 1);
+      const f = 220 * Math.pow(2, PENTA[Math.round((1 - frac) * (PENTA.length - 1))] / 12);
+      const peak = 0.05 + 0.06 * frac;
+      tone(f * 0.97, f, 0.12, peak, 0.04, 1.4, 1200, 0.8, t);            // сама нота
+      tone(f * 0.5, f * 0.5, 0.01, peak * 0.4, 0.07, 1.1, 600, 0.6, t);  // тёплая октава ниже
     },
 
-    // Игрока поглотили: низкий тон уходит вниз, под ним глухой гул
+    // Игрока поглотили: медленный низкий выдох, уходящий вниз
     death() {
       if (!live()) return;
       const t = ac.currentTime;
-      tone('sine', 196, 49, 1.8, 0.3, 0.05, 2.2, 700, 0.7, t);
-      tone('triangle', 98, 37, 2, 0.07, 0.1, 2, 400, 0.6, t);
-      splash(280, 0.7, 0.1, 0.35, 1.5, 0.6, t);
+      tone(196, 65, 2.5, 0.1, 0.4, 2.6, 500, 0.8, t);
+      tone(98, 49, 2.5, 0.05, 0.5, 2.4, 300, 0.6, t);
     },
 
     // Новая жизнь: тихое восходящее A–E–A
     rebirth() {
       if (!live()) return;
       const t = ac.currentTime;
-      [220, 329.6, 440].forEach((f, i) => tone('sine', f * 0.9, f, 0.06, 0.08, 0.015, 0.7, 2000, 0.6, t + i * 0.09));
+      [220, 329.6, 440].forEach((f, i) => tone(f, f, 0.01, 0.045, 0.08, 1.2, 1500, 0.9, t + i * 0.14));
     },
 
-    // Изредка где-то вдалеке лопается пузырёк — почти один только хвост
+    // Изредка где-то вдалеке всплывает пузырёк — почти один только хвост
     tick(dt) {
       if (!live() || !CONFIG.ambience) return;
       bubbleT -= dt;
       if (bubbleT > 0) return;
-      bubbleT = 1.5 + Math.random() * 4;
-      const f = 500 + Math.random() * 700;
-      tone('sine', f, f * 1.7, 0.05, 0.012, 0.003, 0.07, 0, 1.2, ac.currentTime);
+      bubbleT = 2 + Math.random() * 5;
+      const f = 300 + Math.random() * 300;
+      tone(f, f * 1.15, 0.15, 0.008, 0.02, 0.2, 900, 1.5, ac.currentTime);
     },
   };
 })();
