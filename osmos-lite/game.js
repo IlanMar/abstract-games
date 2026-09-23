@@ -275,7 +275,7 @@ const Sound = (() => {
     comp.threshold.value = -24; comp.knee.value = 18; comp.ratio.value = 3;
     comp.attack.value = 0.01; comp.release.value = 0.4;
     comp.connect(ac.destination);
-    out = ac.createGain(); out.gain.value = 0.6; out.connect(comp);
+    out = ac.createGain(); out.gain.value = 0.42; out.connect(comp);   // общая громкость
 
     // Хвост: 2.2 с тёмного затухающего шума, без щелчка в начале — толща воды
     const sr = ac.sampleRate, len = Math.round(sr * 2.2), fade = sr * 0.02;
