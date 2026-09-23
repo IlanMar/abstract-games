@@ -45,8 +45,12 @@ const CONFIG = {
   steerTime: 2.5,         // с: за сколько организм возвращается к своему дрейфу после толчка
 
   // --- поглощение ---------------------------------------------------------------
-  absorbRatio: 1.12,      // во столько раз по радиусу надо быть больше, чтобы съесть
+  absorbRatio: 1.0,       // как в Osmos: кто больше хоть немного — тот и ест.
+                          // >1 — почти равные не едят друг друга, а мягко отталкиваются
+  tintRange: 1.35,        // цвет: к этому соотношению радиусов чужая клетка полностью
+                          // зелёная (меньше) или красная (больше)
   captureReach: 0.6,      // 1 — захват при касании, 0 — когда жертва целиком за мембраной
+  mergePull: 120,         // 1/с²: коснувшиеся клетки притягиваются, пока меньшая не уйдёт внутрь
   absorptionTime: 0.55,   // с: базовое время растворения (крупная жертва дольше)
 
   // --- столкновения ---------------------------------------------------------------
@@ -77,14 +81,16 @@ const CONFIG = {
   // --- шаг симуляции ----------------------------------------------------------------
   maxStep: 1 / 120,       // физика бьёт кадр на подшаги не длиннее этого
   maxFrameDt: 0.1,        // после свёрнутой вкладки кадр не длиннее этого
-  maxDPR: 2,              // iPhone с DPR 3 рисуем в 2× — разницы не видно, а кадр вдвое дешевле
+  maxDPR: 3,              // родное разрешение iPhone (DPR 3)
+  targetFps: 60,          // ниже этого среднего FPS качество само ступенчато снижается
+  perfWindow: 2,          // с: окно, по которому меряется средний кадр
 };
 
 // ============================================================================
 
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
-const cv = $('game'), ctx = cv.getContext('2d');
+const cv = $('game'), ctx = cv.getContext('2d', { alpha: false });
 const hintEl = $('hint'), overEl = $('over'), debugEl = $('debug');
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -108,7 +114,7 @@ const RGB_THREAT = [255, 118,  92];
 let W = 0, H = 0, DPR = 1;
 const cam = { x: 0, y: 0, vx: 0, vy: 0, zoom: 1, fx: 0, fy: 0, fr: CONFIG.playerRadius };
 const input = { down: false, x: 0, y: 0, held: 0, streamT: 0 };
-let cells = [], order = [], player = null;
+let cells = [], order = [], player = null, cellId = 0;
 let time = 0, dead = false, deadT = 0, spawnT = 0, shots = 0;
 let firstRun = true, debug = false, fps = 60, last = performance.now();
 
@@ -119,6 +125,7 @@ let firstRun = true, debug = false, fps = 60, last = performance.now();
 function makeCell(x, y, r, isPlayer) {
   return {
     x, y, vx: 0, vy: 0, r, m: massOf(r), isPlayer,
+    id: ++cellId, lo: 0,                // порядковый номер и левый край для sweep
     eatenBy: null, offX: 0, offY: 0, m0: 0, absorbT: 1,
     dead: false, born: isPlayer ? 1 : 0, flash: 0, tint: 0,
     wander: Math.random() * TAU, cruise: 0, ph: Math.random() * 100,
@@ -281,12 +288,12 @@ function eject(sx, sy) {
 // Слишком много клеток — убираем самые старые капли, которые никого не едят и не едомы
 function trimMotes() {
   let extra = cells.length - CONFIG.maxCells;
-  for (let i = 0; i < cells.length && extra > 0; i++) {
-    const c = cells[i];
-    if (!c.mote || c.eatenBy || cells.some(o => o.eatenBy === c)) continue;
-    cells.splice(i--, 1);
-    extra--;
-  }
+  if (extra <= 0) return;
+  const busy = new Set();
+  for (const c of cells) if (c.eatenBy) busy.add(c.eatenBy);
+  const old = cells.filter(c => c.mote && !c.eatenBy && !busy.has(c)).sort((a, b) => a.id - b.id);
+  const drop = new Set(old.slice(0, extra));
+  cells = cells.filter(c => !drop.has(c));
 }
 
 // Зажатый палец — очередь капель после короткой паузы
@@ -345,13 +352,26 @@ function capture(big, small) {
   small.absorbT = CONFIG.absorptionTime * clamp(0.35 + 1.3 * Math.sqrt(small.m / big.m), 0.35, 1.6);
 }
 
+// Sort-and-sweep: клетки лежат в массиве по левому краю, пары проверяются, только пока
+// их проекции на x перекрываются. Вместо n²/2 пар — почти линейно. Сортировка
+// вставками: от подшага к подшагу порядок почти не меняется, так что она за O(n).
 function collide(h) {
   const n = cells.length, ratio = CONFIG.absorbRatio;
+  for (let i = 0; i < n; i++) { const c = cells[i]; c.lo = c.x - c.r; }
+  for (let i = 1; i < n; i++) {
+    const c = cells[i];
+    let j = i - 1;
+    while (j >= 0 && cells[j].lo > c.lo) { cells[j + 1] = cells[j]; j--; }
+    cells[j + 1] = c;
+  }
   for (let i = 0; i < n; i++) {
     const a = cells[i];
     if (a.eatenBy) continue;
+    const hi = a.x + a.r;
     for (let j = i + 1; j < n; j++) {
       const b = cells[j];
+      if (b.lo >= hi) break;
+      if (a.eatenBy) break;
       if (b.eatenBy) continue;
       const dx = b.x - a.x, dy = b.y - a.y, rs = a.r + b.r, d2 = dx * dx + dy * dy;
       if (d2 >= rs * rs) continue;
@@ -359,9 +379,14 @@ function collide(h) {
       const big = a.r >= b.r ? a : b, small = big === a ? b : a;
 
       if (small.grace > 0 && small.parent === big) continue;   // свежая капля уходит от своей клетки
-      if (big.r >= small.r * ratio) {
+      if (big.r > small.r && big.r >= small.r * ratio) {
         // Заметно крупнее — не толкаемся, а ждём, пока жертва войдёт под мембрану
-        if (d < big.r + small.r * CONFIG.captureReach) capture(big, small);
+        if (d < big.r + small.r * CONFIG.captureReach) { capture(big, small); continue; }
+        // Коснулись, но ещё не внутри — слипаются: взаимное притяжение, импульс сохраняется
+        const Fp = CONFIG.mergePull * (rs - d) * big.m * small.m / (big.m + small.m);
+        const sx = small === b ? nx : -nx, sy = small === b ? ny : -ny;   // от меньшей к большей: −s
+        small.vx -= sx * Fp / small.m * h; small.vy -= sy * Fp / small.m * h;
+        big.vx   += sx * Fp / big.m * h;   big.vy   += sy * Fp / big.m * h;
         continue;
       }
       // Ровня: мягкая пружина с гашением, равные и противоположные силы — импульс сохраняется
@@ -556,8 +581,10 @@ function updateVisuals(dt) {
     c.flash *= Math.exp(-3 * dt);
     if (c.born < 1) c.born = Math.min(1, c.born + dt / 1.2);
     if (!c.isPlayer) {
-      const q = Math.log(c.r / pr) / Math.log(CONFIG.absorbRatio);
-      c.tint += (clamp(q, -1, 1) - c.tint) * kt;
+      // знак — съедобна или опасна, модуль — насколько; даже чуть меньшая уже заметно зелёная
+      const lq = Math.log(c.r / pr) / Math.log(CONFIG.tintRange);
+      const q = lq === 0 ? 0 : Math.sign(lq) * Math.max(0.45, Math.min(1, Math.abs(lq)));
+      c.tint += (q - c.tint) * kt;
     }
   }
 }
@@ -566,13 +593,61 @@ function updateVisuals(dt) {
 // Отрисовка
 // ============================================================================
 
+// Ступени качества. Начинаем с родного разрешения и всех эффектов; если средний кадр
+// не укладывается в targetFps, сначала упрощаются эффекты, и только потом разрешение.
+const QUALITY = [
+  { dpr: 3,   detail: 2 },
+  { dpr: 3,   detail: 1 },    // без органелл, мембрана из меньшего числа точек
+  { dpr: 2,   detail: 1 },
+  { dpr: 1.5, detail: 0 },    // и без дальних слоёв пыли
+  { dpr: 1,   detail: 0 },
+];
+const perf = { q: 0, hold: 2, sum: 0, n: 0, work: 0 };   // hold — секунды, пока не меряем
+
+function monitorPerf(rawDt) {
+  if (document.hidden || rawDt > 0.25) return;          // пауза, свёрнутая вкладка
+  if (perf.hold > 0) { perf.hold -= rawDt; perf.sum = perf.n = 0; return; }
+  perf.sum += rawDt; perf.n++;
+  if (perf.sum < CONFIG.perfWindow) return;
+  const avg = perf.sum / perf.n;
+  perf.sum = perf.n = 0;
+  if (avg > 1.12 / CONFIG.targetFps && perf.q < QUALITY.length - 1) {
+    perf.q++;
+    perf.hold = 1;
+    resize();
+  }
+}
+
+// Фон — глубина жидкости и виньетка — рисуется один раз в маленький канвас и
+// растягивается на экран: одна текстура вместо градиентов и лишних слоёв CSS
+const bg = document.createElement('canvas'), bgx = bg.getContext('2d');
+function buildBackground() {
+  const w = 192, h = Math.max(64, Math.round(w * H / Math.max(W, 1)));
+  bg.width = w; bg.height = h;
+  bgx.fillStyle = '#030509';
+  bgx.fillRect(0, 0, w, h);
+  bgx.save();
+  bgx.translate(w / 2, h * 0.42); bgx.scale(1.2 * w, 0.9 * h);
+  let g = bgx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0, '#0b1629'); g.addColorStop(0.48, '#070c18'); g.addColorStop(1, '#030509');
+  bgx.fillStyle = g; bgx.fillRect(-1, -1, 2, 2);
+  bgx.restore();
+  bgx.save();
+  bgx.translate(w / 2, h / 2); bgx.scale(w * 0.71, h * 0.71);
+  g = bgx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0.5, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
+  bgx.fillStyle = g; bgx.fillRect(-1, -1, 2, 2);
+  bgx.restore();
+}
+
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR);
+  DPR = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR, QUALITY[perf.q].dpr);
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W * DPR);
   cv.height = Math.round(H * DPR);
+  buildBackground();
 }
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => { resize(); perf.hold = 1; });
 window.addEventListener('orientationchange', () => setTimeout(resize, 50));
 
 function rnd(i, seed) {                 // детерминированный хеш -> [0,1)
@@ -590,7 +665,7 @@ const DUST = [
 ];
 
 function drawDust() {
-  for (let li = 0; li < DUST.length; li++) {
+  for (let li = QUALITY[perf.q].detail ? 0 : 2; li < DUST.length; li++) {
     const L = DUST[li], lz = Math.pow(cam.zoom, L.zp), T = L.tile;
     const ox = cam.x * L.p + time * L.dx, oy = cam.y * L.p + time * L.dy;
     const hw = W / 2 / lz, hh = H / 2 / lz;
@@ -632,9 +707,32 @@ const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a < 0 ? 0 : a
 const mix = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 const light = c => mix(c, [255, 255, 255], 0.5);
 
-function colorOf(c) {
-  if (c.isPlayer) return RGB_PLAYER;
-  return c.tint < 0 ? mix(RGB_EQUAL, RGB_FOOD, -c.tint) : mix(RGB_EQUAL, RGB_THREAT, c.tint);
+// Палитра квантуется в 33 оттенка (плюс игрок): у каждого готовые спрайты свечения и ядра.
+// drawImage готовой текстуры на GPU дешевле, чем новый радиальный градиент на каждую клетку.
+const PAL = new Map();
+function sprite(size, stops) {
+  const cnv = document.createElement('canvas');
+  cnv.width = cnv.height = size;
+  const x = cnv.getContext('2d'), g = x.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  for (const [at, color] of stops) g.addColorStop(at, color);
+  x.fillStyle = g; x.fillRect(0, 0, size, size);
+  return cnv;
+}
+function paletteOf(c) {
+  const key = c.isPlayer ? -1 : Math.round((clamp(c.tint, -1, 1) + 1) * 16);
+  let p = PAL.get(key);
+  if (!p) {
+    const t = key / 16 - 1;
+    const col = key < 0 ? RGB_PLAYER : t < 0 ? mix(RGB_EQUAL, RGB_FOOD, -t) : mix(RGB_EQUAL, RGB_THREAT, t);
+    const lc = light(col), inner = key < 0 ? 0.5 / 2.4 : 0.5 / 1.9;
+    p = {
+      col, lc,
+      glow: sprite(128, [[0, rgba(col, 1)], [inner, rgba(col, 1)], [1, rgba(col, 0)]]),
+      core: sprite(64, [[0, 'rgba(255,255,255,1)'], [0.35, rgba(lc, 0.6)], [1, rgba(col, 0)]]),
+    };
+    PAL.set(key, p);
+  }
+  return p;
 }
 
 function alphaOf(c) {
@@ -644,7 +742,8 @@ function alphaOf(c) {
 }
 
 function membrane(sr, ph) {
-  const n = clamp(Math.round(sr * 0.5), 16, 52), A = CONFIG.wobble;
+  const n = QUALITY[perf.q].detail > 1 ? clamp(Math.round(sr * 0.5), 16, 52) : clamp(Math.round(sr * 0.3), 12, 32);
+  const A = CONFIG.wobble;
   const br = sr * (1 + CONFIG.breathe * Math.sin(time * 1.6 + ph));
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
@@ -658,18 +757,14 @@ function membrane(sr, ph) {
   ctx.closePath();
 }
 
-function drawGlow(c, col, a) {
+function drawGlow(c, pal, a) {
   const R = c.sr * (c.isPlayer ? 2.4 : 1.9);
-  const ga = (c.isPlayer ? 0.22 : 0.11) * a * (1 + c.flash * 1.8);
-  const g = ctx.createRadialGradient(c.sx, c.sy, c.sr * 0.5, c.sx, c.sy, R);
-  g.addColorStop(0, rgba(col, ga));
-  g.addColorStop(1, rgba(col, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(c.sx, c.sy, R, 0, TAU); ctx.fill();
+  ctx.globalAlpha = Math.min(1, (c.isPlayer ? 0.22 : 0.11) * a * (1 + c.flash * 1.8));
+  ctx.drawImage(pal.glow, c.sx - R, c.sy - R, R * 2, R * 2);
 }
 
-function drawBody(c, col, a) {
-  const sr = c.sr, lc = light(col);
+function drawBody(c, pal, a) {
+  const sr = c.sr, col = pal.col, lc = pal.lc;
   if (sr < 2.5) {
     ctx.fillStyle = rgba(lc, 0.7 * a);
     ctx.beginPath(); ctx.arc(c.sx, c.sy, Math.max(sr, 1), 0, TAU); ctx.fill();
@@ -700,15 +795,12 @@ function drawBody(c, col, a) {
   const nx = c.sx + c.nx * z + sr * 0.06 * Math.sin(time * 0.6 + c.ph);
   const ny = c.sy + c.ny * z + sr * 0.06 * Math.cos(time * 0.47 + c.ph * 1.3);
   const nr = sr * (c.isPlayer ? 0.36 : 0.3);
-  const ng = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
-  ng.addColorStop(0,   `rgba(255,255,255,${(0.85 * a * (c.isPlayer ? 1 : 0.6)).toFixed(3)})`);
-  ng.addColorStop(0.35, rgba(lc, 0.5 * a));
-  ng.addColorStop(1,   rgba(col, 0));
-  ctx.fillStyle = ng;
-  ctx.beginPath(); ctx.arc(nx, ny, nr, 0, TAU); ctx.fill();
+  ctx.globalAlpha = a * (c.isPlayer ? 0.85 : 0.6);
+  ctx.drawImage(pal.core, nx - nr, ny - nr, nr * 2, nr * 2);
+  ctx.globalAlpha = 1;
 
   // Органеллы — только когда клетка на экране достаточно крупная
-  if (sr > 10) {
+  if (sr > 10 && QUALITY[perf.q].detail > 1) {
     ctx.fillStyle = rgba(lc, 0.32 * a);
     const os = Math.max(1, sr * 0.045);
     for (let k = 0; k < 4; k++) {
@@ -733,10 +825,12 @@ function drawCells() {
   // мелкие снизу: жертва видна сквозь полупрозрачного хищника, пока растворяется
   order = cells.slice().sort((a, b) => a.r - b.r);
 
+  const minGlow = QUALITY[perf.q].detail ? 2 : 4;
   ctx.globalCompositeOperation = 'lighter';
-  for (const c of order) if (c.vis && c.sr > 2) drawGlow(c, colorOf(c), alphaOf(c));
+  for (const c of order) if (c.vis && c.sr > minGlow) drawGlow(c, paletteOf(c), alphaOf(c));
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  for (const c of order) if (c.vis) drawBody(c, colorOf(c), alphaOf(c));
+  for (const c of order) if (c.vis) drawBody(c, paletteOf(c), alphaOf(c));
 }
 
 function drawParticles() {
@@ -766,7 +860,7 @@ function drawRipples(dt) {
 
 function render(dt) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(bg, 0, 0, W, H);        // заодно и очистка: канвас непрозрачный
   drawDust();
   drawBoundary();
   drawParticles();
@@ -793,9 +887,11 @@ function checkFinite() {
 }
 
 function frame(now) {
+  const work0 = performance.now();
   let dt = (now - last) / 1000;
   last = now;
   if (!(dt > 0)) dt = 0;
+  monitorPerf(dt);
   dt = Math.min(dt, CONFIG.maxFrameDt);
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
@@ -822,6 +918,7 @@ function frame(now) {
   }
 
   render(dt);
+  perf.work += (performance.now() - work0 - perf.work) * 0.05;
   if (debug) {
     const sp = player.dead ? 0 : Math.hypot(player.vx, player.vy);
     debugEl.textContent =
@@ -831,7 +928,9 @@ function frame(now) {
       `mass   ${(player.m / baseMass()).toFixed(2)} × start\n` +
       `radius ${player.r.toFixed(1)}\n` +
       `zoom   ${cam.zoom.toFixed(2)}\n` +
-      `cells  ${cells.length}`;
+      `cells  ${cells.length}\n` +
+      `dpr    ${DPR}  quality ${perf.q}\n` +
+      `js     ${perf.work.toFixed(2)} ms/frame`;
   }
   requestAnimationFrame(frame);
 }
