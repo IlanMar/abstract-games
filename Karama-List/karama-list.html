@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#161b1c">
+  <title>Карама — Дюна</title>
+  <style>
+    :root { color-scheme: dark; --bg:#161b1c; --surface:#222a2b; --line:#394445; --text:#f4f1e8; --muted:#a9b4b1; --sand:#e9c58c; }
+    * { box-sizing:border-box }
+    html { scroll-behavior:smooth }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-text-size-adjust:100% }
+    button { font:inherit }
+    .wrap { width:min(100%,720px); margin:auto; padding:24px 18px calc(32px + env(safe-area-inset-bottom)) }
+    .eyebrow { margin:0 0 6px; color:var(--sand); font-size:12px; font-weight:750; letter-spacing:.15em; text-transform:uppercase }
+    h1 { margin:0; font-size:clamp(28px,7vw,38px); line-height:1.15; letter-spacing:-.035em }
+    .intro { margin:10px 0 0; color:var(--muted); max-width:48ch }
+    .group-title { margin:30px 0 12px; font-size:13px; font-weight:700; color:var(--muted); letter-spacing:.09em; text-transform:uppercase }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px }
+    .faction { display:flex; align-items:center; gap:11px; min-height:74px; width:100%; padding:12px; border:1px solid var(--line); border-radius:16px; background:var(--surface); color:var(--text); text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent }
+    .faction:hover, .faction:focus-visible { border-color:var(--sand); outline:none }
+    .faction:active { transform:scale(.985) }
+    .mark { display:grid; place-items:center; flex:none; width:39px; height:39px; border:2px solid currentColor; border-radius:50%; color:var(--accent); font-size:18px; font-weight:750; line-height:1 }
+    .name { display:block; font-weight:650; font-size:15px; line-height:1.18 }
+    .subname { display:block; margin-top:3px; color:var(--muted); font-size:12px; line-height:1.25 }
+    .note { margin:28px 0 0; color:var(--muted); font-size:13px }
+    .detail { display:none }
+    body.has-selection .home { display:none }
+    body.has-selection .detail { display:block }
+    .topbar { display:flex; align-items:center; gap:12px; margin:-8px 0 24px }
+    .back { min-height:44px; padding:8px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--text); cursor:pointer }
+    .back:focus-visible { outline:2px solid var(--sand); outline-offset:3px }
+    .back:hover { border-color:var(--sand) }
+    .topbar-label { color:var(--muted); font-size:14px }
+    .detail-heading { display:flex; align-items:center; gap:15px; margin-bottom:22px }
+    .detail-heading .mark { width:54px; height:54px; font-size:23px }
+    .detail-heading .subname { font-size:14px }
+    h2 { margin:0; font-size:clamp(26px,7vw,36px); line-height:1.12; letter-spacing:-.03em }
+    h3 { margin:0 0 12px; font-size:18px; line-height:1.25 }
+    .section { margin-top:20px }
+    .list { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--surface) }
+    .list li { display:grid; grid-template-columns:minmax(84px,30%) 1fr; gap:12px; padding:14px; border-top:1px solid var(--line) }
+    .list li:first-child { border-top:0 }
+    .term { color:var(--sand); font-size:13px; font-weight:700; line-height:1.35 }
+    .meaning { font-size:15px; line-height:1.4 }
+    .power { padding:18px; border:1px solid #7b6444; border-radius:16px; background:#332b22 }
+    .power p { margin:0; font-size:16px }
+    .none { color:var(--muted) }
+    .source { margin-top:28px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px }
+    @media (max-width:360px) { .grid { gap:8px } .faction { padding:10px; gap:8px } .mark { width:34px; height:34px; font-size:15px } .list li { grid-template-columns:1fr; gap:4px } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="home" aria-labelledby="page-title">
+      <p class="eyebrow">Дюна · памятка</p>
+      <h1 id="page-title">Что делает «Карама»?</h1>
+      <p class="intro">Одна карта останавливает одно преимущество противника или активирует особую способность вашей фракции. Выберите фракцию для подробностей.</p>
+      <div id="groups"></div>
+      <p class="note">Эффекты приведены по памятке Karama List. Особые способности относятся к расширенной игре.</p>
+    </section>
+    <article class="detail" id="detail" aria-live="polite"></article>
+  </main>
+  <script>
+    const factions = [
+      { id:'atreides', name:'Атрейдесы', en:'Atreides', group:'base', color:'#9cbd65', glyph:'A', stop:[
+        ['Торги','Не может посмотреть следующую карту, выставленную на торги.'],
+        ['Передвижение','Не может посмотреть следующую карту Пряности.'],
+        ['Битва','Не может увидеть часть боевого плана противника.'],
+        ['Квисатц Хадерах','Не добавляет +2 и не защищает от предателя.']
+      ], power:'Можно посмотреть весь боевой план одного игрока.' },
+      { id:'bene-gesserit', name:'Бене Гессерит', en:'Bene Gesserit', group:'base', color:'#6aa9ce', glyph:'Б', stop:[
+        ['Предсказание','Не действует.'],
+        ['Духовные наставницы','Не может бесплатно высадить 1 отряд.'],
+        ['Голос','Не может использовать Голос.'],
+        ['Благотворительность','Не получает благотворительную Пряность от КООАМ.'],
+        ['Карама','Не может использовать бесполезную карту как «Караму».'],
+        ['Советницы','Не может бесплатно высадить 1 отряд.'],
+        ['Бойцы','Должны оставаться советницами.'],
+        ['Вторжение','Не может перевернуть бойцов в советниц.'],
+        ['Битва','Советницы должны остаться советницами.']
+      ], power:null },
+      { id:'emperor', name:'Император', en:'Emperor', group:'base', color:'#da785c', glyph:'И', stop:[
+        ['Торги','Плата уходит в Банк Пряности.'],
+        ['Сардаукары','Считаются как один обычный отряд.']
+      ], power:'Можно бесплатно возродить до 3 отрядов или одного лидера.' },
+      { id:'fremen', name:'Фримены', en:'Fremen', group:'base', color:'#e6b654', glyph:'Ф', stop:[
+        ['Передвижение','Может передвинуться только на одну территорию.'],
+        ['Шай-Хулуд','Отряды погибают.'],
+        ['Условие победы','Не действует.'],
+        ['Буря','Не может посмотреть карту бури.'],
+        ['Черви','Не может разместить дополнительных червей в этом раунде.'],
+        ['Потери от бури','Все отряды погибают от бури.'],
+        ['Федайкины','Каждый считается за один обычный отряд.'],
+        ['Битвы','Должен заплатить Пряность, чтобы отряды считались в полную силу. Сыграть до установки силы на колесе битвы.']
+      ], power:'Можно поместить свой жетон песчаного червя на любую песчаную территорию. Он действует как обычный червь.' },
+      { id:'harkonnen', name:'Харконнены', en:'Harkonnen', group:'base', color:'#d8d9d5', glyph:'Х', stop:[
+        ['Предатели','Не действует.'],
+        ['Карты Предательства','Не получает вторую карту после победы в торгах.'],
+        ['Пленные лидеры','Не может пленить лидера.']
+      ], power:'Можно взять, не глядя, любое число карт из руки одного игрока, вплоть до всей руки. За каждую взятую карту отдайте ему одну свою.' },
+      { id:'guild', name:'Гильдия', en:'Spacing Guild', group:'base', color:'#e89650', glyph:'Г', stop:[
+        ['Три вида перевозок','Не может перевозить отряды между территориями планеты или из резерва.'],
+        ['Полцены','Должна платить полную стоимость перевозки.'],
+        ['Условие победы','Не действует.'],
+        ['Перевозка и движение','Должна действовать в порядке хода.']
+      ], power:'Можно остановить одну перевозку с другой планеты, выполняемую любым игроком.' },
+      { id:'ixians', name:'Иксианцы', en:'Ixians', group:'ix', color:'#a5bd82', glyph:'ИК', stop:[
+        ['Движение киборгов и субоидов','Не могут пройти больше одной территории.'],
+        ['Торги','Не могут посмотреть карты Предательства и убрать одну из них.'],
+        ['Киборги в битве','Каждый считается за один обычный отряд.'],
+        ['Субоиды в битве','Не могут заменить погибших киборгов.'],
+        ['Технология','Не может заменить карту Предательства.'],
+        ['Сила субоидов','Не действует.'],
+        ['Скрытая мобильная крепость','Не может передвигаться или собирать Пряность.']
+      ], power:'В свою фазу перевозки и движения можно передвинуть Скрытую мобильную крепость на 2 территории и также совершить обычное движение.' },
+      { id:'tleilaxu', name:'Тлейлаксу', en:'Bene Tleilaxu', group:'ix', color:'#b78ad9', glyph:'Т', stop:[
+        ['Лицевые танцоры','Не могут заменять Лицевых танцоров в фазу Ментата. Остальные эффекты Лицевых танцоров остановить нельзя.'],
+        ['Возрождение','Предел — 3 отряда; за все возрождения платится полная цена; бесплатного возрождения нет; платежи уходят в Банк Пряности; нельзя возрождать лидеров раньше обычного.'],
+        ['Гхолы','В этом ходу не может возродить лидера другого игрока.']
+      ], power:'Можно помешать игроку выполнить возрождение отрядов и/или лидеров.' },
+      { id:'choam', name:'КООАМ', en:'CHOAM', group:'choam', color:'#df6462', glyph:'К', stop:[
+        ['Благотворительность','Не получает Пряность от благотворительности, кроме обычной благотворительности КООАМ. Выплаты другим игрокам идут из Банка Пряности.'],
+        ['Карты Предательства','Не может сбросить карту ради Пряности; не может сбросить бесполезную карту в этой фазе ради её особого эффекта.'],
+        ['Возрождение','Может возродить не более 3 отрядов (или 5, если позволяет Тлейлаксу) и должен заплатить 2 Пряности за каждый.'],
+        ['Инфляция','Не может сыграть жетон инфляции в фазу Ментата. Это не мешает перевернуть жетон в следующем ходу.'],
+        ['Отряды','Не получает плату Пряностью за отряды в битве.'],
+        ['Аудитор','Не может провести аудит.']
+      ], power:'В любое время можно сбросить любое число своих карт Предательства, включая бесполезные, и получить по 3 Пряности за каждую.' },
+      { id:'richese', name:'Ричес', en:'Richese', group:'choam', color:'#d5cbb1', glyph:'Р', stop:[
+        ['Торги','Не может выставить на торги карту Предательства Ричес. Сыграть в начале раунда торгов.'],
+        ['Невидимое поле','Не может использовать жетон Невидимого поля для перевозки.'],
+        ['Чёрный рынок','Не может продать карту из руки.']
+      ], power:'В любое время можно заплатить 3 Пряности и купить одну из своих карт Предательства Ричес, тайно выбрав какую.' },
+      { id:'ecaz', name:'Эказ', en:'Ecaz', group:'ecaz', color:'#bd91b8', glyph:'Э', stop:[
+        ['Послы','В этом ходу не может размещать послов.'],
+        ['Совместное владение','Сыграть до составления боевых планов. Фракция, ведущая битву, должна учитывать свои отряды; отряды союзника считаются за 0. Не действует на Эказ и союзника при победе с 3 крепостями.'],
+        ['Верность','Не действует.'],
+        ['Сбор','Эказ не получает Пряность за совместное владение крепостями. Союзник получает её как обычно.']
+      ], power:'Если в битве вы не сыграли ни оружие, ни защиту, можно прибавить к установленной силе разницу между дисками лидеров — вашего и противника.' },
+      { id:'moritani', name:'Моритани', en:'Moritani', group:'ecaz', color:'#83c1d1', glyph:'М', stop:[
+        ['Террор','Не может разместить или передвинуть жетон террора.'],
+        ['Герцог Видал','Не может получить герцога Видала; не действует, если он уже у Моритани.'],
+        ['Убийство лидеров','Не действует.'],
+        ['Враг моего врага','Не может заключить союз, но всё ещё может открыть жетон.']
+      ], power:'Если проиграли битву, заставьте противника сбросить или оставить любые либо все карты Предательства, которые он сыграл.' },
+      { id:'dice', name:'Значок единорога', en:'Dice variant', group:'extra', color:'#ee93a6', glyph:'✦', stop:[
+        ['Кубик','Запретить бросок кубика любому игроку. Сыграть до броска.']
+      ], power:'После того как увидели результат, можно перебросить кубик — свой, союзника или даже противника. Один раз за игру.' }
+    ];
+
+    const groups = [
+      ['base','Основная игра'],
+      ['ix','Иксианцы и Тлейлаксу'],
+      ['choam','КООАМ и Ричес'],
+      ['ecaz','Эказ и Моритани'],
+      ['extra','Отдельный значок в памятке']
+    ];
+    const escapeHTML = text => String(text).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const mark = faction => `<span class="mark" style="--accent:${faction.color}" aria-hidden="true">${escapeHTML(faction.glyph)}</span>`;
+    document.getElementById('groups').innerHTML = groups.map(([id,title]) =>
+      `<h2 class="group-title">${title}</h2><div class="grid">${factions.filter(f => f.group === id).map(f =>
+        `<button class="faction" type="button" data-id="${f.id}">${mark(f)}<span><span class="name">${escapeHTML(f.name)}</span><span class="subname">${escapeHTML(f.en)}</span></span></button>`
+      ).join('')}</div>`
+    ).join('');
+
+    function render() {
+      const id = location.hash.slice(1);
+      const faction = factions.find(f => f.id === id);
+      document.body.classList.toggle('has-selection', Boolean(faction));
+      if (!faction) { document.title = 'Карама — Дюна'; window.scrollTo(0,0); return; }
+      document.title = `${faction.name} — Карама`;
+      document.getElementById('detail').innerHTML = `
+        <div class="topbar"><button class="back" type="button" id="back">← Фракции</button><span class="topbar-label">Памятка «Карама»</span></div>
+        <header class="detail-heading">${mark(faction)}<div><h2>${escapeHTML(faction.name)}</h2><span class="subname">${escapeHTML(faction.en)}</span></div></header>
+        <section class="section" aria-labelledby="stop-title"><h3 id="stop-title">Что можно остановить</h3><ul class="list">${faction.stop.map(([term,meaning]) => `<li><span class="term">${escapeHTML(term)}</span><span class="meaning">${escapeHTML(meaning)}</span></li>`).join('')}</ul></section>
+        <section class="section power" aria-labelledby="power-title"><h3 id="power-title">Особая способность «Карамы»</h3><p class="${faction.power ? '' : 'none'}">${escapeHTML(faction.power || 'У этой фракции нет особой способности.')}</p></section>
+        <p class="source">По памятке Karama List. Для спорных случаев используйте правила соответствующего дополнения.</p>`;
+      document.getElementById('back').addEventListener('click', () => { location.hash = ''; });
+      window.scrollTo(0,0);
+    }
+    document.getElementById('groups').addEventListener('click', event => {
+      const button = event.target.closest('button[data-id]');
+      if (button) location.hash = button.dataset.id;
+    });
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>
