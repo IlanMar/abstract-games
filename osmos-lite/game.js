@@ -6,24 +6,26 @@
 // Можно менять прямо из консоли браузера: CONFIG.drag = 0.6 — применится сразу.
 // ============================================================================
 const CONFIG = {
-  // --- тяга игрока ---------------------------------------------------------
-  thrust: 620,            // px/с²: ускорение от полной тяги у стартовой клетки
-  thrustRampUp: 0.28,     // с: за столько тяга набирает ~63% после нажатия — «раскачка»
-  thrustRampDown: 0.10,   // с: и так же быстро спадает после отпускания
-  counterThrust: 1.3,     // тяга против текущей скорости сильнее: разворот не вязнет
-  massFeel: 0.3,          // 0 — масса не влияет на разгон, 1 — честный F = ma
+  // --- управление: реактивный выброс капли ------------------------------------
+  // Тап в пустое место — клетка выстреливает туда крошечную каплю своей массы и по
+  // закону сохранения импульса уплывает в обратную сторону: Δv = f·u / (1 − f).
+  ejectMassFraction: 0.015, // доля массы клетки в одной капле
+  ejectSpeed: 1500,         // px/с: скорость капли относительно клетки → отдача ≈ 23 px/с за тап
+  ejectMinRadius: 6,        // клетка меньше этого уже не стреляет — нечем
+  holdDelay: 0.3,           // с: палец держится дольше — капли идут очередью
+  holdRate: 7,              // капель в секунду в очереди
+  moteSteerTime: 0.35,      // с: капля в жидкости теряет ~63% скорости за это время
+  moteGrace: 0.35,          // с: столько свежую каплю не может снова проглотить её же клетка
+  maxCells: 400,            // потолок числа клеток: старые капли сверх него исчезают
 
   // --- среда ----------------------------------------------------------------
-  drag: 0.95,             // 1/с: вязкость жидкости; без тяги скорость падает в e раз за 1/drag с
+  drag: 0.45,             // 1/с: вязкость жидкости; скорость падает в e раз за 1/drag с
   dragMassFeel: 0.15,     // крупная клетка тормозится медленнее: drag · m^-dragMassFeel
   maxSpeed: 560,          // px/с: мягкий потолок скорости
   overspeedDrag: 4,       // 1/с: как быстро срезается всё, что выше потолка
 
   // --- указатель (мышь или палец) --------------------------------------------
-  deadZone: 14,           // px экрана вокруг центра клетки: тяги нет, клетка не дёргается
-  fullForceDistance: 240, // px экрана от края dead zone до полной тяги
-  fullForceScreen: 0.36,  // но не больше этой доли короткой стороны экрана (телефон)
-  forceCurve: 1.3,        // >1 — мягче у центра, точнее мелкие движения
+  deadZone: 10,           // px экрана за краем клетки: тап по самой клетке не стреляет
 
   // --- масса и размеры --------------------------------------------------------
   density: 1,             // масса = density · r², значит при слиянии r = √(r1² + r2²)
@@ -68,8 +70,9 @@ const CONFIG = {
   wobble: 0.02,           // амплитуда дрожания мембраны, доля радиуса
   breathe: 0.012,         // и её «дыхание»
   stretch: 0.09,          // вытягивание вдоль скорости на maxSpeed
-  nucleusLag: 0.22,       // ядро отстаёт при ускорении: доля радиуса на полной тяге
-  wakeRate: 70,           // пузырьков в секунду за клеткой на полной тяге
+  nucleusLag: 0.22,       // ядро отстаёт при ускорении: доля радиуса при ускорении nucleusAccelRef
+  nucleusAccelRef: 400,   // px/с²
+  puffCount: 7,           // пузырьков брызгами при выстреле
 
   // --- шаг симуляции ----------------------------------------------------------------
   maxStep: 1 / 120,       // физика бьёт кадр на подшаги не длиннее этого
@@ -92,7 +95,7 @@ const baseMass = () => massOf(CONFIG.playerRadius);
 
 const touchUI = matchMedia('(pointer: coarse)').matches;
 if (touchUI) {
-  hintEl.textContent = 'Touch and hold to push the cell toward your finger';
+  hintEl.textContent = 'Tap anywhere — the cell spits a droplet there and drifts the other way';
   overEl.firstElementChild.textContent = 'Absorbed — tap to restart';
 }
 
@@ -104,9 +107,9 @@ const RGB_THREAT = [255, 118,  92];
 
 let W = 0, H = 0, DPR = 1;
 const cam = { x: 0, y: 0, vx: 0, vy: 0, zoom: 1, fx: 0, fy: 0, fr: CONFIG.playerRadius };
-const input = { down: false, x: 0, y: 0, gx: 0, gy: 0, tx: 0, ty: 0, power: 0 };
+const input = { down: false, x: 0, y: 0, held: 0, streamT: 0 };
 let cells = [], order = [], player = null;
-let time = 0, dead = false, deadT = 0, spawnT = 0, thrustUsed = 0, wakeAcc = 0;
+let time = 0, dead = false, deadT = 0, spawnT = 0, shots = 0;
 let firstRun = true, debug = false, fps = 60, last = performance.now();
 
 // ============================================================================
@@ -119,6 +122,7 @@ function makeCell(x, y, r, isPlayer) {
     eatenBy: null, offX: 0, offY: 0, m0: 0, absorbT: 1,
     dead: false, born: isPlayer ? 1 : 0, flash: 0, tint: 0,
     wander: Math.random() * TAU, cruise: 0, ph: Math.random() * 100,
+    steer: CONFIG.steerTime, parent: null, grace: 0, mote: false,   // для выброшенных капель
     // только для отрисовки
     svx: 0, svy: 0, st: 0, ang: 0,     // сглаженная скорость, растяжение, его угол
     pvx: 0, pvy: 0, ax: 0, ay: 0,      // скорость до кадра и сглаженное ускорение
@@ -185,7 +189,7 @@ function reset() {
   for (const c of cells) c.born = 1;    // стартовое население видно сразу
   resetParticles();
   dead = false; deadT = 0; spawnT = 0;
-  input.tx = input.ty = input.gx = input.gy = 0;
+  input.down = false; ripples.length = 0;
   overEl.classList.remove('show');
   if (firstRun) {
     // При самом первом запуске камера сразу на игроке, при рестарте — плавно доедет
@@ -210,6 +214,8 @@ cv.addEventListener('pointerdown', e => {
   }
   activePointer = e.pointerId;
   input.down = true; input.x = e.clientX; input.y = e.clientY;
+  input.held = 0; input.streamT = 0;
+  eject(input.x, input.y);              // каждый тап — сразу капля, без задержек
   try { cv.setPointerCapture(e.pointerId); } catch (err) {}
 });
 cv.addEventListener('pointermove', e => {
@@ -240,21 +246,59 @@ document.addEventListener('visibilitychange', () => {
   release();
 });
 
-function fullForce() {
-  return Math.min(CONFIG.fullForceDistance, Math.min(W, H) * CONFIG.fullForceScreen);
+// Выстрел каплей в сторону точки экрана (sx, sy). Клетка отдаёт каплю своей массы,
+// импульс сохраняется: (M − dm)·v' + dm·(v + u·n) = M·v  →  v' = v − n·u·dm / (M − dm)
+function eject(sx, sy) {
+  const p = player;
+  if (dead || p.eatenBy || p.r < CONFIG.ejectMinRadius) return false;
+  const px = (p.x - cam.x) * cam.zoom + W / 2, py = (p.y - cam.y) * cam.zoom + H / 2;
+  const dx = sx - px, dy = sy - py, d = Math.hypot(dx, dy);
+  if (d <= p.r * cam.zoom + CONFIG.deadZone) return false;    // тап по самой клетке — мимо
+  const nx = dx / d, ny = dy / d;
+
+  const M = p.m, dm = M * CONFIG.ejectMassFraction, u = CONFIG.ejectSpeed;
+  setMass(p, M - dm);
+  const m = makeCell(0, 0, Math.sqrt(dm / CONFIG.density), false);
+  const gap = p.r + m.r + 1;                                   // рождается сразу за мембраной
+  m.x = p.x + nx * gap; m.y = p.y + ny * gap;
+  m.vx = p.vx + nx * u; m.vy = p.vy + ny * u;
+  p.vx -= nx * u * dm / (M - dm);
+  p.vy -= ny * u * dm / (M - dm);
+
+  m.mote = true; m.parent = p; m.grace = CONFIG.moteGrace; m.steer = CONFIG.moteSteerTime;
+  m.born = 1; m.tint = -1; m.wander = Math.atan2(ny, nx);
+  m.cruise = CONFIG.driftSpeed[0] * 0.5;                        // растратив разгон, еле дрейфует
+  cells.push(m);
+
+  puff(m.x, m.y, nx, ny, p.vx, p.vy);
+  ripple(sx, sy);
+  p.flash = Math.min(1, p.flash + 0.25);
+  shots++;
+  trimMotes();
+  return true;
 }
 
-// Направление и сила тяги из положения указателя относительно клетки на экране
-function readInput() {
-  input.gx = input.gy = 0;
-  if (!input.down || dead || player.eatenBy) return;
-  const px = (player.x - cam.x) * cam.zoom + W / 2;
-  const py = (player.y - cam.y) * cam.zoom + H / 2;
-  const dx = input.x - px, dy = input.y - py, dist = Math.hypot(dx, dy);
-  if (dist <= CONFIG.deadZone) return;
-  const t = Math.pow(clamp((dist - CONFIG.deadZone) / fullForce(), 0, 1), CONFIG.forceCurve);
-  input.gx = dx / dist * t;
-  input.gy = dy / dist * t;
+// Слишком много клеток — убираем самые старые капли, которые никого не едят и не едомы
+function trimMotes() {
+  let extra = cells.length - CONFIG.maxCells;
+  for (let i = 0; i < cells.length && extra > 0; i++) {
+    const c = cells[i];
+    if (!c.mote || c.eatenBy || cells.some(o => o.eatenBy === c)) continue;
+    cells.splice(i--, 1);
+    extra--;
+  }
+}
+
+// Зажатый палец — очередь капель после короткой паузы
+function updateInput(dt) {
+  if (!input.down || dead) return;
+  input.held += dt;
+  if (input.held < CONFIG.holdDelay) return;
+  input.streamT -= dt;
+  while (input.streamT <= 0) {
+    eject(input.x, input.y);
+    input.streamT += 1 / CONFIG.holdRate;
+  }
 }
 
 // ============================================================================
@@ -263,27 +307,9 @@ function readInput() {
 
 function stepPlayer(h) {
   const p = player;
-  // Тяга не включается мгновенно: сглаженный вектор догоняет цель
-  const want = Math.hypot(input.gx, input.gy), have = Math.hypot(input.tx, input.ty);
-  const k = expK(h, want > have ? CONFIG.thrustRampUp : CONFIG.thrustRampDown);
-  input.tx += (input.gx - input.tx) * k;
-  input.ty += (input.gy - input.ty) * k;
   if (p.eatenBy) return;
-
-  // F = thrust · m0 · (m/m0)^(1 - massFeel);  a = F / m
+  // Двигатель — только выстрелы (eject), здесь клетка просто плывёт по инерции
   const relM = p.m / baseMass();
-  const F = CONFIG.thrust * baseMass() * Math.pow(relM, 1 - CONFIG.massFeel);
-  let ax = input.tx * F / p.m, ay = input.ty * F / p.m;
-
-  // Против хода тяга чуть сильнее: гасить скорость приятнее, чем набирать
-  const sp = Math.hypot(p.vx, p.vy), am = Math.hypot(ax, ay);
-  if (sp > 1e-3 && am > 1e-6) {
-    const cos = (ax * p.vx + ay * p.vy) / (sp * am);
-    const boost = 1 + (CONFIG.counterThrust - 1) * Math.max(0, -cos);
-    ax *= boost; ay *= boost;
-  }
-  p.vx += ax * h;
-  p.vy += ay * h;
 
   // Вязкость: экспонента, а не v -= v·drag·h — так не зависит от шага
   const drag = CONFIG.drag * Math.pow(relM, -CONFIG.dragMassFeel);
@@ -299,10 +325,11 @@ function stepPlayer(h) {
 }
 
 function stepDrifters(h) {
-  const k = expK(h, CONFIG.steerTime);
   const jitter = CONFIG.wanderTurn * Math.sqrt(h) * 1.732;   // случайное блуждание с дисперсией σ²·t
   for (const c of cells) {
     if (c.isPlayer || c.eatenBy) continue;
+    if (c.grace > 0) c.grace -= h;
+    const k = expK(h, c.steer);          // у капли своя, быстрая вязкость
     c.wander += (Math.random() * 2 - 1) * jitter;
     c.vx += (Math.cos(c.wander) * c.cruise - c.vx) * k;
     c.vy += (Math.sin(c.wander) * c.cruise - c.vy) * k;
@@ -331,6 +358,7 @@ function collide(h) {
       const d = Math.sqrt(d2) || 1e-6, nx = dx / d, ny = dy / d;
       const big = a.r >= b.r ? a : b, small = big === a ? b : a;
 
+      if (small.grace > 0 && small.parent === big) continue;   // свежая капля уходит от своей клетки
       if (big.r >= small.r * ratio) {
         // Заметно крупнее — не толкаемся, а ждём, пока жертва войдёт под мембрану
         if (d < big.r + small.r * CONFIG.captureReach) capture(big, small);
@@ -459,7 +487,7 @@ function targetZoom() {
 }
 
 // ============================================================================
-// Частицы кильватера — чисто визуальные, массу не несут
+// Брызги выстрела — чисто визуальные, массу не несут
 // ============================================================================
 
 const PARTS = [];
@@ -468,24 +496,26 @@ let partNext = 0;
 
 function resetParticles() { for (const p of PARTS) p.life = 0; }
 
-function emitWake(dt) {
-  const power = Math.hypot(input.tx, input.ty);
-  if (player.dead || player.eatenBy || power < 0.03) { wakeAcc = 0; return; }
-  wakeAcc += CONFIG.wakeRate * power * dt;
-  const dx = input.tx / power, dy = input.ty / power;
+// Брызги у рождения капли: веер вдоль выстрела
+function puff(x, y, nx, ny, vx, vy) {
   const size = Math.sqrt(player.r / CONFIG.playerRadius);
-  while (wakeAcc >= 1) {
-    wakeAcc--;
+  for (let i = 0; i < CONFIG.puffCount; i++) {
     const p = PARTS[partNext]; partNext = (partNext + 1) % PARTS.length;
-    const side = (Math.random() * 2 - 1) * player.r * 0.5;
-    p.x = player.x - dx * player.r * 0.95 - dy * side;
-    p.y = player.y - dy * player.r * 0.95 + dx * side;
-    const kick = (60 + Math.random() * 90) * power * size;
-    p.vx = player.vx - dx * kick + (Math.random() - 0.5) * 30;
-    p.vy = player.vy - dy * kick + (Math.random() - 0.5) * 30;
-    p.max = p.life = 0.6 + Math.random() * 0.6;
-    p.s = (0.9 + Math.random() * 1.6) * size;
+    const spread = (Math.random() - 0.5) * 1.1, kick = (120 + Math.random() * 260) * size;
+    const cx = nx * Math.cos(spread) - ny * Math.sin(spread);
+    const cy = nx * Math.sin(spread) + ny * Math.cos(spread);
+    p.x = x; p.y = y;
+    p.vx = vx + cx * kick; p.vy = vy + cy * kick;
+    p.max = p.life = 0.35 + Math.random() * 0.4;
+    p.s = (0.7 + Math.random() * 1.2) * size;
   }
+}
+
+// Круг в точке тапа — отклик пальцу, в координатах экрана
+const ripples = [];
+function ripple(x, y) {
+  if (ripples.length > 12) ripples.shift();
+  ripples.push({ x, y, t: 0 });
 }
 
 function updateParticles(dt) {
@@ -516,8 +546,8 @@ function updateVisuals(dt) {
     c.st += (CONFIG.stretch * clamp(sp / CONFIG.maxSpeed, 0, 1) - c.st) * kv;
     if (sp > 1) c.ang = Math.atan2(c.svy, c.svx);
 
-    let tx = -c.ax / CONFIG.thrust * CONFIG.nucleusLag * c.r;
-    let ty = -c.ay / CONFIG.thrust * CONFIG.nucleusLag * c.r;
+    let tx = -c.ax / CONFIG.nucleusAccelRef * CONFIG.nucleusLag * c.r;
+    let ty = -c.ay / CONFIG.nucleusAccelRef * CONFIG.nucleusLag * c.r;
     const tl = Math.hypot(tx, ty), tmax = c.r * 0.28;
     if (tl > tmax) { tx *= tmax / tl; ty *= tmax / tl; }
     c.nvx += (-K * (c.nx - tx) - C * c.nvx) * dt; c.nx += c.nvx * dt;
@@ -722,32 +752,26 @@ function drawParticles() {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-// Тонкий пунктир к указателю — видно, куда и насколько сильно давишь
-function drawAim() {
-  if (!input.down || dead || player.eatenBy || touchUI) return;
-  const px = player.sx, py = player.sy, dx = input.x - px, dy = input.y - py, d = Math.hypot(dx, dy);
-  if (d <= CONFIG.deadZone) return;
-  const a = 0.08 + 0.2 * Math.hypot(input.tx, input.ty);
-  const from = Math.min(player.sr * 1.25, d);
-  ctx.setLineDash([2, 7]);
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = rgba(RGB_PLAYER, a);
-  ctx.beginPath();
-  ctx.moveTo(px + dx / d * from, py + dy / d * from);
-  ctx.lineTo(input.x, input.y);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.beginPath(); ctx.arc(input.x, input.y, 5, 0, TAU); ctx.stroke();
+function drawRipples(dt) {
+  ctx.lineWidth = 1.2;
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.t += dt;
+    const k = r.t / 0.45;
+    if (k >= 1) { ripples.splice(i, 1); continue; }
+    ctx.strokeStyle = rgba(RGB_PLAYER, 0.4 * (1 - k) * (1 - k));
+    ctx.beginPath(); ctx.arc(r.x, r.y, 5 + 18 * Math.sqrt(k), 0, TAU); ctx.stroke();
+  }
 }
 
-function render() {
+function render(dt) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
   drawDust();
   drawBoundary();
   drawParticles();
   drawCells();
-  drawAim();
+  drawRipples(dt);
 }
 
 // ============================================================================
@@ -776,7 +800,7 @@ function frame(now) {
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
   for (const c of cells) { c.pvx = c.vx; c.pvy = c.vy; }
-  readInput();
+  updateInput(dt);
   if (dt > 0) {
     const n = Math.ceil(dt / CONFIG.maxStep), h = dt / n;
     for (let i = 0; i < n; i++) step(h);
@@ -786,28 +810,24 @@ function frame(now) {
   const tz = targetZoom();
   cam.zoom = Math.exp(lerp(Math.log(cam.zoom), Math.log(tz), expK(dt, CONFIG.zoomSmoothness)));
 
-  emitWake(dt);
   updateParticles(dt);
   updateVisuals(dt);
   repopulate(dt);
   checkFinite();
 
-  if (input.down && !dead) {
-    thrustUsed += dt;
-    if (thrustUsed > 1.5) hintEl.classList.add('hide');
-  }
+  if (shots >= 4) hintEl.classList.add('hide');
   if (dead) {
     deadT += dt;
     if (deadT > 0.5) overEl.classList.add('show');
   }
 
-  render();
+  render(dt);
   if (debug) {
     const sp = player.dead ? 0 : Math.hypot(player.vx, player.vy);
     debugEl.textContent =
       `fps    ${fps.toFixed(0)}\n` +
       `speed  ${sp.toFixed(0)} px/s\n` +
-      `thrust ${Math.hypot(input.tx, input.ty).toFixed(2)}\n` +
+      `shots  ${shots}\n` +
       `mass   ${(player.m / baseMass()).toFixed(2)} × start\n` +
       `radius ${player.r.toFixed(1)}\n` +
       `zoom   ${cam.zoom.toFixed(2)}\n` +
