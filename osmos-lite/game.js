@@ -95,6 +95,10 @@ const CONFIG = {
   nucleusAccelRef: 400,   // px/с²
   puffCount: 7,           // пузырьков брызгами при выстреле
 
+  // --- звук -------------------------------------------------------------------------
+  sound: true,            // все звуки (включатся с первым касанием — правило браузеров)
+  ambience: true,         // тихий фон: «дышащий» аккорд, гул воды, далёкие пузырьки
+
   // --- шаг симуляции ----------------------------------------------------------------
   maxStep: 1 / 120,       // физика бьёт кадр на подшаги не длиннее этого
   maxFrameDt: 0.1,        // после свёрнутой вкладки кадр не длиннее этого
@@ -214,6 +218,7 @@ function groupWeight(g) {
 }
 
 function reset() {
+  if (!firstRun) Sound.rebirth();
   cells = [];
   player = makeCell(0, 0, CONFIG.playerRadius, true);
   cells.push(player);
@@ -246,6 +251,189 @@ function reset() {
 }
 
 // ============================================================================
+// Звук. Ни одного файла — всё синтезирует Web Audio на лету. Чтобы не пищало, тоны
+// мягкие: синус с плавной атакой, верх срезан фильтром, у всего общий «водяной» хвост
+// (реверберация из затухающего шума). Ноты поглощения — из минорной пентатоники, так
+// что любые подряд звучат созвучно. Браузеры (особенно iOS Safari) дают включить звук
+// только по жесту — контекст создаётся на первом касании.
+// ============================================================================
+
+const Sound = (() => {
+  const PENTA = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];   // полутона от A3: A C D E G …
+  const AMB_LEVEL = 0.05;                                 // фон — на пороге слышимости
+  let ac = null, out = null, wet = null, noise = null, amb = null;
+  let lastEat = -1, bubbleT = 2;
+
+  function init() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    try { ac = new AC(); } catch (e) { return false; }
+    // Общий выход через мягкий компрессор: очередь капель и каскад поглощений не хрипят
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4;
+    comp.attack.value = 0.005; comp.release.value = 0.25;
+    comp.connect(ac.destination);
+    out = ac.createGain(); out.gain.value = 0.8; out.connect(comp);
+
+    // Хвост: 1.8 с затухающего шума с приглушённым верхом — звучит как толща воды
+    const sr = ac.sampleRate, len = Math.round(sr * 1.8), ir = ac.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        lp += (Math.random() * 2 - 1 - lp) * 0.3;
+        d[i] = lp * Math.pow(1 - i / len, 2.6);
+      }
+    }
+    const conv = ac.createConvolver(); conv.buffer = ir;
+    wet = ac.createGain(); wet.gain.value = 0.55;
+    wet.connect(conv); conv.connect(out);
+
+    // Секунда белого шума — для всплесков и фонового гула
+    noise = ac.createBuffer(1, sr, sr);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+    buildAmbience();
+    return true;
+  }
+
+  // Фон: тихий аккорд A–E–A под фильтром, который медленно «дышит», и глухой шум воды
+  function buildAmbience() {
+    amb = ac.createGain(); amb.gain.value = 0; amb.connect(out);
+    const breath = ac.createGain(); breath.gain.value = 1; breath.connect(amb);
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 480; lp.Q.value = 0.8;
+    lp.connect(breath);
+    for (const [f, v] of [[110, 0.45], [164.9, 0.3], [220.7, 0.22], [329.2, 0.07]]) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = f; g.gain.value = v;
+      o.connect(g); g.connect(lp); o.start();
+    }
+    const hum = ac.createBufferSource(), hlp = ac.createBiquadFilter(), hg = ac.createGain();
+    hum.buffer = noise; hum.loop = true;
+    hlp.type = 'lowpass'; hlp.frequency.value = 260; hg.gain.value = 0.35;
+    hum.connect(hlp); hlp.connect(hg); hg.connect(breath); hum.start();
+    // Две медленные волны: фильтр открывается раз в ~17 с, громкость колышется раз в ~11 с
+    const lfo = (hz, depth, param) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = hz; g.gain.value = depth;
+      o.connect(g); g.connect(param); o.start();
+    };
+    lfo(0.06, 220, lp.frequency);
+    lfo(0.09, 0.35, breath.gain);
+  }
+
+  const live = () => ac && CONFIG.sound && ac.state === 'running';
+
+  // Плавная атака и экспоненциальный хвост — главное, чтобы тон не «щёлкал» и не пищал
+  function env(g, t, peak, a, d) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+  }
+  function route(node, send) {
+    node.connect(out);
+    if (send > 0) {
+      const s = ac.createGain(); s.gain.value = send;
+      node.connect(s); s.connect(wet);
+    }
+  }
+  // Тон, скользящий по частоте f0 → f1 за glide секунд
+  function tone(type, f0, f1, glide, peak, a, d, cutoff, send, t) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+    env(g, t, peak, a, d);
+    o.connect(g);
+    let node = g;
+    if (cutoff) {
+      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+      g.connect(f); node = f;
+    }
+    route(node, send);
+    o.start(t); o.stop(t + a + d + 0.05);
+  }
+  // Всплеск: шум в полосе вокруг freq
+  function splash(freq, q, peak, a, d, send, t) {
+    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = noise; src.loop = true;
+    f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+    env(g, t, peak, a, d);
+    src.connect(f); f.connect(g);
+    route(g, send);
+    src.start(t, Math.random() * 0.8); src.stop(t + a + d + 0.05);
+  }
+
+  return {
+    // Вызывается на каждом жесте: создаёт контекст или будит его после паузы iOS
+    unlock() {
+      if (!CONFIG.sound) return;
+      if (!ac && !init()) return;
+      this.update();
+    },
+    // Включили/выключили в меню. Звук выключен — контекст спит и не тратит батарею
+    update() {
+      if (!ac) return;
+      if (!CONFIG.sound) { ac.suspend().catch(() => {}); return; }
+      if (ac.state !== 'running') ac.resume().catch(() => {});
+      amb.gain.setTargetAtTime(CONFIG.ambience ? AMB_LEVEL : 0, ac.currentTime, 0.8);
+    },
+    sleep() { if (ac) ac.suspend().catch(() => {}); },
+
+    // Выброс капли: глухое «блуп» — пузырёк, тон падает вниз. Крупная клетка — ниже
+    eject(r) {
+      if (!live()) return;
+      const t = ac.currentTime;
+      const k = clamp(Math.pow(CONFIG.playerRadius / r, 0.3), 0.45, 1.6) * (0.94 + Math.random() * 0.12);
+      tone('sine', 520 * k, 170 * k, 0.11, 0.2, 0.004, 0.15, 1500, 0.25, t);
+      splash(1100 * k, 1.4, 0.04, 0.003, 0.06, 0.15, t);
+    },
+
+    // Игрок кого-то проглотил. frac = r жертвы / r игрока: крупная жертва — нота ниже
+    // и громче. Своя же капля — едва слышная капель
+    eat(frac, own) {
+      if (!live()) return;
+      const t = ac.currentTime;
+      if (own) { tone('sine', 900, 1400, 0.05, 0.04, 0.004, 0.08, 0, 0.4, t); return; }
+      if (t - lastEat < 0.05) return;                     // каскад — не больше 20 нот в секунду
+      lastEat = t;
+      const f = 220 * Math.pow(2, PENTA[Math.round((1 - clamp(frac, 0, 1)) * (PENTA.length - 1))] / 12);
+      const peak = 0.12 + 0.14 * clamp(frac, 0, 1);
+      tone('sine', f * 0.82, f, 0.07, peak, 0.012, 0.75, 2400, 0.55, t);          // «глоп» с подъёмом
+      tone('triangle', f * 2, f * 2, 0.01, peak * 0.18, 0.02, 0.45, 1800, 0.7, t); // обертон
+      tone('sine', f * 2.5, f * 3.6, 0.05, peak * 0.25, 0.004, 0.07, 0, 0.5, t + 0.03); // пузырёк
+    },
+
+    // Игрока поглотили: низкий тон уходит вниз, под ним глухой гул
+    death() {
+      if (!live()) return;
+      const t = ac.currentTime;
+      tone('sine', 196, 49, 1.8, 0.3, 0.05, 2.2, 700, 0.7, t);
+      tone('triangle', 98, 37, 2, 0.07, 0.1, 2, 400, 0.6, t);
+      splash(280, 0.7, 0.1, 0.35, 1.5, 0.6, t);
+    },
+
+    // Новая жизнь: тихое восходящее A–E–A
+    rebirth() {
+      if (!live()) return;
+      const t = ac.currentTime;
+      [220, 329.6, 440].forEach((f, i) => tone('sine', f * 0.9, f, 0.06, 0.08, 0.015, 0.7, 2000, 0.6, t + i * 0.09));
+    },
+
+    // Изредка где-то вдалеке лопается пузырёк — почти один только хвост
+    tick(dt) {
+      if (!live() || !CONFIG.ambience) return;
+      bubbleT -= dt;
+      if (bubbleT > 0) return;
+      bubbleT = 1.5 + Math.random() * 4;
+      const f = 500 + Math.random() * 700;
+      tone('sine', f, f * 1.7, 0.05, 0.012, 0.003, 0.07, 0, 1.2, ac.currentTime);
+    },
+  };
+})();
+
+// ============================================================================
 // Ввод: мышь и палец через pointer events
 // ============================================================================
 
@@ -254,6 +442,7 @@ let activePointer = null;
 cv.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   e.preventDefault();
+  Sound.unlock();
   if (menuOpen) { closeMenu(); return; }
   if (dead) {
     if (deadT > 0.5) reset();           // тап-рестарт, но не тот же тап, что пришёлся на смерть
@@ -274,7 +463,7 @@ function release(e) {
   activePointer = null;
   input.down = false;
 }
-cv.addEventListener('pointerup', release);
+cv.addEventListener('pointerup', e => { Sound.unlock(); release(e); });   // старым iOS нужен именно отпуск
 cv.addEventListener('pointercancel', release);
 cv.addEventListener('lostpointercapture', release);
 window.addEventListener('blur', () => release());
@@ -287,6 +476,7 @@ document.addEventListener('touchmove', e => {
 }, { passive: false });
 
 window.addEventListener('keydown', e => {
+  Sound.unlock();
   if (e.code === 'Escape' && menuOpen) closeMenu();
   if (e.code === 'KeyD' && !menuOpen) setDebug(!debug);
   if (dead && deadT > 0.5 && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR')) reset();
@@ -296,6 +486,7 @@ document.addEventListener('visibilitychange', () => {
   last = performance.now();
   perf.hold = 1;                        // первые кадры после возврата бывают рваными — не мерить
   release();
+  if (document.hidden) Sound.sleep(); else Sound.update();
 });
 
 // Выстрел каплей в сторону точки экрана (sx, sy). Клетка отдаёт каплю своей массы,
@@ -324,6 +515,7 @@ function eject(sx, sy) {
 
   puff(m.x, m.y, nx, ny, p.vx, p.vy);
   ripple(sx, sy);
+  Sound.eject(p.r);
   p.flash = Math.min(1, p.flash + 0.25);
   shots++;
   trimMotes();
@@ -397,6 +589,8 @@ function capture(big, small) {
   small.m0 = small.m;
   // мелочь растворяется быстро, жертва почти своего размера — дольше
   small.absorbT = CONFIG.absorptionTime * clamp(0.35 + 1.3 * Math.sqrt(small.m / big.m), 0.35, 1.6);
+  if (big.isPlayer) Sound.eat(small.r / big.r, small.parent === big);
+  else if (small.isPlayer) Sound.death();
 }
 
 // Sort-and-sweep: клетки лежат в массиве по левому краю, пары проверяются, только пока
@@ -1057,6 +1251,7 @@ function frame(now) {
 
   updateParticles(dt);
   updateVisuals(dt);
+  Sound.tick(dt);
   repopulate(dt);
   checkFinite();
 
@@ -1104,7 +1299,8 @@ const SLIDERS = [
   { id: 'map',     key: 'worldRadius',       k: 1,    fmt: v => `${(v / DEFAULTS.worldRadius).toFixed(1)}×`, world: true },
   { id: 'maxe',    key: 'maxEnemySize',      k: 1,    fmt: v => `${v.toFixed(1)}× you`, world: true },
 ];
-const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'enemyDensity', 'difficulty', 'worldRadius', 'maxEnemySize'];
+const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'sound', 'ambience', 'enemyDensity', 'difficulty', 'worldRadius', 'maxEnemySize'];
+const SWITCHES = { zoom: 'cameraAutoZoom', sound: 'sound', amb: 'ambience' };   // id переключателя → ключ
 const DEFAULTS = {};
 for (const k of SAVED_KEYS) DEFAULTS[k] = CONFIG[k];
 let menuOpen = false, worldBuiltWith = {};
@@ -1130,7 +1326,7 @@ function loadSettings() {
     const el = $('s-' + sl.id), v = Number(data[sl.key]);
     if (Number.isFinite(v)) CONFIG[sl.key] = clamp(v, el.min * sl.k, el.max * sl.k);
   }
-  if (typeof data.cameraAutoZoom === 'boolean') CONFIG.cameraAutoZoom = data.cameraAutoZoom;
+  for (const key of Object.values(SWITCHES)) if (typeof data[key] === 'boolean') CONFIG[key] = data[key];
   if (data.debug === true) setDebug(true);
 }
 
@@ -1146,7 +1342,8 @@ function syncMenu() {
     $('s-' + sl.id).value = CONFIG[sl.key] / sl.k;
     $('o-' + sl.id).textContent = sl.fmt(CONFIG[sl.key]);
   }
-  $('s-zoom').checked = CONFIG.cameraAutoZoom;
+  for (const [id, key] of Object.entries(SWITCHES)) $('s-' + id).checked = CONFIG[key];
+  $('s-amb').disabled = !CONFIG.sound;
   $('s-debug').checked = debug;
   markPending();
 }
@@ -1186,11 +1383,23 @@ $('s-zoom').addEventListener('change', e => {
   saveSettings();
   startLoop();                          // на паузе — только ради плавной смены масштаба
 });
+for (const id of ['sound', 'amb']) {
+  $('s-' + id).addEventListener('change', e => {
+    CONFIG[SWITCHES[id]] = e.target.checked;
+    $('s-amb').disabled = !CONFIG.sound;
+    saveSettings();
+    Sound.unlock();                     // переключатель — тоже жест: можно будить звук
+    Sound.update();
+  });
+}
 $('s-debug').addEventListener('change', e => { setDebug(e.target.checked); saveSettings(); });
 $('b-defaults').addEventListener('click', () => {
   Object.assign(CONFIG, DEFAULTS);
   syncMenu();
   saveSettings();
+  Sound.unlock();
+  Sound.update();
+  startLoop();                          // зум мог поменяться — пусть доедет за меню
 });
 newBtn.addEventListener('click', () => { newWorld(); closeMenu(); });
 menuBtn.addEventListener('click', () => (menuOpen ? closeMenu() : openMenu()));

@@ -178,6 +178,7 @@ canvas {
 .m-switch input:checked { background: #3d8fd6 }
 .m-switch input:checked::after { transform: translateX(18px) }
 .m-switch input:focus-visible { outline: 2px solid #6ebeff; outline-offset: 2px }
+.m-switch input:disabled { opacity: .35; cursor: default }
 .m-last { margin-top: 14px }
 
 .m-btns { display: flex; gap: 8px; margin-top: 14px }
