@@ -2,282 +2,221 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#161b1c" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#151b1c" />
     <title>Карама — Дюна</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #161b1c;
-        --surface: #222a2b;
-        --line: #394445;
-        --text: #f4f1e8;
-        --muted: #a9b4b1;
-        --sand: #e9c58c;
+        --bg: #151b1c;
+        --surface: #212a2b;
+        --surface-open: #263132;
+        --line: #3a4647;
+        --text: #f5f2e9;
+        --muted: #b5c0bc;
+        --sand: #e8c58f;
       }
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
       body {
         margin: 0;
-        background: var(--bg);
+        min-height: 100vh;
+        background: radial-gradient(ellipse 85% 320px at 50% 0, #293435 0, var(--bg) 100%);
         color: var(--text);
-        font:
-          16px/1.5 system-ui,
-          -apple-system,
-          "Segoe UI",
-          sans-serif;
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
         -webkit-text-size-adjust: 100%;
       }
-      button {
-        font: inherit;
-      }
-      .wrap {
+      button { font: inherit; }
+      .page {
         width: min(100%, 720px);
-        margin: auto;
-        padding: 24px 18px calc(32px + env(safe-area-inset-bottom));
+        margin: 0 auto;
+        padding: 34px 18px calc(48px + env(safe-area-inset-bottom));
       }
+      .hero { padding: 0 4px 8px; }
       .eyebrow {
-        margin: 0 0 6px;
+        margin: 0 0 11px;
         color: var(--sand);
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 750;
-        letter-spacing: 0.15em;
+        letter-spacing: .2em;
         text-transform: uppercase;
       }
       h1 {
         margin: 0;
-        font-size: clamp(28px, 7vw, 38px);
-        line-height: 1.15;
-        letter-spacing: -0.035em;
+        font-size: clamp(42px, 10vw, 60px);
+        font-weight: 730;
+        letter-spacing: -.055em;
+        line-height: 1.04;
       }
       .intro {
-        margin: 10px 0 0;
+        max-width: 47ch;
+        margin: 16px 0 0;
         color: var(--muted);
-        max-width: 48ch;
+        font-size: 15px;
+        line-height: 1.55;
       }
-      .group-title {
-        margin: 30px 0 12px;
-        font-size: 13px;
-        font-weight: 700;
-        color: var(--muted);
-        letter-spacing: 0.09em;
+      .group { margin-top: 32px; }
+      .group-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 3px 11px;
+      }
+      .group-head h2 {
+        margin: 0;
+        color: var(--sand);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: .12em;
         text-transform: uppercase;
       }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
+      .group-count {
+        color: #82908d;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
       }
-      .faction {
+      .cards { display: grid; gap: 9px; }
+      .card {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 17px;
+        background: var(--surface);
+        transition: border-color .25s ease, background-color .25s ease, box-shadow .25s ease;
+      }
+      .card.is-open {
+        border-color: #9d825b;
+        background: var(--surface-open);
+        box-shadow: 0 9px 30px #00000024;
+      }
+      .card-trigger {
         display: flex;
         align-items: center;
-        gap: 11px;
-        min-height: 74px;
+        gap: 14px;
         width: 100%;
-        padding: 12px;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        background: var(--surface);
+        min-height: 72px;
+        padding: 12px 17px;
+        border: 0;
+        background: transparent;
         color: var(--text);
         text-align: left;
         cursor: pointer;
+        touch-action: manipulation;
         -webkit-tap-highlight-color: transparent;
       }
-      .faction:focus-visible {
+      .card-trigger:focus-visible {
         outline: 2px solid var(--sand);
-        outline-offset: 2px;
+        outline-offset: -4px;
+        border-radius: 16px;
       }
       @media (hover: hover) {
-        .faction:hover,
-        .back:hover {
-          border-color: var(--sand);
-        }
+        .card-trigger:hover { background: #ffffff08; }
       }
-      .faction:active {
-        transform: scale(0.985);
-      }
-      .mark.mark--image { border: 0; overflow: hidden; }
-      .mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
       .mark {
         display: grid;
         place-items: center;
         flex: none;
-        width: 39px;
-        height: 39px;
+        width: 44px;
+        height: 44px;
+        overflow: hidden;
         border: 2px solid currentColor;
         border-radius: 50%;
         color: var(--accent);
-        font-size: 18px;
-        font-weight: 750;
+        font-size: 23px;
         line-height: 1;
       }
-      .name {
-        display: block;
-        font-weight: 650;
-        font-size: 15px;
-        line-height: 1.18;
+      .mark--image { border: 0; }
+      .mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
+      .card-label { flex: 1; min-width: 0; }
+      .card-name { display: block; font-size: 17px; font-weight: 680; line-height: 1.2; }
+      .card-subname { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+      .chevron {
+        flex: none;
+        width: 19px;
+        height: 19px;
+        color: var(--sand);
+        opacity: .75;
+        transition: transform .3s ease, opacity .3s ease;
       }
-      .subname {
-        display: block;
-        margin-top: 3px;
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.25;
-      }
-      .note {
-        margin: 28px 0 0;
-        color: var(--muted);
-        font-size: 13px;
-      }
-      .detail {
-        display: none;
-        touch-action: pan-y;
-      }
-      body.has-selection .home {
-        display: none;
-      }
-      body.has-selection .detail {
-        display: block;
-      }
-      .topbar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin: -8px 0 24px;
-      }
-      .back {
-        min-height: 44px;
-        padding: 8px 14px;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: var(--surface);
-        color: var(--text);
-        cursor: pointer;
-      }
-      .back:focus-visible {
-        outline: 2px solid var(--sand);
-        outline-offset: 3px;
-      }
-      .topbar-label {
-        color: var(--muted);
-        font-size: 14px;
-      }
-      .detail-heading {
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        margin-bottom: 22px;
-      }
-      .detail-heading .mark {
-        width: 54px;
-        height: 54px;
-        font-size: 23px;
-      }
-      .detail-heading .subname {
-        font-size: 14px;
-      }
-      h2 {
-        margin: 0;
-        font-size: clamp(26px, 7vw, 36px);
-        line-height: 1.12;
-        letter-spacing: -0.03em;
-      }
-      h3 {
-        margin: 0 0 12px;
-        font-size: 18px;
-        line-height: 1.25;
-      }
-      .section {
-        margin-top: 20px;
-      }
-      .list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        overflow: hidden;
-        background: var(--surface);
-      }
-      .list li {
+      .card.is-open .chevron { transform: rotate(180deg); opacity: 1; }
+      .panel {
         display: grid;
-        grid-template-columns: minmax(84px, 30%) 1fr;
-        gap: 12px;
-        padding: 14px;
+        grid-template-rows: 0fr;
+        visibility: hidden;
+        transition: grid-template-rows .38s cubic-bezier(.2,.8,.2,1), visibility 0s linear .38s;
+      }
+      .card.is-open .panel {
+        grid-template-rows: 1fr;
+        visibility: visible;
+        transition: grid-template-rows .38s cubic-bezier(.2,.8,.2,1), visibility 0s;
+      }
+      .panel-inner { min-height: 0; overflow: hidden; }
+      .panel-content {
+        margin: 0 17px;
+        padding: 17px 0 19px;
         border-top: 1px solid var(--line);
       }
-      .list li:first-child {
-        border-top: 0;
-      }
-      .term {
+      .panel-title {
+        margin: 0 0 4px;
         color: var(--sand);
-        font-size: 13px;
-        font-weight: 700;
-        line-height: 1.35;
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: .1em;
+        text-transform: uppercase;
       }
-      .meaning {
-        font-size: 15px;
-        line-height: 1.4;
+      .rules { margin: 0; padding: 0; list-style: none; }
+      .rule {
+        display: grid;
+        grid-template-columns: minmax(100px, 30%) minmax(0, 1fr);
+        gap: 15px;
+        padding: 12px 0;
+        border-bottom: 1px solid #ffffff14;
       }
+      .rule:last-child { border-bottom: 0; }
+      .term { color: #e9cfaa; font-size: 13px; font-weight: 680; line-height: 1.35; }
+      .meaning { font-size: 15px; line-height: 1.43; }
       .power {
-        padding: 18px;
-        border: 1px solid #7b6444;
-        border-radius: 16px;
-        background: #332b22;
+        margin-top: 17px;
+        padding: 16px;
+        border: 1px solid #816a49;
+        border-radius: 13px;
+        background: #352e25;
       }
-      .power p {
-        margin: 0;
-        font-size: 16px;
+      .power-title {
+        display: block;
+        margin: 0 0 7px;
+        color: var(--sand);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: .09em;
+        text-transform: uppercase;
       }
-      .none {
-        color: var(--muted);
-      }
+      .power p { margin: 0; font-size: 15px; line-height: 1.5; }
+      .power .none { color: var(--muted); }
       .source {
-        margin-top: 28px;
+        margin: 36px 4px 0;
         padding-top: 16px;
         border-top: 1px solid var(--line);
         color: var(--muted);
-        font-size: 13px;
+        font-size: 12px;
+        line-height: 1.5;
       }
-      @media (max-width: 360px) {
-        .grid {
-          gap: 8px;
-        }
-        .faction {
-          padding: 10px;
-          gap: 8px;
-        }
-        .mark {
-          width: 34px;
-          height: 34px;
-          font-size: 15px;
-        }
-        .list li {
-          grid-template-columns: 1fr;
-          gap: 4px;
-        }
+      @media (max-width: 440px) {
+        .rule { grid-template-columns: 1fr; gap: 4px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .card, .chevron, .panel, .card.is-open .panel { transition: none; }
       }
     </style>
   </head>
   <body>
-    <main class="wrap">
-      <section class="home" aria-labelledby="page-title">
+    <main class="page">
+      <header class="hero">
         <p class="eyebrow">Дюна · памятка</p>
-        <h1 id="page-title">Что делает «Карама»?</h1>
-        <p class="intro">
-          Выберите фракцию, чтобы увидеть, какие эффекты можно остановить
-          картой «Карама» и какая у неё особая способность.
-        </p>
-        <div id="groups"></div>
-        <p class="note">
-          Эффекты приведены по памятке Karama List, включая фракции из дополнений.
-        </p>
-      </section>
-      <article class="detail" id="detail" aria-live="polite"></article>
+        <h1>Карама</h1>
+        <p class="intro">Выберите фракцию, чтобы раскрыть её правила. Можно открыть несколько фракций для сравнения.</p>
+      </header>
+      <div id="groups"></div>
+      <p class="source">По памятке Karama List, включая фракции из дополнений. Для спорных случаев используйте правила соответствующего дополнения.</p>
     </main>
     <script>
       const factions = [
@@ -582,79 +521,77 @@
       'richese':'data:image/webp;base64,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'
       };
       const escapeHTML = (text) =>
-        String(text).replace(
-          /[&<>"']/g,
-          (char) =>
-            ({
-              "&": "&amp;",
-              "<": "&lt;",
-              ">": "&gt;",
-              '"': "&quot;",
-              "'": "&#39;",
-            })[char],
-        );
+        String(text).replace(/[&<>"']/g, (char) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+
       const mark = (faction) => iconImages[faction.id]
         ? `<span class="mark mark--image" aria-hidden="true"><img src="${iconImages[faction.id]}" alt=""></span>`
         : `<span class="mark" style="--accent:${faction.color}" aria-hidden="true">${escapeHTML(faction.glyph)}</span>`;
-      document.getElementById("groups").innerHTML = groups
-        .map(
-          ([id, title]) =>
-            `<h2 class="group-title">${title}</h2><div class="grid">${factions
-              .filter((f) => f.group === id)
-              .map(
-                (f) =>
-                  `<button class="faction" type="button" data-id="${f.id}">${mark(f)}<span><span class="name">${escapeHTML(f.name)}</span><span class="subname">${escapeHTML(f.en)}</span></span></button>`,
-              )
-              .join("")}</div>`,
-        )
-        .join("");
 
-      function render() {
-        const id = location.hash.slice(1);
-        const faction = factions.find((f) => f.id === id);
-        document.body.classList.toggle("has-selection", Boolean(faction));
-        if (!faction) {
-          document.title = "Карама — Дюна";
-          window.scrollTo(0, 0);
-          return;
-        }
-        document.title = `${faction.name} — Карама`;
-        document.getElementById("detail").innerHTML = `
-        <div class="topbar"><button class="back" type="button" id="back">← Фракции</button><span class="topbar-label">Памятка «Карама»</span></div>
-        <header class="detail-heading">${mark(faction)}<div><h2>${escapeHTML(faction.name)}</h2><span class="subname">${escapeHTML(faction.en)}</span></div></header>
-        <section class="section" aria-labelledby="stop-title"><h3 id="stop-title">Что можно остановить</h3><ul class="list">${faction.stop.map(([term, meaning]) => `<li><span class="term">${escapeHTML(term)}</span><span class="meaning">${escapeHTML(meaning)}</span></li>`).join("")}</ul></section>
-        <section class="section power" aria-labelledby="power-title"><h3 id="power-title">Особая способность «Карамы»</h3><p class="${faction.power ? "" : "none"}">${escapeHTML(faction.power || "У этой фракции нет особой способности.")}</p></section>
-        <p class="source">По памятке Karama List. Для спорных случаев используйте правила соответствующего дополнения.</p>`;
-        document.getElementById("back").addEventListener("click", showHome);
-        window.scrollTo(0, 0);
+      const rule = ([term, meaning]) =>
+        `<li class="rule"><span class="term">${escapeHTML(term)}</span><span class="meaning">${escapeHTML(meaning)}</span></li>`;
+
+      const card = (faction) => `
+        <article class="card" data-id="${faction.id}">
+          <button class="card-trigger" type="button" id="trigger-${faction.id}"
+            aria-expanded="false" aria-controls="panel-${faction.id}">
+            ${mark(faction)}
+            <span class="card-label"><span class="card-name">${escapeHTML(faction.name)}</span>
+              <span class="card-subname">${escapeHTML(faction.en)}</span></span>
+            <svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m5 9 7 7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <div class="panel" id="panel-${faction.id}" role="region"
+            aria-labelledby="trigger-${faction.id}" aria-hidden="true" inert>
+            <div class="panel-inner"><div class="panel-content">
+              <h3 class="panel-title">Что можно остановить</h3>
+              <ul class="rules">${faction.stop.map(rule).join("")}</ul>
+              <div class="power"><h3 class="power-title">Особая способность «Карамы»</h3>
+                <p class="${faction.power ? "" : "none"}">${escapeHTML(faction.power || "У этой фракции нет особой способности.")}</p>
+              </div>
+            </div></div>
+          </div>
+        </article>`;
+
+      const groupsElement = document.getElementById("groups");
+      groupsElement.innerHTML = groups.map(([id, title]) => {
+        const members = factions.filter((faction) => faction.group === id);
+        return `<section class="group" aria-labelledby="group-${id}">
+          <div class="group-head"><h2 id="group-${id}">${escapeHTML(title)}</h2>
+            <span class="group-count">${members.length}</span></div>
+          <div class="cards">${members.map(card).join("")}</div>
+        </section>`;
+      }).join("");
+
+      function setExpanded(cardElement, expanded) {
+        cardElement.classList.toggle("is-open", expanded);
+        cardElement.querySelector(".card-trigger").setAttribute("aria-expanded", String(expanded));
+        const panel = cardElement.querySelector(".panel");
+        panel.setAttribute("aria-hidden", String(!expanded));
+        panel.toggleAttribute("inert", !expanded);
       }
-      function showHome() {
-        location.hash = "";
-        render();
+
+      function updateAddress(preferredId) {
+        const openCards = [...groupsElement.querySelectorAll(".card.is-open")];
+        const id = preferredId || openCards[openCards.length - 1]?.dataset.id;
+        const url = id ? `#${id}` : location.href.split("#")[0];
+        try { history.replaceState(null, "", url); } catch { /* Local file viewers may restrict URL changes. */ }
       }
-      document.getElementById("groups").addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-id]");
-        if (!button) return;
-        location.hash = button.dataset.id;
-        render();
+
+      groupsElement.addEventListener("click", (event) => {
+        const trigger = event.target.closest(".card-trigger");
+        if (!trigger || !groupsElement.contains(trigger)) return;
+        const cardElement = trigger.closest(".card");
+        const expanded = !cardElement.classList.contains("is-open");
+        setExpanded(cardElement, expanded);
+        updateAddress(expanded ? cardElement.dataset.id : null);
       });
-      let touchStart = null;
-      const detail = document.getElementById("detail");
-      detail.addEventListener("touchstart", (event) => {
-        touchStart = event.touches.length === 1
-          ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
-          : null;
-      }, { passive: true });
-      detail.addEventListener("touchend", (event) => {
-        if (!touchStart || event.changedTouches.length !== 1) return;
-        const dx = event.changedTouches[0].clientX - touchStart.x;
-        const dy = event.changedTouches[0].clientY - touchStart.y;
-        touchStart = null;
-        if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) showHome();
-      }, { passive: true });
-      detail.addEventListener("touchcancel", () => { touchStart = null; });
-      window.addEventListener("hashchange", render);
-      render();
+
+      const initialId = location.hash.slice(1);
+      const initialCard = [...groupsElement.querySelectorAll(".card")]
+        .find((element) => element.dataset.id === initialId);
+      if (initialCard) setExpanded(initialCard, true);
     </script>
   </body>
 </html>
