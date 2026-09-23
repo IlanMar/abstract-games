@@ -4,11 +4,12 @@ html, body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  /* Сплошной цвет, а не градиент: по нему Safari красит свои панели сверху и снизу.
+     Без него iOS считает фон белым и рисует белые полосы. Сам фон рисует канвас. */
+  background-color: #030509;
 }
 
 body {
-  /* Глубина жидкости: канвас прозрачный и чистится каждый кадр, фон рисует CSS */
-  background: radial-gradient(ellipse 120% 90% at 50% 42%, #0b1629 0%, #070c18 48%, #030509 100%);
   color: #cfe3ff;
   font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   user-select: none;
@@ -20,10 +21,12 @@ body {
 
 canvas {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
   display: block;
   width: 100%;
   height: 100%;
+  height: 100lvh;   /* до самого низа экрана, и под полупрозрачной панелью Safari */
   touch-action: none;
   cursor: crosshair;
 }

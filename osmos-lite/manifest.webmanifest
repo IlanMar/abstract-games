@@ -1,0 +1,10 @@
+{
+  "name": "Abstract Cell",
+  "short_name": "Cell",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#030509",
+  "theme_color": "#030509"
+}

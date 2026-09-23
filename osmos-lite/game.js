@@ -642,7 +642,8 @@ function buildBackground() {
 
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR, QUALITY[perf.q].dpr);
-  W = window.innerWidth; H = window.innerHeight;
+  // размер самого канваса: на iPhone он выше окна — заходит под панель Safari
+  W = cv.clientWidth || window.innerWidth; H = cv.clientHeight || window.innerHeight;
   cv.width = Math.round(W * DPR);
   cv.height = Math.round(H * DPR);
   buildBackground();
