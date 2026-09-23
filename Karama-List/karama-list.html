@@ -87,10 +87,15 @@
         cursor: pointer;
         -webkit-tap-highlight-color: transparent;
       }
-      .faction:hover,
       .faction:focus-visible {
-        border-color: var(--sand);
-        outline: none;
+        outline: 2px solid var(--sand);
+        outline-offset: 2px;
+      }
+      @media (hover: hover) {
+        .faction:hover,
+        .back:hover {
+          border-color: var(--sand);
+        }
       }
       .faction:active {
         transform: scale(0.985);
@@ -130,6 +135,7 @@
       }
       .detail {
         display: none;
+        touch-action: pan-y;
       }
       body.has-selection .home {
         display: none;
@@ -155,9 +161,6 @@
       .back:focus-visible {
         outline: 2px solid var(--sand);
         outline-offset: 3px;
-      }
-      .back:hover {
-        border-color: var(--sand);
       }
       .topbar-label {
         color: var(--muted);
@@ -622,16 +625,20 @@
         <section class="section" aria-labelledby="stop-title"><h3 id="stop-title">Что можно остановить</h3><ul class="list">${faction.stop.map(([term, meaning]) => `<li><span class="term">${escapeHTML(term)}</span><span class="meaning">${escapeHTML(meaning)}</span></li>`).join("")}</ul></section>
         <section class="section power" aria-labelledby="power-title"><h3 id="power-title">Особая способность «Карамы»</h3><p class="${faction.power ? "" : "none"}">${escapeHTML(faction.power || "У этой фракции нет особой способности.")}</p></section>
         <p class="source">По памятке Karama List. Для спорных случаев используйте правила соответствующего дополнения.</p>`;
-        document.getElementById("back").addEventListener("click", () => {
-          location.hash = "";
-        });
+        document.getElementById("back").addEventListener("click", showHome);
         window.scrollTo(0, 0);
+      }
+      function showHome() {
+        location.hash = "";
+        render();
       }
       document.getElementById("groups").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-id]");
-        if (button) location.hash = button.dataset.id;
+        if (!button) return;
+        location.hash = button.dataset.id;
+        render();
       });
-    let touchStart = null;
+      let touchStart = null;
       const detail = document.getElementById("detail");
       detail.addEventListener("touchstart", (event) => {
         touchStart = event.touches.length === 1
@@ -643,7 +650,7 @@
         const dx = event.changedTouches[0].clientX - touchStart.x;
         const dy = event.changedTouches[0].clientY - touchStart.y;
         touchStart = null;
-        if (dx > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) location.hash = "";
+        if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) showHome();
       }, { passive: true });
       detail.addEventListener("touchcancel", () => { touchStart = null; });
       window.addEventListener("hashchange", render);
