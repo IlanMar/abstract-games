@@ -98,6 +98,8 @@ const CONFIG = {
   maxStep: 1 / 120,       // физика бьёт кадр на подшаги не длиннее этого
   maxFrameDt: 0.1,        // после свёрнутой вкладки кадр не длиннее этого
   maxDPR: 3,              // родное разрешение iPhone (DPR 3)
+  maxFps: 60,             // потолок кадров на любом экране (0 — частота экрана): ровные
+                          // 60 глаже, чем 60…120 вперемешку, и дешевле для батареи
   targetFps: 60,          // ниже этого среднего FPS качество само ступенчато снижается
   perfWindow: 2,          // с: окно, по которому меряется средний кадр
 };
@@ -985,12 +987,13 @@ function checkFinite() {
   }
 }
 
-let looping = false, debugT = 0;
+let looping = false, debugT = 0, nextDraw = 0;
 
 function startLoop() {
   if (looping) return;
   looping = true;
   last = performance.now();
+  nextDraw = 0;
   requestAnimationFrame(frame);
 }
 
@@ -998,6 +1001,15 @@ function frame(now) {
   // Пауза: цикл просто не продолжается — ни одного кадра и ни одного пробуждения
   // процессора, последний кадр остаётся на экране. closeMenu запустит его снова.
   if (menuOpen) { looping = false; return; }
+
+  // Потолок FPS. rAF идёт с частотой экрана, поэтому на 120 Гц кадр рисуется через раз,
+  // на 90 Гц — три из четырёх: в среднем ровно maxFps. Сроки идут по сетке, а не «от
+  // прошлого кадра», иначе на 90 Гц выходило бы 45. Допуск 2 мс — на дрожание vsync.
+  if (CONFIG.maxFps > 0) {
+    const step = 1000 / CONFIG.maxFps;
+    if (now < nextDraw - 2) { requestAnimationFrame(frame); return; }
+    nextDraw = now - nextDraw > step ? now + step : nextDraw + step;   // отстали — новая сетка
+  }
   const work0 = performance.now();
   let dt = (now - last) / 1000;
   last = now;
