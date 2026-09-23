@@ -832,19 +832,29 @@ function alphaOf(c) {
   return a;
 }
 
-// Контур единичного радиуса; число точек — по размеру клетки на экране (sr)
+// Контур единичного радиуса. Точек — примерно одна на 8 px экранного контура (у мелких
+// клеток не меньше 16), и идут они не ломаной, а квадратичными кривыми через середины
+// соседних точек: у крупной клетки на весь экран не остаётся углов.
+const MEM = new Float64Array(2 * 160);        // точки контура, переиспользуются
+
 function membrane(sr, ph) {
-  const n = QUALITY[perf.q].detail > 1 ? clamp(Math.round(sr * 0.5), 16, 52) : clamp(Math.round(sr * 0.3), 12, 32);
+  const n = QUALITY[perf.q].detail > 1 ? clamp(Math.round(sr * 0.8), 16, 160) : clamp(Math.round(sr * 0.5), 12, 96);
   const A = CONFIG.wobble;
   const br = 1 + CONFIG.breathe * Math.sin(time * 1.6 + ph);
-  ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const th = i / n * TAU;
-    const k = 1 + A * (0.5 * Math.sin(3 * th + time * 1.1 + ph)
-                     + 0.3 * Math.sin(5 * th - time * 1.7 + ph * 2)
-                     + 0.2 * Math.sin(7 * th + time * 2.3 + ph * 3));
-    const x = Math.cos(th) * br * k, y = Math.sin(th) * br * k;
-    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    const k = br * (1 + A * (0.5 * Math.sin(3 * th + time * 1.1 + ph)
+                           + 0.3 * Math.sin(5 * th - time * 1.7 + ph * 2)
+                           + 0.2 * Math.sin(7 * th + time * 2.3 + ph * 3)));
+    MEM[2 * i] = Math.cos(th) * k;
+    MEM[2 * i + 1] = Math.sin(th) * k;
+  }
+  ctx.beginPath();
+  ctx.moveTo((MEM[2 * n - 2] + MEM[0]) / 2, (MEM[2 * n - 1] + MEM[1]) / 2);
+  for (let i = 0; i < n; i++) {
+    const j = i + 1 < n ? i + 1 : 0;
+    ctx.quadraticCurveTo(MEM[2 * i], MEM[2 * i + 1],
+      (MEM[2 * i] + MEM[2 * j]) / 2, (MEM[2 * i + 1] + MEM[2 * j + 1]) / 2);
   }
   ctx.closePath();
 }
