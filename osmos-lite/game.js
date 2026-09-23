@@ -999,6 +999,13 @@ function checkFinite() {
 
 let looping = false, debugT = 0, nextDraw = 0;
 
+// Зум плавно, в логарифме: приближение и отдаление идут с одинаковой скоростью
+function easeZoom(dt) {
+  const tz = targetZoom();
+  cam.zoom = Math.exp(lerp(Math.log(cam.zoom), Math.log(tz), expK(dt, CONFIG.zoomSmoothness)));
+  return Math.abs(Math.log(cam.zoom / tz));   // сколько ещё осталось
+}
+
 function startLoop() {
   if (looping) return;
   looping = true;
@@ -1010,7 +1017,16 @@ function startLoop() {
 function frame(now) {
   // Пауза: цикл просто не продолжается — ни одного кадра и ни одного пробуждения
   // процессора, последний кадр остаётся на экране. closeMenu запустит его снова.
-  if (menuOpen) { looping = false; return; }
+  // Исключение — зум: переключили его в меню, и камера сразу плавно доезжает до нового
+  // масштаба за меню, пока мир стоит. Доехала — цикл засыпает.
+  if (menuOpen) {
+    const dt = Math.min(Math.max((now - last) / 1000, 0), CONFIG.maxFrameDt);
+    last = now;
+    if (easeZoom(dt) < 0.002) { looping = false; return; }
+    render(0);
+    requestAnimationFrame(frame);
+    return;
+  }
 
   // Потолок FPS. rAF идёт с частотой экрана, поэтому на 120 Гц кадр рисуется через раз,
   // на 90 Гц — три из четырёх: в среднем ровно maxFps. Сроки идут по сетке, а не «от
@@ -1036,8 +1052,7 @@ function frame(now) {
   }
   time += dt;
 
-  const tz = targetZoom();
-  cam.zoom = Math.exp(lerp(Math.log(cam.zoom), Math.log(tz), expK(dt, CONFIG.zoomSmoothness)));
+  easeZoom(dt);
 
   updateParticles(dt);
   updateVisuals(dt);
@@ -1165,7 +1180,11 @@ for (const sl of SLIDERS) {
     saveSettings();
   });
 }
-$('s-zoom').addEventListener('change', e => { CONFIG.cameraAutoZoom = e.target.checked; saveSettings(); });
+$('s-zoom').addEventListener('change', e => {
+  CONFIG.cameraAutoZoom = e.target.checked;
+  saveSettings();
+  startLoop();                          // на паузе — только ради плавной смены масштаба
+});
 $('s-debug').addEventListener('change', e => { setDebug(e.target.checked); saveSettings(); });
 $('b-defaults').addEventListener('click', () => {
   Object.assign(CONFIG, DEFAULTS);
