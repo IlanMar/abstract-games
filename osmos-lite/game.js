@@ -262,7 +262,7 @@ function reset() {
 
 const Sound = (() => {
   const PENTA = [0, 3, 5, 7, 10, 12];                     // полутона от A3: A C D E G A
-  const AMB_LEVEL = 0.04;                                 // фон — на пороге слышимости
+  const AMB_LEVEL = 0.02;                                 // фон — на пороге слышимости (автор просил тише)
   let ac = null, out = null, wet = null, noise = null, amb = null;
   let lastEat = -1, bubbleT = 3;
 
