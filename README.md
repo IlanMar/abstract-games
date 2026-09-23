@@ -1,8 +1,6 @@
 # abstract-games
 
 Коллекция маленьких браузерных игр. Одна игра — одна папка, без сборки и зависимостей.
-Витрина со списком лежит в корне — [index.html](index.html), она же
-**https://ilanmar.github.io/abstract-games/**
 
 ## Abstract Trader — [trader/](trader/index.html)
 
