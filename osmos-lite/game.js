@@ -16,7 +16,7 @@ const CONFIG = {
   holdRate: 7,              // капель в секунду в очереди
   moteSteerTime: 0.35,      // с: капля в жидкости теряет ~63% скорости за это время
   moteGrace: 0.35,          // с: столько свежую каплю не может снова проглотить её же клетка
-  maxCells: 400,            // потолок числа клеток: старые капли сверх него исчезают
+  maxMotes: 300,            // потолок числа капель: самые старые сверх него исчезают
 
   // --- среда ----------------------------------------------------------------
   drag: 0.35,             // 1/с: вязкость жидкости; скорость падает в e раз за 1/drag с
@@ -32,17 +32,28 @@ const CONFIG = {
   playerRadius: 22,
 
   // --- мир и население --------------------------------------------------------
-  worldRadius: 1500,      // мир — круглая чаша, край мягкий
-  enemyCount: 49,         // организмов в новом мире, делятся по долям population
+  worldRadius: 1350,      // мир — круглая чаша, край мягкий. С 60 клетками на экране
+                          // iPhone на старте ~9 клеток; при 1500 и 49 было ~4
+  enemyCount: 60,         // организмов на карте радиуса densityRadius; на другой карте их
+  densityRadius: 1350,    // число растёт с площадью — плотность, а не пустота
+  enemyDensity: 1,        // множитель плотности (ползунок в меню)
+  maxEnemies: 700,        // потолок — чтобы огромная и плотная карта держала 60+ FPS
   maxEnemySize: 5,        // самый крупный организм — во столько раз больше стартовой клетки
   difficulty: 0.5,        // 0…1: доля крупных хищников против мелкой добычи. 0.5 — доли как в
                           // population (~31% крупнее игрока); 0 — ~3%, 1 — ~80%
-  population: [           // доли и размеры в долях стартового радиуса игрока
-    { count: 26, min: 0.30, max: 0.80 },  // добыча
-    { count: 8,  min: 0.90, max: 1.10 },  // почти ровня
-    { count: 10, min: 1.30, max: 2.10 },  // опасные
-    { count: 5,  min: 2.50, max: 5.00 },  // очень опасные
+  // Доли и размеры в долях стартового радиуса игрока. На Normal 70% можно съесть, 30%
+  // больше тебя. Добыча не мельче 0.4: крошка в 0.3 давала 9% массы, а дорога до неё
+  // тапами стоила дороже. Опасные — лестницей: съев добычу (~15 стартовых масс, радиус
+  // ×4), обгоняешь охотников и середину, гиганты — цель на потом.
+  population: [
+    { count: 42, min: 0.40, max: 0.85 },  // добыча
+    { count: 9,  min: 1.10, max: 1.60 },  // охотники — чуть крупнее, их больше всего
+    { count: 6,  min: 1.60, max: 2.50 },  // середина
+    { count: 3,  min: 3.00, max: 5.00 },  // гиганты
   ],
+  nearFood: 6,            // столько кусков добычи кладётся в кольцо nearFoodRing у старта
+  nearFoodRing: [140, 460],
+  threatSafe: 420,        // px: ближе к старту никого крупнее игрока
   refillShare: 0.7,       // съели больше 30% — вдалеке, вне экрана, появится новая мелочь
   driftSpeed: [12, 42],   // px/с: собственный дрейф организмов
   wanderTurn: 0.5,        // рад/√с: насколько блуждает направление дрейфа
@@ -156,11 +167,12 @@ function giveDrift(c) {
   c.vy = Math.sin(c.wander) * c.cruise;
 }
 
-// Ищет свободное место; farFromView — только вне экрана (для подсадки новых)
-function place(r, safe, farFromView) {
-  const R = CONFIG.worldRadius;
+// Ищет свободное место; farFromView — только вне экрана (для подсадки новых),
+// maxDist — не дальше этого от центра мира (там стартует игрок)
+function place(r, safe, farFromView, maxDist) {
+  const R = Math.min(CONFIG.worldRadius - r - 40, maxDist || Infinity);
   for (let tries = 0; tries < 80; tries++) {
-    const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * (R - r - 40);
+    const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * R;
     const x = Math.cos(a) * d, y = Math.sin(a) * d;
     if (Math.hypot(x - player.x, y - player.y) < safe + r + player.r) continue;
     if (farFromView) {
@@ -176,13 +188,19 @@ function place(r, safe, farFromView) {
   return null;
 }
 
-function spawn(r, safe, farFromView) {
-  const p = place(r, safe, farFromView);
+function spawn(r, safe, farFromView, maxDist) {
+  const p = place(r, safe, farFromView, maxDist);
   if (!p) return null;
   const c = makeCell(p.x, p.y, r, false);
   giveDrift(c);
   cells.push(c);
   return c;
+}
+
+// Сколько организмов в мире: плотность постоянна, число растёт с площадью карты
+function enemyTotal() {
+  const area = (CONFIG.worldRadius / CONFIG.densityRadius) ** 2;
+  return Math.max(1, Math.min(CONFIG.maxEnemies, Math.round(CONFIG.enemyCount * CONFIG.enemyDensity * area)));
 }
 
 // Сложность смещает доли: крупные группы тяжелеют в dangerFactor раз, мелкие — легчают
@@ -197,17 +215,18 @@ function reset() {
   player = makeCell(0, 0, CONFIG.playerRadius, true);
   cells.push(player);
   const r0 = CONFIG.playerRadius, maxE = CONFIG.maxEnemySize;
-  const weights = CONFIG.population.map(groupWeight);
+  const weights = CONFIG.population.map(groupWeight), total = enemyTotal();
   const weight = weights.reduce((sum, w) => sum + w, 0);
   const near = Math.min(1, CONFIG.worldRadius / 1500);        // на маленькой карте всё ближе
   for (const [gi, g] of CONFIG.population.entries()) {
-    const n = Math.round(weights[gi] * CONFIG.enemyCount / weight);
+    const n = Math.round(weights[gi] * total / weight);
     const lo = Math.min(g.min, maxE), hi = Math.min(g.max, maxE);
     for (let i = 0; i < n; i++) {
       const r = r0 * lerp(lo, hi, Math.random());
-      // крупных не сажаем рядом, а первые куски добычи — наоборот, недалеко
-      const safe = (r > r0 ? 520 : (i < 5 ? 150 : 220)) * near;
-      spawn(r, safe, false);
+      // крупных не сажаем рядом, а первые куски добычи — наоборот, в кольце у старта
+      if (r > r0) spawn(r, CONFIG.threatSafe * near, false);
+      else if (i < CONFIG.nearFood) spawn(r, CONFIG.nearFoodRing[0], false, CONFIG.nearFoodRing[1]);
+      else spawn(r, 220 * near, false);
     }
   }
   for (const c of cells) c.born = 1;    // стартовое население видно сразу
@@ -308,9 +327,11 @@ function eject(sx, sy) {
   return true;
 }
 
-// Слишком много клеток — убираем самые старые капли, которые никого не едят и не едомы
+// Слишком много капель — убираем самые старые, которые никого не едят и не едомы.
+// Считаются только капли: организмов на большой карте может быть и 700.
 function trimMotes() {
-  let extra = cells.length - CONFIG.maxCells;
+  let extra = -CONFIG.maxMotes;
+  for (const c of cells) if (c.mote) extra++;
   if (extra <= 0) return;
   const busy = new Set();
   for (const c of cells) if (c.eatenBy) busy.add(c.eatenBy);
@@ -519,11 +540,11 @@ function step(h) {
 function repopulate(dt) {
   spawnT -= dt;
   const others = cells.length - (player.dead ? 0 : 1);   // съеденного игрока в cells уже нет
-  if (spawnT > 0 || others >= Math.round(CONFIG.enemyCount * CONFIG.refillShare)) return;
+  if (spawnT > 0 || others >= Math.round(enemyTotal() * CONFIG.refillShare)) return;
   spawnT = 1.2;
   const pr = player.dead ? CONFIG.playerRadius : player.r;
-  const f = dangerFactor(), big = Math.random() < 0.25 * f / (0.25 * f + 0.75 / f);
-  const r = Math.min(pr * (big ? lerp(1.3, 2.2, Math.random()) : lerp(0.3, 0.8, Math.random())),
+  const f = dangerFactor(), big = Math.random() < 0.3 * f / (0.3 * f + 0.7 / f);
+  const r = Math.min(pr * (big ? lerp(1.1, 2.2, Math.random()) : lerp(0.4, 0.85, Math.random())),
     CONFIG.playerRadius * CONFIG.maxEnemySize, CONFIG.worldRadius * 0.12);
   spawn(r, 400, true);
 }
@@ -1033,16 +1054,19 @@ function frame(now) {
 // ============================================================================
 
 const menuBtn = $('menuBtn'), menuEl = $('menu'), newBtn = $('b-new'), sepEl = menuEl.querySelector('.m-sep');
-const SAVE_KEY = 'abstract-cell-settings';
+// v2: храним только отличия от умолчаний. В v1 лежали все значения разом, и новые
+// умолчания (например, баланс Normal) не доходили до тех, кто хоть раз тронул меню.
+const SAVE_KEY = 'abstract-cell-settings-v2';
+try { localStorage.removeItem('abstract-cell-settings'); } catch (e) {}
 const SLIDERS = [
   { id: 'eject',   key: 'ejectMassFraction', k: 0.01, fmt: v => `${+(v * 100).toFixed(2)}%` },
-  { id: 'enemies', key: 'enemyCount',        k: 1,    fmt: v => `${v}`, world: true },
+  { id: 'enemies', key: 'enemyDensity',      k: 0.01, fmt: v => `${+v.toFixed(2)}× · ${enemyTotal()} cells`, world: true },
   { id: 'diff',    key: 'difficulty',        k: 0.01, world: true,
     fmt: v => `${['Easy', 'Normal', 'Hard', 'Brutal'][v < 0.3 ? 0 : v < 0.65 ? 1 : v < 0.9 ? 2 : 3]} · ${Math.round(v * 100)}%` },
-  { id: 'map',     key: 'worldRadius',       k: 1,    fmt: v => `${(v / 1500).toFixed(1)}×`, world: true },
+  { id: 'map',     key: 'worldRadius',       k: 1,    fmt: v => `${(v / DEFAULTS.worldRadius).toFixed(1)}×`, world: true },
   { id: 'maxe',    key: 'maxEnemySize',      k: 1,    fmt: v => `${v.toFixed(1)}× you`, world: true },
 ];
-const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'enemyCount', 'difficulty', 'worldRadius', 'maxEnemySize'];
+const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'enemyDensity', 'difficulty', 'worldRadius', 'maxEnemySize'];
 const DEFAULTS = {};
 for (const k of SAVED_KEYS) DEFAULTS[k] = CONFIG[k];
 let menuOpen = false, worldBuiltWith = {};
@@ -1055,7 +1079,7 @@ function setDebug(on) {
 
 function saveSettings() {
   const data = { debug };
-  for (const k of SAVED_KEYS) data[k] = CONFIG[k];
+  for (const k of SAVED_KEYS) if (CONFIG[k] !== DEFAULTS[k]) data[k] = CONFIG[k];
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
@@ -1064,6 +1088,7 @@ function loadSettings() {
   try { data = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) {}
   if (!data || typeof data !== 'object') return;
   for (const sl of SLIDERS) {
+    if (!(sl.key in data)) continue;
     const el = $('s-' + sl.id), v = Number(data[sl.key]);
     if (Number.isFinite(v)) CONFIG[sl.key] = clamp(v, el.min * sl.k, el.max * sl.k);
   }
@@ -1113,7 +1138,7 @@ function closeMenu() {
 for (const sl of SLIDERS) {
   $('s-' + sl.id).addEventListener('input', e => {
     CONFIG[sl.key] = +(Number(e.target.value) * sl.k).toFixed(6);
-    $('o-' + sl.id).textContent = sl.fmt(CONFIG[sl.key]);
+    for (const o of SLIDERS) $('o-' + o.id).textContent = o.fmt(CONFIG[o.key]);
     markPending();
     saveSettings();
   });
