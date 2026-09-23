@@ -33,13 +33,17 @@ const CONFIG = {
 
   // --- мир и население --------------------------------------------------------
   worldRadius: 1500,      // мир — круглая чаша, край мягкий
-  population: [           // размеры в долях стартового радиуса игрока
+  enemyCount: 49,         // организмов в новом мире, делятся по долям population
+  maxEnemySize: 5,        // самый крупный организм — во столько раз больше стартовой клетки
+  difficulty: 0.5,        // 0…1: доля крупных хищников против мелкой добычи. 0.5 — доли как в
+                          // population (~31% крупнее игрока); 0 — ~3%, 1 — ~80%
+  population: [           // доли и размеры в долях стартового радиуса игрока
     { count: 26, min: 0.30, max: 0.80 },  // добыча
-    { count: 8,  min: 0.90, max: 1.10 },  // ровня — отталкивается
+    { count: 8,  min: 0.90, max: 1.10 },  // почти ровня
     { count: 10, min: 1.30, max: 2.10 },  // опасные
     { count: 5,  min: 2.50, max: 5.00 },  // очень опасные
   ],
-  minOrganisms: 34,       // съели слишком много — вдалеке, вне экрана, появится новая мелочь
+  refillShare: 0.7,       // съели больше 30% — вдалеке, вне экрана, появится новая мелочь
   driftSpeed: [12, 42],   // px/с: собственный дрейф организмов
   wanderTurn: 0.5,        // рад/√с: насколько блуждает направление дрейфа
   steerTime: 2.5,         // с: за сколько организм возвращается к своему дрейфу после толчка
@@ -60,6 +64,7 @@ const CONFIG = {
   wallDamping: 6,
 
   // --- камера -------------------------------------------------------------------
+  cameraAutoZoom: true,   // камера отъезжает при росте и на скорости; false — масштаб постоянный
   cameraStiffness: 3.4,   // рад/с: пружина камеры; меньше — ленивее и заметнее вес
   cameraLookAhead: 0.66,  // с: камера смотрит на столько секунд пути вперёд (≈2/stiffness
                           // держит клетку в центре на ровном ходу, больше — вид чуть впереди)
@@ -180,16 +185,28 @@ function spawn(r, safe, farFromView) {
   return c;
 }
 
+// Сложность смещает доли: крупные группы тяжелеют в dangerFactor раз, мелкие — легчают
+function dangerFactor() { return Math.pow(4, (CONFIG.difficulty - 0.5) * 2); }
+function groupWeight(g) {
+  const f = dangerFactor();
+  return g.min > 1 ? g.count * f : g.max < 1 ? g.count / f : g.count;
+}
+
 function reset() {
   cells = [];
   player = makeCell(0, 0, CONFIG.playerRadius, true);
   cells.push(player);
-  const r0 = CONFIG.playerRadius;
-  for (const g of CONFIG.population) {
-    for (let i = 0; i < g.count; i++) {
-      const r = r0 * lerp(g.min, g.max, Math.random());
+  const r0 = CONFIG.playerRadius, maxE = CONFIG.maxEnemySize;
+  const weights = CONFIG.population.map(groupWeight);
+  const weight = weights.reduce((sum, w) => sum + w, 0);
+  const near = Math.min(1, CONFIG.worldRadius / 1500);        // на маленькой карте всё ближе
+  for (const [gi, g] of CONFIG.population.entries()) {
+    const n = Math.round(weights[gi] * CONFIG.enemyCount / weight);
+    const lo = Math.min(g.min, maxE), hi = Math.min(g.max, maxE);
+    for (let i = 0; i < n; i++) {
+      const r = r0 * lerp(lo, hi, Math.random());
       // крупных не сажаем рядом, а первые куски добычи — наоборот, недалеко
-      const safe = r > r0 ? 520 : (i < 5 ? 150 : 220);
+      const safe = (r > r0 ? 520 : (i < 5 ? 150 : 220)) * near;
       spawn(r, safe, false);
     }
   }
@@ -215,6 +232,7 @@ let activePointer = null;
 cv.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   e.preventDefault();
+  if (menuOpen) { closeMenu(); return; }
   if (dead) {
     if (deadT > 0.5) reset();           // тап-рестарт, но не тот же тап, что пришёлся на смерть
     return;
@@ -241,10 +259,14 @@ window.addEventListener('blur', () => release());
 cv.addEventListener('contextmenu', e => e.preventDefault());
 // iOS Safari: никаких щипков-зумов и прокрутки страницы
 document.addEventListener('gesturestart', e => e.preventDefault());
-document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+// (кроме меню: иначе на iPhone не тянутся ползунки)
+document.addEventListener('touchmove', e => {
+  if (!(e.target instanceof Element && e.target.closest('#menu'))) e.preventDefault();
+}, { passive: false });
 
 window.addEventListener('keydown', e => {
-  if (e.code === 'KeyD') { debug = !debug; debugEl.classList.toggle('show', debug); }
+  if (e.code === 'Escape' && menuOpen) closeMenu();
+  if (e.code === 'KeyD' && !menuOpen) setDebug(!debug);
   if (dead && deadT > 0.5 && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR')) reset();
 });
 
@@ -495,17 +517,18 @@ function step(h) {
 // Подсаживаем мелочь вне экрана, чтобы мир не пустел
 function repopulate(dt) {
   spawnT -= dt;
-  if (spawnT > 0 || cells.length - 1 >= CONFIG.minOrganisms) return;
+  if (spawnT > 0 || cells.length - 1 >= Math.round(CONFIG.enemyCount * CONFIG.refillShare)) return;
   spawnT = 1.2;
   const pr = player.dead ? CONFIG.playerRadius : player.r;
-  const big = Math.random() < 0.25;
+  const f = dangerFactor(), big = Math.random() < 0.25 * f / (0.25 * f + 0.75 / f);
   const r = Math.min(pr * (big ? lerp(1.3, 2.2, Math.random()) : lerp(0.3, 0.8, Math.random())),
-    CONFIG.worldRadius * 0.12);
+    CONFIG.playerRadius * CONFIG.maxEnemySize, CONFIG.worldRadius * 0.12);
   spawn(r, 400, true);
 }
 
 function targetZoom() {
   const base = clamp(Math.sqrt(W * H) / CONFIG.viewSize, 0.55, 1.3);
+  if (!CONFIG.cameraAutoZoom) return base;
   const grow = Math.pow(CONFIG.playerRadius / Math.max(cam.fr, 1), CONFIG.zoomGrowth);
   const sp = player && !player.dead ? Math.hypot(player.vx, player.vy) / CONFIG.maxSpeed : 0;
   return base * grow / (1 + CONFIG.speedZoomOut * clamp(sp, 0, 1.5));
@@ -888,6 +911,11 @@ function checkFinite() {
 }
 
 function frame(now) {
+  if (menuOpen) {                       // пауза: мир стоит, последний кадр остаётся на экране
+    last = now;
+    requestAnimationFrame(frame);
+    return;
+  }
   const work0 = performance.now();
   let dt = (now - last) / 1000;
   last = now;
@@ -936,6 +964,111 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// ============================================================================
+// Меню настроек — кнопка в правом нижнем углу. Пока оно открыто, игра на паузе.
+// Настройки запоминаются в localStorage этого браузера.
+// ============================================================================
+
+const menuBtn = $('menuBtn'), menuEl = $('menu'), newBtn = $('b-new'), sepEl = menuEl.querySelector('.m-sep');
+const SAVE_KEY = 'abstract-cell-settings';
+const SLIDERS = [
+  { id: 'eject',   key: 'ejectMassFraction', k: 0.01, fmt: v => `${+(v * 100).toFixed(2)}%` },
+  { id: 'enemies', key: 'enemyCount',        k: 1,    fmt: v => `${v}`, world: true },
+  { id: 'diff',    key: 'difficulty',        k: 0.01, world: true,
+    fmt: v => `${['Easy', 'Normal', 'Hard', 'Brutal'][v < 0.3 ? 0 : v < 0.65 ? 1 : v < 0.9 ? 2 : 3]} · ${Math.round(v * 100)}%` },
+  { id: 'map',     key: 'worldRadius',       k: 1,    fmt: v => `${(v / 1500).toFixed(1)}×`, world: true },
+  { id: 'maxe',    key: 'maxEnemySize',      k: 1,    fmt: v => `${v.toFixed(1)}× you`, world: true },
+];
+const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'enemyCount', 'difficulty', 'worldRadius', 'maxEnemySize'];
+const DEFAULTS = {};
+for (const k of SAVED_KEYS) DEFAULTS[k] = CONFIG[k];
+let menuOpen = false, worldBuiltWith = {};
+
+function setDebug(on) {
+  debug = on;
+  debugEl.classList.toggle('show', on);
+  $('s-debug').checked = on;
+}
+
+function saveSettings() {
+  const data = { debug };
+  for (const k of SAVED_KEYS) data[k] = CONFIG[k];
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) {}
+}
+
+function loadSettings() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) {}
+  if (!data || typeof data !== 'object') return;
+  for (const sl of SLIDERS) {
+    const el = $('s-' + sl.id), v = Number(data[sl.key]);
+    if (Number.isFinite(v)) CONFIG[sl.key] = clamp(v, el.min * sl.k, el.max * sl.k);
+  }
+  if (typeof data.cameraAutoZoom === 'boolean') CONFIG.cameraAutoZoom = data.cameraAutoZoom;
+  if (data.debug === true) setDebug(true);
+}
+
+// Настройки мира вступают в силу с новым миром — пока он не создан, подсвечиваем кнопку
+function markPending() {
+  const pending = SLIDERS.some(sl => sl.world && CONFIG[sl.key] !== worldBuiltWith[sl.key]);
+  newBtn.classList.toggle('pending', pending);
+  sepEl.classList.toggle('pending', pending);
+}
+
+function syncMenu() {
+  for (const sl of SLIDERS) {
+    $('s-' + sl.id).value = CONFIG[sl.key] / sl.k;
+    $('o-' + sl.id).textContent = sl.fmt(CONFIG[sl.key]);
+  }
+  $('s-zoom').checked = CONFIG.cameraAutoZoom;
+  $('s-debug').checked = debug;
+  markPending();
+}
+
+function newWorld() {
+  for (const sl of SLIDERS) if (sl.world) worldBuiltWith[sl.key] = CONFIG[sl.key];
+  reset();
+  markPending();
+}
+
+function openMenu() {
+  release();
+  menuOpen = true;
+  syncMenu();
+  menuEl.hidden = false;
+  menuBtn.setAttribute('aria-expanded', 'true');
+}
+
+function closeMenu() {
+  menuOpen = false;
+  menuEl.hidden = true;
+  menuBtn.setAttribute('aria-expanded', 'false');
+  last = performance.now();             // без скачка времени после паузы
+}
+
+for (const sl of SLIDERS) {
+  $('s-' + sl.id).addEventListener('input', e => {
+    CONFIG[sl.key] = +(Number(e.target.value) * sl.k).toFixed(6);
+    $('o-' + sl.id).textContent = sl.fmt(CONFIG[sl.key]);
+    markPending();
+    saveSettings();
+  });
+}
+$('s-zoom').addEventListener('change', e => { CONFIG.cameraAutoZoom = e.target.checked; saveSettings(); });
+$('s-debug').addEventListener('change', e => { setDebug(e.target.checked); saveSettings(); });
+$('b-defaults').addEventListener('click', () => {
+  Object.assign(CONFIG, DEFAULTS);
+  syncMenu();
+  saveSettings();
+});
+newBtn.addEventListener('click', () => { newWorld(); closeMenu(); });
+menuBtn.addEventListener('click', () => (menuOpen ? closeMenu() : openMenu()));
+// Тапы по меню не должны доходить до игры
+for (const el of [menuBtn, menuEl]) el.addEventListener('pointerdown', e => e.stopPropagation());
+window.addEventListener('resize', () => { if (menuOpen) render(0); });   // на паузе кадр не рисуется сам
+
+loadSettings();
 resize();
+for (const sl of SLIDERS) if (sl.world) worldBuiltWith[sl.key] = CONFIG[sl.key];
 reset();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
