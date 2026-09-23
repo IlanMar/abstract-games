@@ -90,10 +90,10 @@ canvas {
   place-items: center;
   border-radius: 50%;
   border: 1px solid rgba(140, 190, 255, .22);
-  background: rgba(12, 20, 36, .55);
+  /* без backdrop-filter: под кнопкой канвас меняется каждый кадр, и размытие
+     пришлось бы пересчитывать на GPU постоянно */
+  background: rgba(12, 20, 36, .7);
   color: rgba(200, 225, 255, .8);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
   cursor: pointer;
   touch-action: manipulation;
 }

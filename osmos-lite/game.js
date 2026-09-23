@@ -272,6 +272,7 @@ window.addEventListener('keydown', e => {
 
 document.addEventListener('visibilitychange', () => {
   last = performance.now();
+  perf.hold = 1;                        // первые кадры после возврата бывают рваными — не мерить
   release();
 });
 
@@ -346,7 +347,7 @@ function stepPlayer(h) {
   p.vx *= d; p.vy *= d;
 
   // Мягкий потолок: превышение гаснет, а не обрезается
-  const s = Math.hypot(p.vx, p.vy);
+  const s = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
   if (s > CONFIG.maxSpeed) {
     const ns = CONFIG.maxSpeed + (s - CONFIG.maxSpeed) * Math.exp(-CONFIG.overspeedDrag * h);
     p.vx *= ns / s; p.vy *= ns / s;
@@ -426,7 +427,7 @@ function walls(h) {
   const R = CONFIG.worldRadius;
   for (const c of cells) {
     if (c.eatenBy) continue;
-    const d = Math.hypot(c.x, c.y), p = d + c.r - R;
+    const d = Math.sqrt(c.x * c.x + c.y * c.y), p = d + c.r - R;
     if (p <= 0 || d < 1e-6) continue;
     const nx = c.x / d, ny = c.y / d, vn = c.vx * nx + c.vy * ny;
     const a = CONFIG.wallStiffness * p + (vn > 0 ? CONFIG.wallDamping * vn : 0);
@@ -517,7 +518,8 @@ function step(h) {
 // Подсаживаем мелочь вне экрана, чтобы мир не пустел
 function repopulate(dt) {
   spawnT -= dt;
-  if (spawnT > 0 || cells.length - 1 >= Math.round(CONFIG.enemyCount * CONFIG.refillShare)) return;
+  const others = cells.length - (player.dead ? 0 : 1);   // съеденного игрока в cells уже нет
+  if (spawnT > 0 || others >= Math.round(CONFIG.enemyCount * CONFIG.refillShare)) return;
   spawnT = 1.2;
   const pr = player.dead ? CONFIG.playerRadius : player.r;
   const f = dangerFactor(), big = Math.random() < 0.25 * f / (0.25 * f + 0.75 / f);
@@ -590,13 +592,13 @@ function updateVisuals(dt) {
     c.ax += (rax - c.ax) * ka; c.ay += (ray - c.ay) * ka;
 
     c.svx += (c.vx - c.svx) * kv; c.svy += (c.vy - c.svy) * kv;
-    const sp = Math.hypot(c.svx, c.svy);
+    const sp = Math.sqrt(c.svx * c.svx + c.svy * c.svy);
     c.st += (CONFIG.stretch * clamp(sp / CONFIG.maxSpeed, 0, 1) - c.st) * kv;
     if (sp > 1) c.ang = Math.atan2(c.svy, c.svx);
 
     let tx = -c.ax / CONFIG.nucleusAccelRef * CONFIG.nucleusLag * c.r;
     let ty = -c.ay / CONFIG.nucleusAccelRef * CONFIG.nucleusLag * c.r;
-    const tl = Math.hypot(tx, ty), tmax = c.r * 0.28;
+    const tl = Math.sqrt(tx * tx + ty * ty), tmax = c.r * 0.28;
     if (tl > tmax) { tx *= tmax / tl; ty *= tmax / tl; }
     c.nvx += (-K * (c.nx - tx) - C * c.nvx) * dt; c.nx += c.nvx * dt;
     c.nvy += (-K * (c.ny - ty) - C * c.nvy) * dt; c.ny += c.nvy * dt;
@@ -625,17 +627,45 @@ const QUALITY = [
   { dpr: 1.5, detail: 0 },    // и без дальних слоёв пыли
   { dpr: 1,   detail: 0 },
 ];
-const perf = { q: 0, hold: 2, sum: 0, n: 0, work: 0 };   // hold — секунды, пока не меряем
+// hold — секунды, пока не меряем; before — средний кадр до последнего понижения;
+// locked — понижение не помогло, дальше качество не трогаем
+const perf = { q: 0, prev: 0, hold: 2, sum: 0, n: 0, work: 0, before: 0, locked: false };
+
+const effDpr = q => Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR, QUALITY[q].dpr);
+
+// Следующая ступень, которая на этом устройстве действительно что-то меняет
+// (на экране с DPR 2 ступени «3» и «2» одинаковы — их пропускаем)
+function nextQuality(q) {
+  for (let n = q + 1; n < QUALITY.length; n++) {
+    if (effDpr(n) !== effDpr(q) || QUALITY[n].detail !== QUALITY[q].detail) return n;
+  }
+  return q;
+}
 
 function monitorPerf(rawDt) {
-  if (document.hidden || rawDt > 0.25) return;          // пауза, свёрнутая вкладка
+  if (perf.locked || document.hidden || rawDt > 0.25) return;    // пауза, свёрнутая вкладка
   if (perf.hold > 0) { perf.hold -= rawDt; perf.sum = perf.n = 0; return; }
   perf.sum += rawDt; perf.n++;
   if (perf.sum < CONFIG.perfWindow) return;
   const avg = perf.sum / perf.n;
   perf.sum = perf.n = 0;
-  if (avg > 1.12 / CONFIG.targetFps && perf.q < QUALITY.length - 1) {
-    perf.q++;
+  if (perf.before) {
+    // Прошлое понижение не ускорило кадр — значит, частоту режет не нагрузка, а
+    // ограничение (энергосбережение iOS держит страницы на 30 FPS). Возвращаем
+    // качество и больше его не трогаем: хуже картинка тут ничего не даст.
+    if (avg > perf.before * 0.9) {
+      perf.q = perf.prev;
+      perf.locked = true;
+      resize();
+      return;
+    }
+    perf.before = 0;
+  }
+  const next = nextQuality(perf.q);
+  if (avg > 1.12 / CONFIG.targetFps && next !== perf.q) {
+    perf.before = avg;
+    perf.prev = perf.q;
+    perf.q = next;
     perf.hold = 1;
     resize();
   }
@@ -664,9 +694,13 @@ function buildBackground() {
 }
 
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR, QUALITY[perf.q].dpr);
+  const dpr = effDpr(perf.q);
   // размер самого канваса: на iPhone он выше окна — заходит под панель Safari
-  W = cv.clientWidth || window.innerWidth; H = cv.clientHeight || window.innerHeight;
+  const w = cv.clientWidth || window.innerWidth, h = cv.clientHeight || window.innerHeight;
+  // Пересоздание буфера канваса на DPR 3 — это 12 МБ и пустой кадр; без причины не надо.
+  // На iPhone при повороте приходят и resize, и orientationchange.
+  if (w === W && h === H && dpr === DPR) return;
+  DPR = dpr; W = w; H = h;
   cv.width = Math.round(W * DPR);
   cv.height = Math.round(H * DPR);
   buildBackground();
@@ -749,8 +783,18 @@ function paletteOf(c) {
     const t = key / 16 - 1;
     const col = key < 0 ? RGB_PLAYER : t < 0 ? mix(RGB_EQUAL, RGB_FOOD, -t) : mix(RGB_EQUAL, RGB_THREAT, t);
     const lc = light(col), inner = key < 0 ? 0.5 / 2.4 : 0.5 / 1.9;
+    // Цитоплазма — градиент единичного радиуса: клетка рисуется в масштабе sr, так что
+    // один объект годится для любой клетки этого оттенка, прозрачность — через globalAlpha
+    const body = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.03), k = key < 0 ? 1.25 : 1;
+    body.addColorStop(0, rgba(col, 0.06 * k));
+    body.addColorStop(0.55, rgba(col, 0.14 * k));
+    body.addColorStop(0.86, rgba(col, 0.32 * k));
+    body.addColorStop(1, rgba(col, 0.72));
     p = {
-      col, lc,
+      col, lc, body,
+      rim: rgba(lc, key < 0 ? 0.6 : 0.45),
+      dot: rgba(lc, 0.7),
+      organelle: rgba(lc, 0.32),
       glow: sprite(128, [[0, rgba(col, 1)], [inner, rgba(col, 1)], [1, rgba(col, 0)]]),
       core: sprite(64, [[0, 'rgba(255,255,255,1)'], [0.35, rgba(lc, 0.6)], [1, rgba(col, 0)]]),
     };
@@ -765,10 +809,11 @@ function alphaOf(c) {
   return a;
 }
 
+// Контур единичного радиуса; число точек — по размеру клетки на экране (sr)
 function membrane(sr, ph) {
   const n = QUALITY[perf.q].detail > 1 ? clamp(Math.round(sr * 0.5), 16, 52) : clamp(Math.round(sr * 0.3), 12, 32);
   const A = CONFIG.wobble;
-  const br = sr * (1 + CONFIG.breathe * Math.sin(time * 1.6 + ph));
+  const br = 1 + CONFIG.breathe * Math.sin(time * 1.6 + ph);
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const th = i / n * TAU;
@@ -788,29 +833,26 @@ function drawGlow(c, pal, a) {
 }
 
 function drawBody(c, pal, a) {
-  const sr = c.sr, col = pal.col, lc = pal.lc;
+  const sr = c.sr;
+  ctx.globalAlpha = a;
   if (sr < 2.5) {
-    ctx.fillStyle = rgba(lc, 0.7 * a);
+    ctx.fillStyle = pal.dot;
     ctx.beginPath(); ctx.arc(c.sx, c.sy, Math.max(sr, 1), 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
     return;
   }
-  // Мембрана и цитоплазма — в повёрнутой и чуть вытянутой вдоль скорости системе
+  // Мембрана и цитоплазма — в повёрнутой и чуть вытянутой вдоль скорости системе,
+  // в масштабе радиуса: контур и градиент единичные
   ctx.save();
   ctx.translate(c.sx, c.sy);
   ctx.rotate(c.ang);
   const s = 1 + c.st;
-  ctx.scale(s, 1 / s);                // площадь сохраняется
+  ctx.scale(s * sr, sr / s);          // площадь сохраняется
   membrane(sr, c.ph);
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sr * 1.03);
-  const p = c.isPlayer ? 1.25 : 1;
-  g.addColorStop(0,    rgba(col, 0.06 * a * p));
-  g.addColorStop(0.55, rgba(col, 0.14 * a * p));
-  g.addColorStop(0.86, rgba(col, 0.32 * a * p));
-  g.addColorStop(1,    rgba(col, 0.72 * a));
-  ctx.fillStyle = g;
+  ctx.fillStyle = pal.body;
   ctx.fill();
-  ctx.lineWidth = Math.max(0.8, sr * 0.035);
-  ctx.strokeStyle = rgba(lc, (c.isPlayer ? 0.6 : 0.45) * a);
+  ctx.lineWidth = Math.max(0.8, sr * 0.035) / sr;
+  ctx.strokeStyle = pal.rim;
   ctx.stroke();
   ctx.restore();
 
@@ -825,7 +867,8 @@ function drawBody(c, pal, a) {
 
   // Органеллы — только когда клетка на экране достаточно крупная
   if (sr > 10 && QUALITY[perf.q].detail > 1) {
-    ctx.fillStyle = rgba(lc, 0.32 * a);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = pal.organelle;
     const os = Math.max(1, sr * 0.045);
     for (let k = 0; k < 4; k++) {
       const an = c.ph * (k + 1) + time * (0.15 + 0.05 * k) * (k & 1 ? 1 : -1);
@@ -834,8 +877,11 @@ function drawBody(c, pal, a) {
       const oy = c.sy + c.ny * z * 0.5 + Math.sin(an) * rr;
       ctx.beginPath(); ctx.arc(ox, oy, os, 0, TAU); ctx.fill();
     }
+    ctx.globalAlpha = 1;
   }
 }
+
+const byRadius = (a, b) => a.r - b.r;
 
 function drawCells() {
   const z = cam.zoom;
@@ -847,7 +893,9 @@ function drawCells() {
     c.vis = c.sx > -m && c.sx < W + m && c.sy > -m && c.sy < H + m && c.sr > 0.2;
   }
   // мелкие снизу: жертва видна сквозь полупрозрачного хищника, пока растворяется
-  order = cells.slice().sort((a, b) => a.r - b.r);
+  order.length = 0;
+  for (const c of cells) order.push(c);
+  order.sort(byRadius);
 
   const minGlow = QUALITY[perf.q].detail ? 2 : 4;
   ctx.globalCompositeOperation = 'lighter';
@@ -857,29 +905,35 @@ function drawCells() {
   for (const c of order) if (c.vis) drawBody(c, paletteOf(c), alphaOf(c));
 }
 
+const PART_COLOR = rgba(RGB_PLAYER, 0.45), RIPPLE_COLOR = rgba(RGB_PLAYER, 0.4);
+
 function drawParticles() {
   const z = cam.zoom;
   ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = PART_COLOR;
   for (const p of PARTS) {
     if (p.life <= 0) continue;
     const t = p.life / p.max;
     const x = (p.x - cam.x) * z + W / 2, y = (p.y - cam.y) * z + H / 2, s = Math.max(0.6, p.s * z);
-    ctx.fillStyle = rgba(RGB_PLAYER, 0.45 * t * t);
+    ctx.globalAlpha = t * t;
     ctx.beginPath(); ctx.arc(x, y, s, 0, TAU); ctx.fill();
   }
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 }
 
 function drawRipples(dt) {
   ctx.lineWidth = 1.2;
+  ctx.strokeStyle = RIPPLE_COLOR;
   for (let i = ripples.length - 1; i >= 0; i--) {
     const r = ripples[i];
     r.t += dt;
     const k = r.t / 0.45;
     if (k >= 1) { ripples.splice(i, 1); continue; }
-    ctx.strokeStyle = rgba(RGB_PLAYER, 0.4 * (1 - k) * (1 - k));
+    ctx.globalAlpha = (1 - k) * (1 - k);
     ctx.beginPath(); ctx.arc(r.x, r.y, 5 + 18 * Math.sqrt(k), 0, TAU); ctx.stroke();
   }
+  ctx.globalAlpha = 1;
 }
 
 function render(dt) {
@@ -910,12 +964,19 @@ function checkFinite() {
   }
 }
 
+let looping = false, debugT = 0;
+
+function startLoop() {
+  if (looping) return;
+  looping = true;
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+
 function frame(now) {
-  if (menuOpen) {                       // пауза: мир стоит, последний кадр остаётся на экране
-    last = now;
-    requestAnimationFrame(frame);
-    return;
-  }
+  // Пауза: цикл просто не продолжается — ни одного кадра и ни одного пробуждения
+  // процессора, последний кадр остаётся на экране. closeMenu запустит его снова.
+  if (menuOpen) { looping = false; return; }
   const work0 = performance.now();
   let dt = (now - last) / 1000;
   last = now;
@@ -948,7 +1009,9 @@ function frame(now) {
 
   render(dt);
   perf.work += (performance.now() - work0 - perf.work) * 0.05;
-  if (debug) {
+  debugT -= dt;
+  if (debug && debugT <= 0) {           // текст 4 раза в секунду, а не каждый кадр: это DOM
+    debugT = 0.25;
     const sp = player.dead ? 0 : Math.hypot(player.vx, player.vy);
     debugEl.textContent =
       `fps    ${fps.toFixed(0)}\n` +
@@ -1043,7 +1106,8 @@ function closeMenu() {
   menuOpen = false;
   menuEl.hidden = true;
   menuBtn.setAttribute('aria-expanded', 'false');
-  last = performance.now();             // без скачка времени после паузы
+  perf.hold = 1;
+  startLoop();                          // last обновится там же — без скачка времени после паузы
 }
 
 for (const sl of SLIDERS) {
@@ -1071,4 +1135,4 @@ loadSettings();
 resize();
 for (const sl of SLIDERS) if (sl.world) worldBuiltWith[sl.key] = CONFIG[sl.key];
 reset();
-requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
+startLoop();
