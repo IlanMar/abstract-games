@@ -18,14 +18,14 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23284c49'/%3E%3Ccircle cx='32' cy='32' r='16' fill='%23dce7e3'/%3E%3C/svg%3E">
 <style>
   :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif; color:#252f30; background:#e7e9e6; }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; }
   html, body { width:100%; height:100%; margin:0; overflow:hidden; overscroll-behavior:none; user-select:none; -webkit-user-select:none; }
   #game { position:fixed; inset:0; width:100%; height:100%; display:block; outline:0; touch-action:none; }
   .top { position:fixed; top:calc(env(safe-area-inset-top) + 16px); left:calc(env(safe-area-inset-left) + 20px); right:calc(env(safe-area-inset-right) + 20px); display:flex; align-items:start; justify-content:space-between; pointer-events:none; }
   .brand { font-size:13px; font-weight:750; letter-spacing:.22em; color:#475658; }
   .sub { margin-top:4px; font-size:11px; letter-spacing:.07em; color:#697779; }
   button, select { font:inherit; }
-  button { cursor:pointer; }
+  button { cursor:pointer; touch-action:manipulation; }
   .gear { position:fixed; right:calc(env(safe-area-inset-right) + 19px); bottom:calc(env(safe-area-inset-bottom) + 19px); width:54px; height:54px; border:1px solid #ffffffb8; border-radius:50%; background:#f9fbf6e8; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:25px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:4; }
   .gear:active, .pill:active { transform:scale(.96); }
   .scrim { position:fixed; inset:0; background:#18282975; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top) + 18px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 18px) calc(env(safe-area-inset-left) + 18px); z-index:6; }
@@ -238,28 +238,47 @@ class Physics {
 
 class SensorController {
   constructor(){this.x=0;this.y=0;this.zeroX=0;this.zeroY=0;this.have=false;this.usingMotion=false;this.last=0;this.enabled=false;
+    // Latest "up" vector derived from DeviceOrientation, which has the same sign on every platform.
+    this.ox=0;this.oy=0;this.oz=0;this.haveOrientation=false;this.motionSign=0;this.motionSamples=0;this.relevelUntil=0;
     this.motion=e=>this.onMotion(e);this.orientation=e=>this.onOrientation(e);}
-  transform(x,y){
-    // The game's y axis points down; rotate the sensor vector in screen coordinates.
-    const a=(screen.orientation?.angle ?? window.orientation ?? 0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
-    return [c*x+s*y,-s*x+c*y];
+  screenAngle(){
+    // window.orientation is the long-established iOS value (90 = turned counterclockwise).
+    const w=window.orientation;
+    return (Number.isFinite(w)?w:(screen.orientation?.angle ?? 0))*Math.PI/180;
   }
-  update(x,y){const [tx,ty]=this.transform(x,y),now=performance.now();
+  update(gx,gy,gz){
+    // (gx,gy,gz) is the W3C "up" vector in device coordinates (+z when lying face up).
+    // Use angles rather than raw projected gravity. Near upright, raw y is
+    // saturated; atan2 still detects a 10° change around the calibrated pose.
+    // Angles stay in device coordinates; the screen rotation is applied after
+    // subtracting the level pose, so a portrait/landscape switch cannot corrupt it.
+    const tx=Math.atan2(-gx,Math.hypot(gy,gz)),ty=Math.atan2(gy,gz),now=performance.now();
     // 25 ms time constant removes sensor noise with little perceptible delay.
     const dt=this.last?Math.min(.1,(now-this.last)/1000):.02,blend=this.have?1-Math.exp(-dt/.025):1;
     this.x+=angleDiff(tx,this.x)*blend;this.y+=angleDiff(ty,this.y)*blend;this.last=now;this.have=true;
+    // While re-levelling after a screen rotation, the current pose keeps becoming level.
+    if(now<this.relevelUntil){this.zeroX=this.x;this.zeroY=this.y;}
   }
   onMotion(e){const a=e.accelerationIncludingGravity;
-    if(a&&Number.isFinite(a.x)&&Number.isFinite(a.y)&&Number.isFinite(a.z)){
-      this.usingMotion=true;
-      // Use angles rather than raw projected gravity. Near upright, raw y is
-      // saturated; atan2 still detects a 10° change around the calibrated pose.
-      this.update(Math.atan2(-a.x,Math.hypot(a.y,a.z)),Math.atan2(a.y,a.z));
+    if(!a||!Number.isFinite(a.x)||!Number.isFinite(a.y)||!Number.isFinite(a.z))return;
+    if(!this.motionSign){
+      // iOS Safari reports accelerationIncludingGravity with the opposite sign to the
+      // spec and Android. Compare it once with DeviceOrientation to find the convention.
+      const len=Math.hypot(a.x,a.y,a.z);
+      if(this.haveOrientation&&len>1){const dot=(a.x*this.ox+a.y*this.oy+a.z*this.oz)/len;if(Math.abs(dot)>.8)this.motionSign=dot>0?1:-1;}
+      else if(!this.haveOrientation&&++this.motionSamples>30)this.motionSign=1; // No orientation events: trust the spec.
+      if(!this.motionSign)return;
     }
+    this.usingMotion=true;const s=this.motionSign;
+    this.update(a.x*s,a.y*s,a.z*s);
   }
-  onOrientation(e){if(this.usingMotion||!Number.isFinite(e.beta)||!Number.isFinite(e.gamma))return;
-    // DeviceOrientation angles are the fallback when gravity samples are absent.
-    this.update(e.gamma*Math.PI/180,e.beta*Math.PI/180);
+  onOrientation(e){if(!Number.isFinite(e.beta)||!Number.isFinite(e.gamma))return;
+    // Up vector from beta/gamma. Unlike raw gamma, it stays continuous when a
+    // landscape phone passes upright and the Euler angles flip.
+    const b=e.beta*Math.PI/180,g=e.gamma*Math.PI/180,cb=Math.cos(b);
+    this.ox=-cb*Math.sin(g);this.oy=Math.sin(b);this.oz=cb*Math.cos(g);this.haveOrientation=true;
+    // DeviceOrientation is the fallback when usable gravity samples are absent.
+    if(!this.usingMotion)this.update(this.ox,this.oy,this.oz);
   }
   async request(){
     if(!window.isSecureContext)return false;
@@ -274,9 +293,10 @@ class SensorController {
     window.addEventListener('devicemotion',this.motion,{passive:true});window.addEventListener('deviceorientation',this.orientation,{passive:true});this.enabled=true;return true;
   }
   calibrate(){if(!this.have)return false;this.zeroX=this.x;this.zeroY=this.y;return true;}
-  // Both sensor axes now increase towards the matching screen directions.
-  get tiltX(){return clamp(angleDiff(this.x,this.zeroX),-.42,.42);}
-  get tiltY(){return clamp(angleDiff(this.y,this.zeroY),-.42,.42);}
+  relevel(ms){this.relevelUntil=performance.now()+ms;this.calibrate();}
+  // Device-frame offsets from level, rotated into screen directions (game y points down).
+  get tiltX(){const a=this.screenAngle();return clamp(Math.cos(a)*angleDiff(this.x,this.zeroX)+Math.sin(a)*angleDiff(this.y,this.zeroY),-.42,.42);}
+  get tiltY(){const a=this.screenAngle();return clamp(-Math.sin(a)*angleDiff(this.x,this.zeroX)+Math.cos(a)*angleDiff(this.y,this.zeroY),-.42,.42);}
 }
 
 class InputController {
@@ -350,7 +370,7 @@ class Renderer {
     this.shadowTex=new THREE.CanvasTexture(shadowCanvas);this.shadow=new THREE.Mesh(new THREE.PlaneGeometry(.78,.78),new THREE.MeshBasicMaterial({map:this.shadowTex,transparent:true,depthWrite:false}));this.shadow.rotation.x=-Math.PI/2;this.shadow.position.y=.012;this.scene.add(this.shadow);
     this.startGeo=new THREE.TorusGeometry(.34,.018,7,32);this.finishGeo=new THREE.CylinderGeometry(.35,.35,.012,32);
     this.startMat=new THREE.MeshBasicMaterial({color:0x5f8378});this.finishMat=new THREE.MeshStandardMaterial({color:0x4ad7ab,emissive:0x1b986f,emissiveIntensity:.55,roughness:.35});
-    this.root=null;this.maze=null;this.focusX=0;this.focusZ=0;this.width=0;this.height=0;
+    this.rollAxis=new THREE.Vector3();this.root=null;this.maze=null;this.focusX=0;this.focusZ=0;this.width=0;this.height=0;
     window.addEventListener('resize',()=>this.resize());this.resize();
   }
   build(maze){
@@ -395,7 +415,9 @@ class Renderer {
   }
   render(x,z,dt,rollingX,rollingZ){
     this.ball.position.set(x,.19,z);this.shadow.position.set(x,.012,z);
-    this.ball.rotation.z-=rollingX/RADIUS;this.ball.rotation.x+=rollingZ/RADIUS;
+    // Roll about the world axis perpendicular to motion; Euler angles drift on diagonals.
+    const roll=Math.hypot(rollingX,rollingZ);
+    if(roll>1e-7){this.rollAxis.set(rollingZ/roll,0,-rollingX/roll);this.ball.rotateOnWorldAxis(this.rollAxis,roll/RADIUS);}
     const targetFactor=this.maze.n<=11?.13:.66;
     const a=1-Math.exp(-dt*2.3);this.focusX+=(x*targetFactor-this.focusX)*a;this.focusZ+=(z*targetFactor-this.focusZ)*a;
     this.camera.position.set(this.focusX,31,this.focusZ+10);this.camera.lookAt(this.focusX,0,this.focusZ);
@@ -421,14 +443,19 @@ class UI {
     on('restart',()=>{game.restart();this.close();});on('newMaze',()=>{game.newMaze();this.close();});on('replayMaze',()=>{game.replay();this.close();});
     on('finishNew',()=>{game.newMaze();this.closeFinish();});
     on('finishReplay',()=>{game.restart();this.closeFinish();});
-    on('touchMode',()=>{game.input.showTouch(true);this.message('Touch joystick enabled.');this.close();});
+    on('touchMode',()=>{
+      if(game.input.mode==='touch'&&game.sensor.have){game.input.showTouch(false);game.input.mode='sensor';game.sensor.calibrate();this.message('Tilt controls enabled. Current position is level.');}
+      else {game.input.showTouch(true);this.message('Touch joystick enabled.');}
+      this.close();
+    });
     // Size changes take effect when creating the next maze.
     const sensitivity=document.querySelector('#sensitivity'),weight=document.querySelector('#weight');
     sensitivity.addEventListener('input',()=>{document.querySelector('#sensitivityValue').textContent=Number(sensitivity.value).toFixed(2)+'×';});
     weight.addEventListener('input',()=>{document.querySelector('#weightValue').textContent=weight.value+' / 100';});
     document.querySelector('#fps').addEventListener('change',e=>{game.perf.enabled=e.target.value==='on';game.perf.el.classList.toggle('hidden',!game.perf.enabled);});
   }
-  open(){this.settings.classList.remove('hidden');this.game.input.keys.clear();this.game.paused=true;}
+  open(){this.settings.classList.remove('hidden');this.game.input.keys.clear();this.game.paused=true;
+    document.querySelector('#touchMode').textContent=this.game.input.mode==='touch'&&this.game.sensor.have?'Tilt controls':'Touch controls';}
   close(){this.settings.classList.add('hidden');this.game.paused=document.hidden||!this.game.active||!this.game.controlsReady||this.game.finished;this.game.resetClock();}
   closeFinish(){this.finish.classList.add('hidden');this.game.paused=document.hidden||!this.game.active;this.game.resetClock();}
   message(text){this.messageEl.textContent=text;this.messageEl.classList.remove('hidden');clearTimeout(this.messageTimer);this.messageTimer=setTimeout(()=>this.messageEl.classList.add('hidden'),4000);}
@@ -439,6 +466,9 @@ class Game {
   constructor(){this.sensor=new SensorController();this.input=new InputController(this.sensor);this.renderer=new Renderer(document.querySelector('#game'));this.physics=new Physics();this.perf=new PerformanceMonitor(this.renderer);this.ui=new UI(this);
     this.seed=randomSeed();this.size=11;this.maze=null;this.active=false;this.controlsReady=false;this.finished=false;this.paused=true;this.idleDrawn=false;this.elapsed=0;this.moving=false;this.accumulator=0;this.last=0;this.prevX=0;this.prevZ=0;
     this.makeMaze(this.seed,this.size);window.addEventListener('resize',()=>{this.idleDrawn=false;});
+    // Turning the phone changes how it is held; level the new grip once it settles.
+    const rotated=()=>{this.idleDrawn=false;if(this.input.mode==='sensor'){this.sensor.relevel(700);this.ui.message('Screen rotated · hold steady, re-levelling…');}};
+    window.addEventListener('orientationchange',rotated);screen.orientation?.addEventListener?.('change',rotated);
     document.addEventListener('visibilitychange',()=>{this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
     requestAnimationFrame(t=>this.loop(t));
   }
