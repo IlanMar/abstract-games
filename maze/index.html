@@ -67,8 +67,9 @@
 <div id="start" class="scrim"><div class="panel"><h1>Find your way.</h1><p>Tilt your phone to roll the marble through a new maze. Hold it comfortably, then start: that position becomes level. On a computer, use WASD or the arrow keys.</p><button id="startButton" class="pill" style="width:100%">Start Game</button><p style="font-size:12px;margin:15px 0 0">Motion sensors require Safari permission and an HTTPS page. Touch controls appear if sensors are unavailable.</p></div></div>
 <div id="settings" class="scrim hidden"><div class="panel"><h2>Settings</h2>
   <label class="setting">Maze size <select id="size"><option value="7">Small · 7 × 7</option><option value="11" selected>Medium · 11 × 11</option><option value="15">Large · 15 × 15</option><option value="21">Extra Large · 21 × 21</option></select></label>
-  <div class="slider-setting"><div class="slider-head"><label for="sensitivity">Tilt sensitivity</label><output id="sensitivityValue" for="sensitivity">2.05×</output></div><input id="sensitivity" type="range" min="0.60" max="3.20" step="0.05" value="2.05"><div class="scale"><span>Gentle</span><span>Responsive</span></div></div>
-  <div class="slider-setting"><div class="slider-head"><label for="weight">Ball weight</label><output id="weightValue" for="weight">8 / 100</output></div><input id="weight" type="range" min="0" max="100" step="1" value="8"><div class="scale"><span>Light · turns easily</span><span>Heavy · more inertia</span></div></div>
+  <div class="slider-setting"><div class="slider-head"><label for="sensitivity">Tilt sensitivity</label><output id="sensitivityValue" for="sensitivity">3.20×</output></div><input id="sensitivity" type="range" min="0.60" max="3.20" step="0.05" value="3.20"><div class="scale"><span>Gentle</span><span>Responsive</span></div></div>
+  <div class="slider-setting"><div class="slider-head"><label for="weight">Ball weight</label><output id="weightValue" for="weight">0 / 100</output></div><input id="weight" type="range" min="0" max="100" step="1" value="0"><div class="scale"><span>Light · turns easily</span><span>Heavy · more inertia</span></div></div>
+  <label class="setting">Sound <select id="sound"><option value="on" selected>On</option><option value="off">Off</option></select></label>
   <label class="setting">FPS counter <select id="fps"><option value="off" selected>Off</option><option value="on">On</option></select></label>
   <div id="seed"></div>
   <div class="row"><button id="calibrate" class="pill secondary">Calibrate</button><button id="restart" class="pill secondary">Restart</button></div>
@@ -158,7 +159,7 @@ class MazeGenerator {
 }
 
 class Physics {
-  constructor(){this.x=0;this.z=0;this.vx=0;this.vz=0;this.ax=0;this.az=0;this.mass=.055;this.maze=null;this.distance=0;}
+  constructor(){this.x=0;this.z=0;this.vx=0;this.vz=0;this.ax=0;this.az=0;this.mass=.055;this.maze=null;this.distance=0;this.impact=0;}
   reset(maze){this.maze=maze;this.x=center(0,maze.n);this.z=center(0,maze.n);this.vx=this.vz=this.ax=this.az=this.distance=0;}
   step(dt,tiltX,tiltZ,weight){
     const p=PHYSICS_VALUES[weight];
@@ -227,6 +228,7 @@ class Physics {
       this.x+=nx*(best+1e-5);this.z+=nz*(best+1e-5);
       const approach=this.vx*nx+this.vz*nz;
       if(approach<0){
+        if(-approach>this.impact)this.impact=-approach;
         const bounce=approach<-.18?restitution:0;
         this.vx-=(1+bounce)*approach*nx;this.vz-=(1+bounce)*approach*nz;
         // Slight tangential energy loss at impact; the marble keeps sliding away.
@@ -297,6 +299,66 @@ class SensorController {
   // Device-frame offsets from level, rotated into screen directions (game y points down).
   get tiltX(){const a=this.screenAngle();return clamp(Math.cos(a)*angleDiff(this.x,this.zeroX)+Math.sin(a)*angleDiff(this.y,this.zeroY),-.42,.42);}
   get tiltY(){const a=this.screenAngle();return clamp(-Math.sin(a)*angleDiff(this.x,this.zeroX)+Math.cos(a)*angleDiff(this.y,this.zeroY),-.42,.42);}
+}
+
+// All sounds are synthesized: low, soft and lowpassed so nothing rings or clicks sharply.
+class SoundController {
+  constructor(){this.ctx=null;this.enabled=true;this.rollLevel=0;this.lastHit=0;}
+  unlock(){ // Must run inside a tap/click: iOS only starts audio from a user gesture.
+    if(!this.ctx){
+      const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+      // Mix with the user's music and respect the iPhone silent switch.
+      try{if(navigator.audioSession)navigator.audioSession.type='ambient';}catch{}
+      const ctx=this.ctx=new AC(),rate=ctx.sampleRate;
+      this.master=ctx.createGain();this.master.gain.value=this.enabled?.8:0;
+      const tone=ctx.createBiquadFilter();tone.type='lowpass';tone.frequency.value=2400;
+      this.master.connect(tone);tone.connect(ctx.destination);
+      // Brown noise loop for rolling; the linear correction removes the click at the loop seam.
+      const len=rate*2,brown=ctx.createBuffer(1,len,rate),d=brown.getChannelData(0);let v=0;
+      for(let i=0;i<len;i++){v=(v+.02*(Math.random()*2-1))/1.02;d[i]=v*3.5;}
+      const end=d[len-1];for(let i=0;i<len;i++)d[i]-=end*i/(len-1);
+      // Short white noise for the soft knock of a wall hit.
+      this.white=ctx.createBuffer(1,rate*.1|0,rate);const w=this.white.getChannelData(0);for(let i=0;i<w.length;i++)w[i]=Math.random()*2-1;
+      const src=ctx.createBufferSource();src.buffer=brown;src.loop=true;
+      this.rollFilter=ctx.createBiquadFilter();this.rollFilter.type='lowpass';this.rollFilter.frequency.value=160;
+      this.rollGain=ctx.createGain();this.rollGain.gain.value=0;
+      src.connect(this.rollFilter);this.rollFilter.connect(this.rollGain);this.rollGain.connect(this.master);src.start();
+    }
+    if(this.ctx.state!=='running')this.ctx.resume().catch(()=>{});
+  }
+  setEnabled(on){this.enabled=on;if(this.ctx)this.master.gain.setTargetAtTime(on?.8:0,this.ctx.currentTime,.03);}
+  roll(speed){ // Called every frame; only touches the audio graph when the level changes.
+    if(!this.ctx)return;
+    const s=speed<.06?0:Math.min(1,speed/5.5);
+    if(Math.abs(s-this.rollLevel)<.012&&(s>0||this.rollLevel===0))return;
+    this.rollLevel=s;const t=this.ctx.currentTime;
+    this.rollGain.gain.setTargetAtTime(s?.12+.55*s:0,t,s?.06:.04);
+    this.rollFilter.frequency.setTargetAtTime(130+420*s,t,.08);
+  }
+  hit(impact){
+    if(!this.ctx||!this.enabled||this.ctx.state!=='running')return;
+    const k=Math.min(1,(impact-.35)/3.2),ctx=this.ctx,t=ctx.currentTime;
+    if(k<=0||t-this.lastHit<.06)return;this.lastHit=t;
+    // A falling low sine gives body, a lowpassed noise tick gives the wooden knock.
+    const osc=ctx.createOscillator(),g=ctx.createGain();
+    osc.frequency.setValueAtTime(135+45*k,t);osc.frequency.exponentialRampToValueAtTime(62,t+.13);
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.5*k,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+.17);
+    osc.connect(g);g.connect(this.master);osc.start(t);osc.stop(t+.2);
+    const n=ctx.createBufferSource(),f=ctx.createBiquadFilter(),ng=ctx.createGain();
+    n.buffer=this.white;f.type='lowpass';f.frequency.value=500+900*k;
+    ng.gain.setValueAtTime(.28*k,t);ng.gain.exponentialRampToValueAtTime(.0001,t+.05);
+    n.connect(f);f.connect(ng);ng.connect(this.master);n.start(t);n.stop(t+.06);
+  }
+  finish(){
+    if(!this.ctx||!this.enabled||this.ctx.state!=='running')return;
+    const ctx=this.ctx,t=ctx.currentTime;
+    // Soft rising G-major arpeggio with sine tones: warm rather than bell-like.
+    [392,493.88,587.33,783.99].forEach((hz,i)=>{
+      const at=t+i*.11,osc=ctx.createOscillator(),g=ctx.createGain();osc.type='sine';osc.frequency.value=hz;
+      g.gain.setValueAtTime(0,at);g.gain.linearRampToValueAtTime(.16,at+.02);g.gain.exponentialRampToValueAtTime(.0001,at+.9);
+      osc.connect(g);g.connect(this.master);osc.start(at);osc.stop(at+.95);
+    });
+  }
 }
 
 class InputController {
@@ -452,6 +514,7 @@ class UI {
     const sensitivity=document.querySelector('#sensitivity'),weight=document.querySelector('#weight');
     sensitivity.addEventListener('input',()=>{document.querySelector('#sensitivityValue').textContent=Number(sensitivity.value).toFixed(2)+'×';});
     weight.addEventListener('input',()=>{document.querySelector('#weightValue').textContent=weight.value+' / 100';});
+    document.querySelector('#sound').addEventListener('change',e=>{game.sound.setEnabled(e.target.value==='on');if(e.target.value==='on')game.sound.unlock();});
     document.querySelector('#fps').addEventListener('change',e=>{game.perf.enabled=e.target.value==='on';game.perf.el.classList.toggle('hidden',!game.perf.enabled);});
   }
   open(){this.settings.classList.remove('hidden');this.game.input.keys.clear();this.game.paused=true;
@@ -463,13 +526,15 @@ class UI {
 }
 
 class Game {
-  constructor(){this.sensor=new SensorController();this.input=new InputController(this.sensor);this.renderer=new Renderer(document.querySelector('#game'));this.physics=new Physics();this.perf=new PerformanceMonitor(this.renderer);this.ui=new UI(this);
+  constructor(){this.sensor=new SensorController();this.input=new InputController(this.sensor);this.renderer=new Renderer(document.querySelector('#game'));this.physics=new Physics();this.perf=new PerformanceMonitor(this.renderer);this.sound=new SoundController();this.ui=new UI(this);
     this.seed=randomSeed();this.size=11;this.maze=null;this.active=false;this.controlsReady=false;this.finished=false;this.paused=true;this.idleDrawn=false;this.elapsed=0;this.moving=false;this.accumulator=0;this.last=0;this.prevX=0;this.prevZ=0;
     this.makeMaze(this.seed,this.size);window.addEventListener('resize',()=>{this.idleDrawn=false;});
     // Turning the phone changes how it is held; level the new grip once it settles.
     const rotated=()=>{this.idleDrawn=false;if(this.input.mode==='sensor'){this.sensor.relevel(700);this.ui.message('Screen rotated · hold steady, re-levelling…');}};
     window.addEventListener('orientationchange',rotated);screen.orientation?.addEventListener?.('change',rotated);
-    document.addEventListener('visibilitychange',()=>{this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
+    // iOS can suspend audio (calls, backgrounding); any later tap resumes it.
+    const wake=()=>{if(this.active)this.sound.unlock();};window.addEventListener('touchend',wake,true);window.addEventListener('click',wake,true);
+    document.addEventListener('visibilitychange',()=>{this.sound.roll(0);this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
     requestAnimationFrame(t=>this.loop(t));
   }
   makeMaze(seed,size){this.seed=seed;this.size=size;document.querySelector('#size').value=String(size);this.maze=MazeGenerator.create(size,seed);this.physics.reset(this.maze);this.renderer.build(this.maze);this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.ui.setSeed(seed,this.maze.style);this.resetClock();}
@@ -480,7 +545,7 @@ class Game {
   async start(){
     if(this.active)return;
     // The permission request itself occurs synchronously before the first await.
-    const attempt=this.sensor.request();this.ui.start.classList.add('hidden');this.ui.gear.classList.remove('hidden');this.active=true;this.paused=true;this.resetClock();
+    const attempt=this.sensor.request();this.sound.unlock();this.ui.start.classList.add('hidden');this.ui.gear.classList.remove('hidden');this.active=true;this.paused=true;this.resetClock();
     const permitted=await attempt.catch(()=>false);
     if(permitted){setTimeout(()=>{if(this.input.mode!=='touch'){
         if(!this.sensor.have){this.input.showTouch(true);this.ui.message('No sensor data received. Use the touch joystick.');}
@@ -491,13 +556,14 @@ class Game {
     },1100);
     }else{this.input.showTouch(true);this.ui.message(window.isSecureContext?'Motion unavailable or denied. Use the touch joystick.':'Tilt requires HTTPS on iPhone. Use the touch joystick.');this.controlsReady=true;this.paused=document.hidden||!this.ui.settings.classList.contains('hidden');this.resetClock();}
   }
-  complete(){this.finished=true;this.paused=true;this.input.keys.clear();document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
+  complete(){this.finished=true;this.paused=true;this.sound.roll(0);this.sound.finish();this.input.keys.clear();document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
   loop(now){requestAnimationFrame(t=>this.loop(t));if(!this.last)this.last=now;
     let delta=Math.min((now-this.last)/1000,.08);this.last=now;
-    if(!this.active||this.paused){this.accumulator=0;if(!this.idleDrawn&&!document.hidden){this.renderer.render(this.physics.x,this.physics.z,0,0,0);this.idleDrawn=true;}return;}
+    if(!this.active||this.paused){this.accumulator=0;this.sound.roll(0);if(!this.idleDrawn&&!document.hidden){this.renderer.render(this.physics.x,this.physics.z,0,0,0);this.idleDrawn=true;}return;}
     this.idleDrawn=false;
     this.accumulator=Math.min(this.accumulator+delta,FIXED*MAX_STEPS);
     const start=performance.now(),weight=Number(document.querySelector('#weight').value),sensitivity=Number(document.querySelector('#sensitivity').value);
+    this.physics.impact=0;
     let steps=0;while(this.accumulator>=FIXED&&steps<MAX_STEPS){
       this.input.step(FIXED);
       let tx=this.input.getX()*sensitivity,ty=this.input.getY()*sensitivity;
@@ -513,6 +579,7 @@ class Game {
     // Interpolate between physics samples. For sensors, never delay the actual simulation.
     const alpha=clamp(this.accumulator/FIXED,0,1),rx=this.prevX+(this.physics.x-this.prevX)*alpha,rz=this.prevZ+(this.physics.z-this.prevZ)*alpha;
     this.renderer.render(rx,rz,delta,this.physics.vx*delta,this.physics.vz*delta);
+    if(!this.finished){this.sound.hit(this.physics.impact);this.sound.roll(Math.hypot(this.physics.vx,this.physics.vz));}
     this.perf.frame(delta,performance.now()-start,this.input.getX(),this.input.getY());
   }
 }
