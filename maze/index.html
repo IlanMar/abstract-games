@@ -11,7 +11,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#e7e9e6">
 <title>Tilt · Marble Maze</title>
 <meta name="description" content="Tilt your phone to roll a marble through a new 3D maze.">
@@ -19,8 +19,8 @@
 <style>
   :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif; color:#252f30; background:#e7e9e6; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html, body { width:100%; height:100%; margin:0; overflow:hidden; overscroll-behavior:none; touch-action:none; user-select:none; -webkit-user-select:none; }
-  #game { position:fixed; inset:0; width:100%; height:100%; display:block; outline:0; }
+  html, body { width:100%; height:100%; margin:0; overflow:hidden; overscroll-behavior:none; user-select:none; -webkit-user-select:none; }
+  #game { position:fixed; inset:0; width:100%; height:100%; display:block; outline:0; touch-action:none; }
   .top { position:fixed; top:calc(env(safe-area-inset-top) + 16px); left:calc(env(safe-area-inset-left) + 20px); right:calc(env(safe-area-inset-right) + 20px); display:flex; align-items:start; justify-content:space-between; pointer-events:none; }
   .brand { font-size:13px; font-weight:750; letter-spacing:.22em; color:#475658; }
   .sub { margin-top:4px; font-size:11px; letter-spacing:.07em; color:#697779; }
@@ -280,11 +280,16 @@ class InputController {
   constructor(sensor){this.sensor=sensor;this.keys=new Set();this.keyboardX=0;this.keyboardY=0;this.touchX=0;this.touchY=0;this.touchActive=false;this.mode='keyboard';
     const joystick=document.querySelector('#joystick'),stick=document.querySelector('#stick');
     const move=e=>{const b=joystick.getBoundingClientRect(),x=(e.clientX-b.left-b.width/2)/(b.width/2-21),y=(e.clientY-b.top-b.height/2)/(b.height/2-21),len=Math.max(1,Math.hypot(x,y));this.touchX=x/len*.36;this.touchY=y/len*.36;stick.style.transform=`translate(${this.touchX/.36*36}px,${this.touchY/.36*36}px)`;};
-    joystick.addEventListener('pointerdown',e=>{joystick.setPointerCapture(e.pointerId);this.touchActive=true;move(e);});
-    joystick.addEventListener('pointermove',e=>{if(this.touchActive)move(e);});
-    const release=()=>{this.touchActive=false;this.touchX=this.touchY=0;stick.style.transform='';};
+    this.touchPointerId=null;
+    joystick.addEventListener('pointerdown',e=>{if(this.touchPointerId!==null)return;this.touchPointerId=e.pointerId;joystick.setPointerCapture(e.pointerId);this.touchActive=true;move(e);});
+    joystick.addEventListener('pointermove',e=>{if(e.pointerId===this.touchPointerId)move(e);});
+    const release=e=>{if(e.pointerId!==this.touchPointerId)return;this.touchPointerId=null;this.touchActive=false;this.touchX=this.touchY=0;stick.style.transform='';};
     joystick.addEventListener('pointerup',release);joystick.addEventListener('pointercancel',release);
-    window.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD'].includes(e.code)){e.preventDefault();this.keys.add(e.code);}});
+    window.addEventListener('keydown',e=>{
+      if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD'].includes(e.code))return;
+      if(!document.querySelector('#start').classList.contains('hidden')||!document.querySelector('#settings').classList.contains('hidden')||!document.querySelector('#finish').classList.contains('hidden')||e.target?.closest?.('button, input, select, textarea, [contenteditable]'))return;
+      e.preventDefault();this.keys.add(e.code);
+    });
     window.addEventListener('keyup',e=>this.keys.delete(e.code));window.addEventListener('blur',()=>this.keys.clear());
   }
   step(dt){const x=(this.keys.has('KeyD')||this.keys.has('ArrowRight')?1:0)-(this.keys.has('KeyA')||this.keys.has('ArrowLeft')?1:0);
@@ -381,7 +386,9 @@ class Renderer {
   resize(){const w=window.innerWidth,h=window.innerHeight;if(!w||!h)return;this.width=w;this.height=h;
     this.engine.setPixelRatio(Math.min(window.devicePixelRatio||1,1.75));this.engine.setSize(w,h,false);
     const visible=this.maze?(this.maze.n<=11?this.maze.n*CELL+1.6:12*CELL):18;
-    this.camera.left=-visible/2;this.camera.right=visible/2;this.camera.top=visible*h/w/2;this.camera.bottom=-this.camera.top;this.camera.updateProjectionMatrix();
+    const aspect=w/h;
+    this.camera.left=-visible*Math.max(1,aspect)/2;this.camera.right=-this.camera.left;
+    this.camera.top=visible*Math.max(1,1/aspect)/2;this.camera.bottom=-this.camera.top;this.camera.updateProjectionMatrix();
   }
   render(x,z,dt,rollingX,rollingZ){
     this.ball.position.set(x,.19,z);this.shadow.position.set(x,.012,z);
@@ -418,8 +425,8 @@ class UI {
     weight.addEventListener('input',()=>{document.querySelector('#weightValue').textContent=weight.value+' / 100';});
     document.querySelector('#fps').addEventListener('change',e=>{game.perf.enabled=e.target.value==='on';game.perf.el.classList.toggle('hidden',!game.perf.enabled);});
   }
-  open(){this.settings.classList.remove('hidden');this.game.paused=true;}
-  close(){this.settings.classList.add('hidden');this.game.paused=document.hidden||!this.game.active||this.game.finished;this.game.resetClock();}
+  open(){this.settings.classList.remove('hidden');this.game.input.keys.clear();this.game.paused=true;}
+  close(){this.settings.classList.add('hidden');this.game.paused=document.hidden||!this.game.active||!this.game.controlsReady||this.game.finished;this.game.resetClock();}
   closeFinish(){this.finish.classList.add('hidden');this.game.paused=document.hidden||!this.game.active;this.game.resetClock();}
   message(text){this.messageEl.textContent=text;this.messageEl.classList.remove('hidden');clearTimeout(this.messageTimer);this.messageTimer=setTimeout(()=>this.messageEl.classList.add('hidden'),4000);}
   setSeed(seed,style){document.querySelector('#seed').textContent=`Maze seed: ${seed} · ${style==='curved'?'Curved walls':'Straight walls'}`;} 
@@ -427,9 +434,9 @@ class UI {
 
 class Game {
   constructor(){this.sensor=new SensorController();this.input=new InputController(this.sensor);this.renderer=new Renderer(document.querySelector('#game'));this.physics=new Physics();this.perf=new PerformanceMonitor(this.renderer);this.ui=new UI(this);
-    this.seed=randomSeed();this.size=11;this.maze=null;this.active=false;this.finished=false;this.paused=true;this.idleDrawn=false;this.elapsed=0;this.moving=false;this.accumulator=0;this.last=0;this.prevX=0;this.prevZ=0;
+    this.seed=randomSeed();this.size=11;this.maze=null;this.active=false;this.controlsReady=false;this.finished=false;this.paused=true;this.idleDrawn=false;this.elapsed=0;this.moving=false;this.accumulator=0;this.last=0;this.prevX=0;this.prevZ=0;
     this.makeMaze(this.seed,this.size);window.addEventListener('resize',()=>{this.idleDrawn=false;});
-    document.addEventListener('visibilitychange',()=>{this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.ui.settings.classList.contains('hidden')||this.finished;});
+    document.addEventListener('visibilitychange',()=>{this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
     requestAnimationFrame(t=>this.loop(t));
   }
   makeMaze(seed,size){this.seed=seed;this.size=size;document.querySelector('#size').value=String(size);this.maze=MazeGenerator.create(size,seed);this.physics.reset(this.maze);this.renderer.build(this.maze);this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.ui.setSeed(seed,this.maze.style);this.resetClock();}
@@ -438,16 +445,20 @@ class Game {
   restart(){this.physics.reset(this.maze);this.renderer.resetView();this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.resetClock();}
   resetClock(){this.accumulator=0;this.last=0;}
   async start(){
+    if(this.active)return;
     // The permission request itself occurs synchronously before the first await.
     const attempt=this.sensor.request();this.ui.start.classList.add('hidden');this.ui.gear.classList.remove('hidden');this.active=true;this.paused=true;this.resetClock();
-    const permitted=await attempt;
-    if(permitted){setTimeout(()=>{if(!this.sensor.have){this.input.showTouch(true);this.ui.message('No sensor data received. Use the touch joystick.');}
-      else {this.sensor.calibrate();this.input.mode='sensor';this.ui.message('Tilt to roll · Calibrate in Settings');}
+    const permitted=await attempt.catch(()=>false);
+    if(permitted){setTimeout(()=>{if(this.input.mode!=='touch'){
+        if(!this.sensor.have){this.input.showTouch(true);this.ui.message('No sensor data received. Use the touch joystick.');}
+        else {this.sensor.calibrate();this.input.mode='sensor';this.ui.message('Tilt to roll · Calibrate in Settings');}
+      }
+      this.controlsReady=true;
       if(this.ui.settings.classList.contains('hidden')&&!document.hidden){this.paused=false;this.resetClock();}
     },1100);
-    }else{this.input.showTouch(true);this.ui.message(window.isSecureContext?'Motion unavailable or denied. Use the touch joystick.':'Tilt requires HTTPS on iPhone. Use the touch joystick.');this.paused=false;this.resetClock();}
+    }else{this.input.showTouch(true);this.ui.message(window.isSecureContext?'Motion unavailable or denied. Use the touch joystick.':'Tilt requires HTTPS on iPhone. Use the touch joystick.');this.controlsReady=true;this.paused=document.hidden||!this.ui.settings.classList.contains('hidden');this.resetClock();}
   }
-  complete(){this.finished=true;this.paused=true;document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
+  complete(){this.finished=true;this.paused=true;this.input.keys.clear();document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
   loop(now){requestAnimationFrame(t=>this.loop(t));if(!this.last)this.last=now;
     let delta=Math.min((now-this.last)/1000,.08);this.last=now;
     if(!this.active||this.paused){this.accumulator=0;if(!this.idleDrawn&&!document.hidden){this.renderer.render(this.physics.x,this.physics.z,0,0,0);this.idleDrawn=true;}return;}
@@ -475,5 +486,5 @@ class Game {
 
 try {window.game=new Game();} catch(error){console.error(error);document.querySelector('#start .panel').innerHTML='<h1>Unable to start</h1><p>WebGL is unavailable. Open this page in Safari or a recent desktop browser. An internet connection is required to load Three.js.</p>';}
 </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a402fac6ff91943c',t:'MTc5MDI2NTM5MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
