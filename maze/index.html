@@ -26,8 +26,8 @@
   .sub { margin-top:4px; font-size:11px; letter-spacing:.07em; color:#697779; }
   button, select { font:inherit; }
   button { cursor:pointer; touch-action:manipulation; }
-  .gear { position:fixed; right:calc(env(safe-area-inset-right) + 19px); bottom:calc(env(safe-area-inset-bottom) + 19px); width:54px; height:54px; border:1px solid #ffffffb8; border-radius:50%; background:#f9fbf6e8; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:25px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:4; }
-  .level { position:fixed; right:calc(env(safe-area-inset-right) + 83px); bottom:calc(env(safe-area-inset-bottom) + 19px); height:54px; padding:0 18px; border:1px solid #ffffffb8; border-radius:27px; background:#f9fbf6e8; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:14px; font-weight:630; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:4; }
+  .gear { position:fixed; right:calc(env(safe-area-inset-right) + 19px); bottom:calc(env(safe-area-inset-bottom) + 19px); width:54px; height:54px; border:1px solid #ffffffb8; border-radius:50%; background:#f9fbf6f5; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:25px; z-index:4; }
+  .level { position:fixed; right:calc(env(safe-area-inset-right) + 83px); bottom:calc(env(safe-area-inset-bottom) + 19px); height:54px; padding:0 18px; border:1px solid #ffffffb8; border-radius:27px; background:#f9fbf6f5; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:14px; font-weight:630; z-index:4; }
   .gear:active, .pill:active, .level:active { transform:scale(.96); }
   .scrim { position:fixed; inset:0; background:#18282975; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top) + 18px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 18px) calc(env(safe-area-inset-left) + 18px); z-index:6; }
   .hidden { display:none !important; }
@@ -80,9 +80,9 @@
 </div></div>
 <div id="finish" class="scrim hidden"><div class="panel" style="text-align:center"><h1>Finished</h1><p id="finalTime" style="font-size:20px">Time: 0.0 s</p><div class="row"><button id="finishNew" class="pill">New Maze</button><button id="finishReplay" class="pill secondary">Replay</button></div></div></div>
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.min.js';
 
-const CELL=1.5, RADIUS=.19, WALL=.14, FIXED=1/120, MAX_STEPS=8;
+const CELL=1.5, RADIUS=.19, WALL=.14, FIXED=1/120, MAX_STEPS=8, FRAME_MS=1000/60;
 const CURVE_BEND=.22, CURVE_STEPS=10;
 const PHYSICS_MODES=Object.freeze({
   light:Object.freeze({inertia:.13,resistance:.48,damping:.09,restitution:.30}),
@@ -330,11 +330,11 @@ class SoundController {
     const osc=ctx.createOscillator(),g=ctx.createGain();
     osc.frequency.setValueAtTime(135+45*k,t);osc.frequency.exponentialRampToValueAtTime(62,t+.13);
     g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.5*k,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+.17);
-    osc.connect(g);g.connect(this.master);osc.start(t);osc.stop(t+.2);
+    osc.connect(g);g.connect(this.master);osc.onended=()=>{osc.disconnect();g.disconnect();};osc.start(t);osc.stop(t+.2);
     const n=ctx.createBufferSource(),f=ctx.createBiquadFilter(),ng=ctx.createGain();
     n.buffer=this.white;f.type='lowpass';f.frequency.value=500+900*k;
     ng.gain.setValueAtTime(.2*k,t);ng.gain.exponentialRampToValueAtTime(.0001,t+.05);
-    n.connect(f);f.connect(ng);ng.connect(this.master);n.start(t);n.stop(t+.06);
+    n.connect(f);f.connect(ng);ng.connect(this.master);n.onended=()=>{n.disconnect();f.disconnect();ng.disconnect();};n.start(t);n.stop(t+.06);
   }
   finish(){
     if(!this.ctx||!this.enabled||this.ctx.state!=='running')return;
@@ -343,7 +343,7 @@ class SoundController {
     [392,493.88,587.33,783.99].forEach((hz,i)=>{
       const at=t+i*.11,osc=ctx.createOscillator(),g=ctx.createGain();osc.type='sine';osc.frequency.value=hz;
       g.gain.setValueAtTime(0,at);g.gain.linearRampToValueAtTime(.12,at+.02);g.gain.exponentialRampToValueAtTime(.0001,at+.9);
-      osc.connect(g);g.connect(this.master);osc.start(at);osc.stop(at+.95);
+      osc.connect(g);g.connect(this.master);osc.onended=()=>{osc.disconnect();g.disconnect();};osc.start(at);osc.stop(at+.95);
     });
   }
 }
@@ -419,7 +419,7 @@ class Renderer {
     this.shadowTex=new THREE.CanvasTexture(shadowCanvas);this.shadow=new THREE.Mesh(new THREE.PlaneGeometry(.78,.78),new THREE.MeshBasicMaterial({map:this.shadowTex,transparent:true,depthWrite:false}));this.shadow.rotation.x=-Math.PI/2;this.shadow.position.y=.012;this.scene.add(this.shadow);
     this.startGeo=new THREE.TorusGeometry(.34,.018,7,32);this.finishGeo=new THREE.CylinderGeometry(.35,.35,.012,32);
     this.startMat=new THREE.MeshBasicMaterial({color:0x5f8378});this.finishMat=new THREE.MeshStandardMaterial({color:0x4ad7ab,emissive:0x1b986f,emissiveIntensity:.55,roughness:.35});
-    this.rollAxis=new THREE.Vector3();this.root=null;this.maze=null;this.focusX=0;this.focusZ=0;this.width=0;this.height=0;
+    this.rollAxis=new THREE.Vector3();this.dirty=true;this.drawnX=this.drawnZ=this.drawnFX=this.drawnFZ=NaN;this.root=null;this.maze=null;this.focusX=0;this.focusZ=0;this.width=0;this.height=0;
     window.addEventListener('resize',()=>this.resize());this.resize();
   }
   build(maze){
@@ -453,10 +453,13 @@ class Renderer {
     // Large boards show only part of the maze; frame the start cell immediately.
     const startFocus=this.maze.n<=11?0:center(0,this.maze.n)*.66;
     this.focusX=this.focusZ=startFocus;
-    this.ball.rotation.set(0,0,0);
+    this.ball.rotation.set(0,0,0);this.dirty=true;
   }
-  resize(){const w=window.innerWidth,h=window.innerHeight;if(!w||!h)return;this.width=w;this.height=h;
-    this.engine.setPixelRatio(Math.min(window.devicePixelRatio||1,1.75));this.engine.setSize(w,h,false);
+  resize(){const w=window.innerWidth,h=window.innerHeight;if(!w||!h)return;
+    // setPixelRatio+setSize would reallocate the drawing buffer twice; do it once, and only on change.
+    const ratio=Math.min(window.devicePixelRatio||1,1.75);
+    if(w!==this.width||h!==this.height||ratio!==this.ratio){this.width=w;this.height=h;this.ratio=ratio;this.engine.setDrawingBufferSize(w,h,ratio);}
+    this.dirty=true;
     const visible=this.maze?(this.maze.n<=11?this.maze.n*CELL+1.6:12*CELL):18;
     const aspect=w/h;
     this.camera.left=-visible*Math.max(1,aspect)/2;this.camera.right=-this.camera.left;
@@ -469,6 +472,9 @@ class Renderer {
     if(roll>1e-7){this.rollAxis.set(rollingZ/roll,0,-rollingX/roll);this.ball.rotateOnWorldAxis(this.rollAxis,roll/RADIUS);}
     const targetFactor=this.maze.n<=11?.13:.66;
     const a=1-Math.exp(-dt*2.3);this.focusX+=(x*targetFactor-this.focusX)*a;this.focusZ+=(z*targetFactor-this.focusZ)*a;
+    // A resting marble with a settled camera gives an identical frame; skip the GPU work.
+    if(!this.dirty&&roll<=1e-7&&Math.abs(x-this.drawnX)<1e-5&&Math.abs(z-this.drawnZ)<1e-5&&Math.abs(this.focusX-this.drawnFX)<1e-3&&Math.abs(this.focusZ-this.drawnFZ)<1e-3)return;
+    this.dirty=false;this.drawnX=x;this.drawnZ=z;this.drawnFX=this.focusX;this.drawnFZ=this.focusZ;
     this.camera.position.set(this.focusX,31,this.focusZ+10);this.camera.lookAt(this.focusX,0,this.focusZ);
     this.engine.render(this.scene,this.camera);
   }
@@ -501,8 +507,8 @@ class UI {
     });
     // Size changes take effect when creating the next maze.
     const sensitivity=document.querySelector('#sensitivity'),weight=document.querySelector('#weight');
-    sensitivity.addEventListener('input',()=>{document.querySelector('#sensitivityValue').textContent=Number(sensitivity.value).toFixed(2)+'×';});
-    weight.addEventListener('input',()=>{document.querySelector('#weightValue').textContent=weight.value+' / 100';});
+    sensitivity.addEventListener('input',()=>{game.sensitivity=Number(sensitivity.value);document.querySelector('#sensitivityValue').textContent=Number(sensitivity.value).toFixed(2)+'×';});
+    weight.addEventListener('input',()=>{game.weight=Number(weight.value);document.querySelector('#weightValue').textContent=weight.value+' / 100';});
     document.querySelector('#sound').addEventListener('change',e=>{game.sound.setEnabled(e.target.value==='on');if(e.target.value==='on')game.sound.unlock();});
     document.querySelector('#fps').addEventListener('change',e=>{game.perf.enabled=e.target.value==='on';game.perf.el.classList.toggle('hidden',!game.perf.enabled);});
   }
@@ -516,15 +522,17 @@ class UI {
 
 class Game {
   constructor(){this.sensor=new SensorController();this.input=new InputController(this.sensor);this.renderer=new Renderer(document.querySelector('#game'));this.physics=new Physics();this.perf=new PerformanceMonitor(this.renderer);this.sound=new SoundController();this.ui=new UI(this);
-    this.seed=randomSeed();this.size=11;this.maze=null;this.active=false;this.controlsReady=false;this.finished=false;this.paused=true;this.idleDrawn=false;this.elapsed=0;this.moving=false;this.accumulator=0;this.last=0;this.prevX=0;this.prevZ=0;
+    // Slider values are cached here by UI input handlers instead of read from the DOM each frame.
+    this.weight=Number(document.querySelector('#weight').value);this.sensitivity=Number(document.querySelector('#sensitivity').value);
+    this.seed=randomSeed();this.size=11;this.maze=null;this.active=false;this.controlsReady=false;this.finished=false;this.paused=true;this.idleDrawn=false;this.elapsed=0;this.moving=false;this.accumulator=0;this.last=0;this.nextFrame=0;this.prevX=0;this.prevZ=0;
     this.makeMaze(this.seed,this.size);window.addEventListener('resize',()=>{this.idleDrawn=false;});
     // Turning the phone changes how it is held; level the new grip once it settles.
     const rotated=()=>{this.idleDrawn=false;if(this.input.mode==='sensor'){this.sensor.relevel(700);this.ui.message('Screen rotated · hold steady, re-levelling…');}};
     window.addEventListener('orientationchange',rotated);screen.orientation?.addEventListener?.('change',rotated);
     // iOS can suspend audio (calls, backgrounding); any later tap resumes it.
     const wake=()=>{if(this.active)this.sound.unlock();};window.addEventListener('touchend',wake,true);window.addEventListener('click',wake,true);
-    document.addEventListener('visibilitychange',()=>{this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
-    requestAnimationFrame(t=>this.loop(t));
+    document.addEventListener('visibilitychange',()=>{this.renderer.dirty=true;this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
+    this.tick=t=>this.loop(t);requestAnimationFrame(this.tick);
   }
   makeMaze(seed,size){this.seed=seed;this.size=size;document.querySelector('#size').value=String(size);this.maze=MazeGenerator.create(size,seed);this.physics.reset(this.maze);this.renderer.build(this.maze);this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.ui.setSeed(seed,this.maze.style);this.resetClock();}
   newMaze(){this.makeMaze(randomSeed(),Number(document.querySelector('#size').value));}
@@ -546,12 +554,15 @@ class Game {
     }else{this.input.showTouch(true);this.ui.message(window.isSecureContext?'Motion unavailable or denied. Use the touch joystick.':'Tilt requires HTTPS on iPhone. Use the touch joystick.');this.controlsReady=true;this.paused=document.hidden||!this.ui.settings.classList.contains('hidden');this.resetClock();}
   }
   complete(){this.finished=true;this.paused=true;this.sound.finish();this.input.keys.clear();document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
-  loop(now){requestAnimationFrame(t=>this.loop(t));if(!this.last)this.last=now;
+  loop(now){requestAnimationFrame(this.tick);
+    // Cap at 60 FPS on 90–120 Hz screens. Skipped callbacks leave this.last untouched,
+    // so the fixed-step physics still receives the full elapsed time.
+    if(now<this.nextFrame-1.5)return;this.nextFrame=Math.max(this.nextFrame+FRAME_MS,now);if(!this.last)this.last=now;
     let delta=Math.min((now-this.last)/1000,.08);this.last=now;
     if(!this.active||this.paused){this.accumulator=0;if(!this.idleDrawn&&!document.hidden){this.renderer.render(this.physics.x,this.physics.z,0,0,0);this.idleDrawn=true;}return;}
     this.idleDrawn=false;
     this.accumulator=Math.min(this.accumulator+delta,FIXED*MAX_STEPS);
-    const start=performance.now(),weight=Number(document.querySelector('#weight').value),sensitivity=Number(document.querySelector('#sensitivity').value);
+    const start=performance.now(),weight=this.weight,sensitivity=this.sensitivity;
     this.physics.impact=0;
     let steps=0;while(this.accumulator>=FIXED&&steps<MAX_STEPS){
       this.input.step(FIXED);
@@ -569,7 +580,7 @@ class Game {
     const alpha=clamp(this.accumulator/FIXED,0,1),rx=this.prevX+(this.physics.x-this.prevX)*alpha,rz=this.prevZ+(this.physics.z-this.prevZ)*alpha;
     this.renderer.render(rx,rz,delta,this.physics.vx*delta,this.physics.vz*delta);
     if(!this.finished)this.sound.hit(this.physics.impact);
-    this.perf.frame(delta,performance.now()-start,this.input.getX(),this.input.getY());
+    if(this.perf.enabled)this.perf.frame(delta,performance.now()-start,this.input.getX(),this.input.getY());
   }
 }
 
