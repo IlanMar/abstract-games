@@ -302,6 +302,7 @@ class SensorController {
 }
 
 // All sounds are synthesized: low, soft and lowpassed so nothing rings or clicks sharply.
+const VOLUME=.4;
 class SoundController {
   constructor(){this.ctx=null;this.enabled=true;this.rollLevel=0;this.lastHit=0;}
   unlock(){ // Must run inside a tap/click: iOS only starts audio from a user gesture.
@@ -310,30 +311,49 @@ class SoundController {
       // Mix with the user's music and respect the iPhone silent switch.
       try{if(navigator.audioSession)navigator.audioSession.type='ambient';}catch{}
       const ctx=this.ctx=new AC(),rate=ctx.sampleRate;
-      this.master=ctx.createGain();this.master.gain.value=this.enabled?.8:0;
+      this.master=ctx.createGain();this.master.gain.value=this.enabled?VOLUME:0;
       const tone=ctx.createBiquadFilter();tone.type='lowpass';tone.frequency.value=2400;
       this.master.connect(tone);tone.connect(ctx.destination);
-      // Brown noise loop for rolling; the linear correction removes the click at the loop seam.
-      const len=rate*2,brown=ctx.createBuffer(1,len,rate),d=brown.getChannelData(0);let v=0;
-      for(let i=0;i<len;i++){v=(v+.02*(Math.random()*2-1))/1.02;d[i]=v*3.5;}
-      const end=d[len-1];for(let i=0;i<len;i++)d[i]-=end*i/(len-1);
       // Short white noise for the soft knock of a wall hit.
       this.white=ctx.createBuffer(1,rate*.1|0,rate);const w=this.white.getChannelData(0);for(let i=0;i<w.length;i++)w[i]=Math.random()*2-1;
-      const src=ctx.createBufferSource();src.buffer=brown;src.loop=true;
-      this.rollFilter=ctx.createBiquadFilter();this.rollFilter.type='lowpass';this.rollFilter.frequency.value=160;
-      this.rollGain=ctx.createGain();this.rollGain.gain.value=0;
-      src.connect(this.rollFilter);this.rollFilter.connect(this.rollGain);this.rollGain.connect(this.master);src.start();
+      this.buildRoll(ctx);
     }
     if(this.ctx.state!=='running')this.ctx.resume().catch(()=>{});
   }
-  setEnabled(on){this.enabled=on;if(this.ctx)this.master.gain.setTargetAtTime(on?.8:0,this.ctx.currentTime,.03);}
+  buildRoll(ctx){
+    // A rolling marble is thousands of tiny contacts with the board, not a smooth
+    // hiss. The loop holds sparse micro-clicks; playing it faster at higher speed
+    // makes them denser, and fixed wooden-board resonances give them their tone.
+    const rate=ctx.sampleRate,len=rate*2,buf=ctx.createBuffer(1,len,rate),d=buf.getChannelData(0);
+    const decay=Math.exp(-1/(rate*.0007));let amp=0,body=0;
+    for(let i=0;i<len;i++){
+      if(Math.random()<700/rate)amp+=.15+.85*Math.random()**3;
+      amp*=decay;body=body*.995+(Math.random()*2-1)*.005;
+      d[i]=amp*(Math.random()*2-1)+body*1.5;
+    }
+    // Fade the loop seam so no periodic click appears every two seconds.
+    const fade=rate*.01|0;for(let i=0;i<fade;i++){const k=i/fade;d[i]=d[i]*k+d[len-fade+i]*(1-k);}
+    const src=ctx.createBufferSource();src.buffer=buf;src.loop=true;this.rollSource=src;
+    const low=ctx.createBiquadFilter();low.type='highpass';low.frequency.value=70;
+    const board=ctx.createBiquadFilter();board.type='bandpass';board.frequency.value=210;board.Q.value=3;
+    const tone=ctx.createBiquadFilter();tone.type='bandpass';tone.frequency.value=540;tone.Q.value=4.5;
+    const toneGain=ctx.createGain();toneGain.gain.value=.55;
+    const grit=ctx.createBiquadFilter();grit.type='lowpass';grit.frequency.value=1300;
+    const gritGain=ctx.createGain();gritGain.gain.value=.12;
+    this.rollGain=ctx.createGain();this.rollGain.gain.value=0;
+    src.connect(low);low.connect(board);low.connect(tone);low.connect(grit);
+    tone.connect(toneGain);grit.connect(gritGain);
+    board.connect(this.rollGain);toneGain.connect(this.rollGain);gritGain.connect(this.rollGain);
+    this.rollGain.connect(this.master);src.start();
+  }
+  setEnabled(on){this.enabled=on;if(this.ctx)this.master.gain.setTargetAtTime(on?VOLUME:0,this.ctx.currentTime,.03);}
   roll(speed){ // Called every frame; only touches the audio graph when the level changes.
     if(!this.ctx)return;
     const s=speed<.06?0:Math.min(1,speed/5.5);
     if(Math.abs(s-this.rollLevel)<.012&&(s>0||this.rollLevel===0))return;
     this.rollLevel=s;const t=this.ctx.currentTime;
-    this.rollGain.gain.setTargetAtTime(s?.12+.55*s:0,t,s?.06:.04);
-    this.rollFilter.frequency.setTargetAtTime(130+420*s,t,.08);
+    this.rollGain.gain.setTargetAtTime(s?3.2*s**.7:0,t,s?.05:.04);
+    this.rollSource.playbackRate.setTargetAtTime(.45+1.15*s,t,.05);
   }
   hit(impact){
     if(!this.ctx||!this.enabled||this.ctx.state!=='running')return;
@@ -346,7 +366,7 @@ class SoundController {
     osc.connect(g);g.connect(this.master);osc.start(t);osc.stop(t+.2);
     const n=ctx.createBufferSource(),f=ctx.createBiquadFilter(),ng=ctx.createGain();
     n.buffer=this.white;f.type='lowpass';f.frequency.value=500+900*k;
-    ng.gain.setValueAtTime(.28*k,t);ng.gain.exponentialRampToValueAtTime(.0001,t+.05);
+    ng.gain.setValueAtTime(.2*k,t);ng.gain.exponentialRampToValueAtTime(.0001,t+.05);
     n.connect(f);f.connect(ng);ng.connect(this.master);n.start(t);n.stop(t+.06);
   }
   finish(){
@@ -355,7 +375,7 @@ class SoundController {
     // Soft rising G-major arpeggio with sine tones: warm rather than bell-like.
     [392,493.88,587.33,783.99].forEach((hz,i)=>{
       const at=t+i*.11,osc=ctx.createOscillator(),g=ctx.createGain();osc.type='sine';osc.frequency.value=hz;
-      g.gain.setValueAtTime(0,at);g.gain.linearRampToValueAtTime(.16,at+.02);g.gain.exponentialRampToValueAtTime(.0001,at+.9);
+      g.gain.setValueAtTime(0,at);g.gain.linearRampToValueAtTime(.12,at+.02);g.gain.exponentialRampToValueAtTime(.0001,at+.9);
       osc.connect(g);g.connect(this.master);osc.start(at);osc.stop(at+.95);
     });
   }
