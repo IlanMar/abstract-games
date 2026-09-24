@@ -270,9 +270,8 @@ class SensorController {
     window.addEventListener('devicemotion',this.motion,{passive:true});window.addEventListener('deviceorientation',this.orientation,{passive:true});this.enabled=true;return true;
   }
   calibrate(){if(!this.have)return false;this.zeroX=this.x;this.zeroY=this.y;return true;}
-  // Sensor X is opposite the rendered board's downhill X on iPhone Safari.
-  // Invert only sensor input; keyboard and touch already use screen directions.
-  get tiltX(){return clamp(-angleDiff(this.x,this.zeroX),-.42,.42);}
+  // Both sensor axes now increase towards the matching screen directions.
+  get tiltX(){return clamp(angleDiff(this.x,this.zeroX),-.42,.42);}
   get tiltY(){return clamp(angleDiff(this.y,this.zeroY),-.42,.42);}
 }
 
