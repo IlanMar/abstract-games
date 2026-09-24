@@ -2,7 +2,7 @@
 <!--
   TILT / one-file static browser game. Requires internet for the pinned Three.js CDN module.
   iPhone: open this file from an HTTPS static host (for example, GitHub Pages or Cloudflare Pages)
-  in Safari, then tap Start Game to grant Motion & Orientation permission. A file:// URL or
+  in Safari, then tap the screen once to grant Motion & Orientation permission. A file:// URL or
   http://<computer-LAN-IP> is not a reliable secure context for iPhone sensors. To preview on
   your computer, run `python3 -m http.server 8000` beside this file and open
   http://localhost:8000 (localhost is treated as secure); use WASD/arrow keys or touch.
@@ -64,9 +64,8 @@
 <div id="joystick" class="hidden" aria-label="Touch joystick"><div id="stick"></div></div>
 <div id="debug" class="hidden"></div>
 <div id="message" class="hidden"></div>
-<button id="gear" class="gear hidden" aria-label="Settings">⚙</button>
+<button id="gear" class="gear" aria-label="Settings">⚙</button>
 <button id="levelButton" class="level hidden">Calibrate</button>
-<div id="start" class="scrim"><div class="panel"><h1>Find your way.</h1><p>Tilt your phone to roll the marble through a new maze. Hold it comfortably, then start: that position becomes level. On a computer, use WASD or the arrow keys.</p><button id="startButton" class="pill" style="width:100%">Start Game</button><p style="font-size:12px;margin:15px 0 0">Motion sensors require Safari permission and an HTTPS page. Touch controls appear if sensors are unavailable.</p></div></div>
 <div id="settings" class="scrim hidden"><div class="panel"><h2>Settings</h2>
   <label class="setting">Maze size <select id="size"><option value="7">Small · 7 × 7</option><option value="11" selected>Medium · 11 × 11</option><option value="15">Large · 15 × 15</option><option value="21">Extra Large · 21 × 21</option></select></label>
   <div class="slider-setting"><div class="slider-head"><label for="sensitivity">Tilt sensitivity</label><output id="sensitivityValue" for="sensitivity">3.20×</output></div><input id="sensitivity" type="range" min="0.60" max="3.20" step="0.05" value="3.20"><div class="scale"><span>Gentle</span><span>Responsive</span></div></div>
@@ -296,6 +295,7 @@ class SensorController {
     if(asks.length&&!results.some(x=>x.status==='fulfilled'&&x.value==='granted'))return false;
     window.addEventListener('devicemotion',this.motion,{passive:true});window.addEventListener('deviceorientation',this.orientation,{passive:true});this.enabled=true;return true;
   }
+  needsTap(){return window.isSecureContext&&typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';}
   calibrate(){if(!this.have)return false;this.zeroX=this.x;this.zeroY=this.y;return true;}
   relevel(ms){this.relevelUntil=performance.now()+ms;this.calibrate();}
   // Device-frame offsets from level, rotated into screen directions (game y points down).
@@ -359,7 +359,7 @@ class InputController {
     joystick.addEventListener('pointerup',release);joystick.addEventListener('pointercancel',release);
     window.addEventListener('keydown',e=>{
       if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD'].includes(e.code))return;
-      if(!document.querySelector('#start').classList.contains('hidden')||!document.querySelector('#settings').classList.contains('hidden')||!document.querySelector('#finish').classList.contains('hidden')||e.target?.closest?.('button, input, select, textarea, [contenteditable]'))return;
+      if(!document.querySelector('#settings').classList.contains('hidden')||!document.querySelector('#finish').classList.contains('hidden')||e.target?.closest?.('button, input, select, textarea, [contenteditable]'))return;
       e.preventDefault();this.keys.add(e.code);
     });
     window.addEventListener('keyup',e=>this.keys.delete(e.code));window.addEventListener('blur',()=>this.keys.clear());
@@ -491,9 +491,8 @@ class PerformanceMonitor {
 }
 
 class UI {
-  constructor(game){this.game=game;this.start=document.querySelector('#start');this.settings=document.querySelector('#settings');this.finish=document.querySelector('#finish');this.gear=document.querySelector('#gear');this.level=document.querySelector('#levelButton');this.messageEl=document.querySelector('#message');this.messageTimer=0;
+  constructor(game){this.game=game;this.settings=document.querySelector('#settings');this.finish=document.querySelector('#finish');this.gear=document.querySelector('#gear');this.level=document.querySelector('#levelButton');this.messageEl=document.querySelector('#message');this.messageTimer=0;
     const on=(id,fn)=>document.querySelector('#'+id).addEventListener('click',fn);
-    on('startButton',()=>game.start());
     // The tap itself jolts the phone; keep levelling briefly so the settled pose wins.
     on('levelButton',()=>{if(game.sensor.have){game.sensor.relevel(350);this.message('Current position is level.');}else this.message('Waiting for motion sensor.');});on('gear',()=>this.open());on('closeSettings',()=>this.close());
     on('calibrate',()=>this.message(game.sensor.calibrate()?'Current position is level.':'Waiting for motion sensor.'));
@@ -516,7 +515,9 @@ class UI {
     document.querySelector('#touchMode').textContent=this.game.input.mode==='touch'&&this.game.sensor.have?'Tilt controls':'Touch controls';}
   close(){this.settings.classList.add('hidden');this.game.paused=document.hidden||!this.game.active||!this.game.controlsReady||this.game.finished;this.game.resetClock();}
   closeFinish(){this.finish.classList.add('hidden');this.game.paused=document.hidden||!this.game.active;this.game.resetClock();}
-  message(text){this.messageEl.textContent=text;this.messageEl.classList.remove('hidden');clearTimeout(this.messageTimer);this.messageTimer=setTimeout(()=>this.messageEl.classList.add('hidden'),4000);}
+  // ms=0 keeps the message until hideMessage().
+  message(text,ms=4000){this.messageEl.textContent=text;this.messageEl.classList.remove('hidden');clearTimeout(this.messageTimer);if(ms)this.messageTimer=setTimeout(()=>this.hideMessage(),ms);}
+  hideMessage(){clearTimeout(this.messageTimer);this.messageEl.classList.add('hidden');}
   setSeed(seed,style){document.querySelector('#seed').textContent=`Maze seed: ${seed} · ${style==='curved'?'Curved walls':'Straight walls'}`;} 
 }
 
@@ -533,6 +534,7 @@ class Game {
     const wake=()=>{if(this.active)this.sound.unlock();};window.addEventListener('touchend',wake,true);window.addEventListener('click',wake,true);
     document.addEventListener('visibilitychange',()=>{this.renderer.dirty=true;this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
     this.tick=t=>this.loop(t);requestAnimationFrame(this.tick);
+    this.start();
   }
   makeMaze(seed,size){this.seed=seed;this.size=size;document.querySelector('#size').value=String(size);this.maze=MazeGenerator.create(size,seed);this.physics.reset(this.maze);this.renderer.build(this.maze);this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.ui.setSeed(seed,this.maze.style);this.resetClock();}
   newMaze(){this.makeMaze(randomSeed(),Number(document.querySelector('#size').value));}
@@ -542,8 +544,19 @@ class Game {
   async start(){
     if(this.active)return;
     // The permission request itself occurs synchronously before the first await.
-    const attempt=this.sensor.request();this.sound.unlock();this.ui.start.classList.add('hidden');this.ui.gear.classList.remove('hidden');this.active=true;this.paused=true;this.resetClock();
-    const permitted=await attempt.catch(()=>false);
+    this.active=true;this.paused=true;this.resetClock();
+    // Android and desktops need no prompt. On iPhone the call succeeds without a tap
+    // only if access was already granted in this Safari session.
+    let permitted=await this.sensor.request().catch(()=>false);
+    if(!permitted&&this.sensor.needsTap()){
+      // iOS asks for Motion & Orientation access only from a tap: the first touch anywhere does it.
+      this.ui.message('Tap the screen to enable tilt.',0);
+      permitted=await new Promise(resolve=>{
+        const tap=()=>{window.removeEventListener('touchend',tap,true);window.removeEventListener('click',tap,true);
+          this.ui.hideMessage();resolve(this.sensor.request().catch(()=>false));};
+        window.addEventListener('touchend',tap,true);window.addEventListener('click',tap,true);
+      });
+    }
     if(permitted){setTimeout(()=>{if(this.input.mode!=='touch'){
         if(!this.sensor.have){this.input.showTouch(true);this.ui.message('No sensor data received. Use the touch joystick.');}
         else {this.sensor.calibrate();this.input.mode='sensor';this.ui.level.classList.remove('hidden');}
@@ -584,7 +597,7 @@ class Game {
   }
 }
 
-try {window.game=new Game();} catch(error){console.error(error);document.querySelector('#start .panel').innerHTML='<h1>Unable to start</h1><p>WebGL is unavailable. Open this page in Safari or a recent desktop browser. An internet connection is required to load Three.js.</p>';}
+try {window.game=new Game();} catch(error){console.error(error);document.querySelector('#gear').classList.add('hidden');document.body.insertAdjacentHTML('beforeend','<div class="scrim"><div class="panel"><h1>Unable to start</h1><p>WebGL is unavailable. Open this page in Safari or a recent desktop browser. An internet connection is required to load Three.js.</p></div></div>');}
 </script>
 </body>
 </html>
