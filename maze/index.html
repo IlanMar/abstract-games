@@ -1,0 +1,479 @@
+<!doctype html>
+<!--
+  TILT / one-file static browser game. Requires internet for the pinned Three.js CDN module.
+  iPhone: open this file from an HTTPS static host (for example, GitHub Pages or Cloudflare Pages)
+  in Safari, then tap Start Game to grant Motion & Orientation permission. A file:// URL or
+  http://<computer-LAN-IP> is not a reliable secure context for iPhone sensors. To preview on
+  your computer, run `python3 -m http.server 8000` beside this file and open
+  http://localhost:8000 (localhost is treated as secure); use WASD/arrow keys or touch.
+  No server-side game code or build step is needed. HTTPS and CDN loading need connectivity.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#e7e9e6">
+<title>Tilt · Marble Maze</title>
+<meta name="description" content="Tilt your phone to roll a marble through a new 3D maze.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23284c49'/%3E%3Ccircle cx='32' cy='32' r='16' fill='%23dce7e3'/%3E%3C/svg%3E">
+<style>
+  :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif; color:#252f30; background:#e7e9e6; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { width:100%; height:100%; margin:0; overflow:hidden; overscroll-behavior:none; touch-action:none; user-select:none; -webkit-user-select:none; }
+  #game { position:fixed; inset:0; width:100%; height:100%; display:block; outline:0; }
+  .top { position:fixed; top:calc(env(safe-area-inset-top) + 16px); left:calc(env(safe-area-inset-left) + 20px); right:calc(env(safe-area-inset-right) + 20px); display:flex; align-items:start; justify-content:space-between; pointer-events:none; }
+  .brand { font-size:13px; font-weight:750; letter-spacing:.22em; color:#475658; }
+  .sub { margin-top:4px; font-size:11px; letter-spacing:.07em; color:#697779; }
+  button, select { font:inherit; }
+  button { cursor:pointer; }
+  .gear { position:fixed; right:calc(env(safe-area-inset-right) + 19px); bottom:calc(env(safe-area-inset-bottom) + 19px); width:54px; height:54px; border:1px solid #ffffffb8; border-radius:50%; background:#f9fbf6e8; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:25px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:4; }
+  .gear:active, .pill:active { transform:scale(.96); }
+  .scrim { position:fixed; inset:0; background:#18282975; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top) + 18px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 18px) calc(env(safe-area-inset-left) + 18px); z-index:6; }
+  .hidden { display:none !important; }
+  .panel { width:min(100%,390px); max-height:100%; overflow:auto; overscroll-behavior:contain; background:#f9faf5; border-radius:25px; padding:26px; box-shadow:0 24px 80px #15252655; }
+  h1 { margin:0 0 11px; font-size:30px; font-weight:650; letter-spacing:-.05em; }
+  h2 { margin:0 0 16px; font-size:24px; letter-spacing:-.035em; }
+  p { color:#647475; line-height:1.5; font-size:14px; margin:0 0 20px; }
+  .pill { border:0; border-radius:15px; background:#284c49; color:white; min-height:48px; padding:0 19px; font-weight:630; }
+  .secondary { color:#284c49; background:#e0e9e3; }
+  .row { display:flex; gap:9px; margin-top:10px; }
+  .row button { flex:1; }
+  .setting { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #e3e9e5; font-size:14px; }
+  .setting select { border:1px solid #d5dfd9; color:#344a4a; border-radius:10px; min-width:122px; padding:8px; background:white; }
+  .slider-setting { padding:11px 0 9px; border-bottom:1px solid #e3e9e5; font-size:14px; }
+  .slider-head, .scale { display:flex; justify-content:space-between; align-items:center; }
+  .slider-head output { color:#284c49; font-weight:650; font-variant-numeric:tabular-nums; }
+  .slider-setting input[type="range"] { display:block; width:100%; height:28px; margin:4px 0 0; background:transparent; appearance:none; -webkit-appearance:none; touch-action:none; }
+  .slider-setting input[type="range"]::-webkit-slider-runnable-track { height:6px; border-radius:10px; background:#d4e0db; }
+  .slider-setting input[type="range"]::-webkit-slider-thumb { width:24px; height:24px; margin-top:-9px; border:3px solid #f9faf5; border-radius:50%; background:#315d58; box-shadow:0 2px 7px #284c4960; appearance:none; -webkit-appearance:none; }
+  .slider-setting input[type="range"]::-moz-range-track { height:6px; border-radius:10px; background:#d4e0db; }
+  .slider-setting input[type="range"]::-moz-range-thumb { width:19px; height:19px; border:3px solid #f9faf5; border-radius:50%; background:#315d58; }
+  .scale { color:#82908d; font-size:11px; }
+  #seed { font-size:11px; color:#768787; margin:14px 0 3px; }
+  #message { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(env(safe-area-inset-bottom) + 84px); max-width:min(90vw,430px); padding:10px 16px; border-radius:13px; background:#243d3bdc; color:#fff; text-align:center; font-size:12px; line-height:1.4; z-index:5; pointer-events:none; }
+  #debug { position:fixed; left:calc(env(safe-area-inset-left) + 14px); bottom:calc(env(safe-area-inset-bottom) + 16px); background:#173532d9; color:#d7f3e3; font:11px/1.4 ui-monospace, SFMono-Regular, monospace; padding:8px 10px; border-radius:8px; pointer-events:none; white-space:pre; z-index:3; }
+  #joystick { position:fixed; left:calc(env(safe-area-inset-left) + 20px); bottom:calc(env(safe-area-inset-bottom) + 23px); width:118px; height:118px; border:2px solid #46656283; background:#f5faf4a8; border-radius:50%; z-index:3; touch-action:none; }
+  #stick { position:absolute; width:46px; height:46px; left:34px; top:34px; background:#315d58d4; border-radius:50%; box-shadow:0 3px 10px #0002; pointer-events:none; }
+  @media(max-height:600px) { .panel { padding:18px; } .setting { padding:5px 0; } }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="3D marble maze"></canvas>
+<div class="top"><div><div class="brand">TILT</div><div class="sub">MARBLE MAZE</div></div></div>
+<div id="joystick" class="hidden" aria-label="Touch joystick"><div id="stick"></div></div>
+<div id="debug" class="hidden"></div>
+<div id="message" class="hidden"></div>
+<button id="gear" class="gear hidden" aria-label="Settings">⚙</button>
+<div id="start" class="scrim"><div class="panel"><h1>Find your way.</h1><p>Tilt your phone to roll the marble through a new maze. Hold it comfortably, then start: that position becomes level. On a computer, use WASD or the arrow keys.</p><button id="startButton" class="pill" style="width:100%">Start Game</button><p style="font-size:12px;margin:15px 0 0">Motion sensors require Safari permission and an HTTPS page. Touch controls appear if sensors are unavailable.</p></div></div>
+<div id="settings" class="scrim hidden"><div class="panel"><h2>Settings</h2>
+  <label class="setting">Maze size <select id="size"><option value="7">Small · 7 × 7</option><option value="11" selected>Medium · 11 × 11</option><option value="15">Large · 15 × 15</option><option value="21">Extra Large · 21 × 21</option></select></label>
+  <div class="slider-setting"><div class="slider-head"><label for="sensitivity">Tilt sensitivity</label><output id="sensitivityValue" for="sensitivity">2.05×</output></div><input id="sensitivity" type="range" min="0.60" max="3.20" step="0.05" value="2.05"><div class="scale"><span>Gentle</span><span>Responsive</span></div></div>
+  <div class="slider-setting"><div class="slider-head"><label for="weight">Ball weight</label><output id="weightValue" for="weight">8 / 100</output></div><input id="weight" type="range" min="0" max="100" step="1" value="8"><div class="scale"><span>Light · turns easily</span><span>Heavy · more inertia</span></div></div>
+  <label class="setting">FPS counter <select id="fps"><option value="off" selected>Off</option><option value="on">On</option></select></label>
+  <div id="seed"></div>
+  <div class="row"><button id="calibrate" class="pill secondary">Calibrate</button><button id="restart" class="pill secondary">Restart</button></div>
+  <div class="row"><button id="newMaze" class="pill secondary">New Maze</button><button id="replayMaze" class="pill secondary">Same seed</button></div>
+  <div class="row"><button id="touchMode" class="pill secondary">Touch controls</button><button id="closeSettings" class="pill">Close</button></div>
+</div></div>
+<div id="finish" class="scrim hidden"><div class="panel" style="text-align:center"><h1>Finished</h1><p id="finalTime" style="font-size:20px">Time: 0.0 s</p><div class="row"><button id="finishNew" class="pill">New Maze</button><button id="finishReplay" class="pill secondary">Replay</button></div></div></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+
+const CELL=1.5, RADIUS=.19, WALL=.14, FIXED=1/120, MAX_STEPS=8;
+const CURVE_BEND=.22, CURVE_STEPS=10;
+const PHYSICS_MODES=Object.freeze({
+  light:Object.freeze({inertia:.13,resistance:.48,damping:.09,restitution:.30}),
+  normal:Object.freeze({inertia:.42,resistance:.60,damping:.12,restitution:.25}),
+  heavy:Object.freeze({inertia:.86,resistance:.38,damping:.075,restitution:.18})
+});
+const lerp=(a,b,t)=>a+(b-a)*t;
+// Precompute 101 physical feels once: 0=light, 50=previous normal, 100=heavy.
+// No objects are created in the fixed-step physics loop.
+const PHYSICS_VALUES=Array.from({length:101},(_,weight)=>{
+  const a=weight<=50?PHYSICS_MODES.light:PHYSICS_MODES.normal;
+  const b=weight<=50?PHYSICS_MODES.normal:PHYSICS_MODES.heavy;
+  const t=weight<=50?weight/50:(weight-50)/50;
+  return {inertia:lerp(a.inertia,b.inertia,t),resistance:lerp(a.resistance,b.resistance,t),damping:lerp(a.damping,b.damping,t),restitution:lerp(a.restitution,b.restitution,t)};
+});
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const angleDiff=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+const center=(i,n)=>(i-(n-1)/2)*CELL;
+const randomSeed=()=>{ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]||1; };
+function rng(seed) { let s=seed>>>0; return ()=>{s=(s+0x6D2B79F5)|0; let t=Math.imul(s^(s>>>15),1|s); t^=t+Math.imul(t^(t>>>7),61|t); return ((t^(t>>>14))>>>0)/4294967296;}; }
+
+class MazeGenerator {
+  static create(n, seed) {
+    const rand=rng(seed), edges=new Uint8Array(n*n), seen=new Uint8Array(n*n), stack=new Int16Array(n*n), candidates=new Int16Array(4);
+    // 1=N, 2=E, 4=S, 8=W denote openings; DFS visits every cell.
+    const dx=[0,1,0,-1],dy=[-1,0,1,0],bits=[1,2,4,8];
+    let top=0; stack[0]=0; seen[0]=1;
+    while(top>=0) {
+      const cell=stack[top], x=cell%n,y=(cell/n)|0; let count=0;
+      for(let d=0;d<4;d++){const xx=x+dx[d],yy=y+dy[d];if(xx>=0&&xx<n&&yy>=0&&yy<n&&!seen[yy*n+xx]) candidates[count++]=d;}
+      if(!count){top--;continue;}
+      const d=candidates[(rand()*count)|0],next=(y+dy[d])*n+x+dx[d];
+      edges[cell]|=bits[d]; edges[next]|=bits[(d+2)%4]; seen[next]=1;stack[++top]=next;
+    }
+    // BFS finds a farthest finish by path length, not just Euclidean distance.
+    const distance=new Int16Array(n*n).fill(-1), queue=new Int16Array(n*n); distance[0]=0;queue[0]=0;
+    let head=0,tail=1,finish=0;
+    while(head<tail) {const c=queue[head++],x=c%n,y=(c/n)|0;finish=c;
+      for(let d=0;d<4;d++) if(edges[c]&bits[d]) {const next=(y+dy[d])*n+x+dx[d];if(distance[next]<0){distance[next]=distance[c]+1;queue[tail++]=next;}}
+    }
+    const curvedStyle=rand()<.5,walls=[];
+    const addWall=(x,z,vertical,boundary)=>{
+      const half=(CELL+WALL)/2;
+      const wall={x,z,hx:vertical?WALL/2:half,hz:vertical?half:WALL/2,vertical};
+      if(curvedStyle&&!boundary&&rand()<.46){
+        wall.curved=true;wall.sign=rand()<.5?-1:1;
+        // Conservative bounds keep every curved collider in the nearby-cell bins.
+        wall.hx+=vertical?CURVE_BEND:WALL/2;
+        wall.hz+=vertical?WALL/2:CURVE_BEND;
+        const points=new Float32Array((CURVE_STEPS+1)*2);
+        for(let i=0;i<=CURVE_STEPS;i++){
+          const t=i/CURVE_STEPS,along=(t-.5)*(CELL+WALL),bow=wall.sign*CURVE_BEND*Math.sin(Math.PI*t)**2;
+          points[i*2]=x+(vertical?bow:along);
+          points[i*2+1]=z+(vertical?along:bow);
+        }
+        wall.points=points;
+      }
+      walls.push(wall);
+    };
+    for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+      const c=y*n+x;
+      if(x===0) addWall((x-n/2)*CELL,center(y,n),true,true);
+      if(y===0) addWall(center(x,n),(y-n/2)*CELL,false,true);
+      if(!(edges[c]&2)) addWall((x+1-n/2)*CELL,center(y,n),true,x===n-1);
+      if(!(edges[c]&4)) addWall(center(x,n),(y+1-n/2)*CELL,false,y===n-1);
+    }
+    // Each cell caches only walls that its marble could touch. The padding covers corners.
+    const bins=Array.from({length:n*n},()=>[]);
+    for(const wall of walls){
+      const minx=clamp(Math.floor((wall.x-wall.hx-RADIUS)/CELL+n/2),0,n-1),maxx=clamp(Math.floor((wall.x+wall.hx+RADIUS)/CELL+n/2),0,n-1);
+      const miny=clamp(Math.floor((wall.z-wall.hz-RADIUS)/CELL+n/2),0,n-1),maxy=clamp(Math.floor((wall.z+wall.hz+RADIUS)/CELL+n/2),0,n-1);
+      for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++) bins[y*n+x].push(wall);
+    }
+    return {n,seed,edges,finish,walls,bins,style:curvedStyle?'curved':'straight'};
+  }
+}
+
+class Physics {
+  constructor(){this.x=0;this.z=0;this.vx=0;this.vz=0;this.ax=0;this.az=0;this.mass=.055;this.maze=null;this.distance=0;}
+  reset(maze){this.maze=maze;this.x=center(0,maze.n);this.z=center(0,maze.n);this.vx=this.vz=this.ax=this.az=this.distance=0;}
+  step(dt,tiltX,tiltZ,weight){
+    const p=PHYSICS_VALUES[weight];
+    // F=m*g*sin(theta); effective mass is m+I/r². An intentionally adjustable
+    // moment of inertia changes the feel without falsely changing gravity with mass.
+    const g=24, effective=this.mass*(1+p.inertia);
+    const previousSpeed=Math.hypot(this.vx,this.vz),tiltStrength=Math.hypot(tiltX,tiltZ);
+    let turnBoost=1;
+    if(previousSpeed>.15&&tiltStrength>.025){
+      const alignment=clamp((this.vx*tiltX+this.vz*tiltZ)/(previousSpeed*tiltStrength),-1,1);
+      // A lighter marble responds faster when gravity points across or against
+      // its momentum. This still changes acceleration, never velocity directly.
+      turnBoost+=.30*(1-weight/100)*(1-alignment);
+    }
+    this.ax=this.mass*g*tiltX*turnBoost/effective;this.az=this.mass*g*tiltZ*turnBoost/effective;
+    this.vx+=this.ax*dt;this.vz+=this.az*dt;
+    const speed=Math.hypot(this.vx,this.vz);
+    if(speed>0){
+      // Coulomb-like rolling loss plus air/bearing damping. Static threshold prevents creep.
+      const next=Math.max(0,speed-p.resistance*dt)*Math.exp(-p.damping*dt);
+      const factor=next<.018?0:Math.min(1,next/speed);
+      this.vx*=factor;this.vz*=factor;
+    }
+    const cap=7.8,s=Math.hypot(this.vx,this.vz);if(s>cap){this.vx*=cap/s;this.vz*=cap/s;}
+    const oldX=this.x,oldZ=this.z;
+    this.x+=this.vx*dt;this.z+=this.vz*dt;
+    this.collide(p.restitution);
+    this.distance+=Math.hypot(this.x-oldX,this.z-oldZ);
+  }
+  collide(restitution){
+    const n=this.maze.n,cx=clamp(Math.floor(this.x/CELL+n/2),0,n-1),cz=clamp(Math.floor(this.z/CELL+n/2),0,n-1);
+    const near=this.maze.bins[cz*n+cx];
+    // A few sequential passes resolve simultaneous contacts at corners. Each pass
+    // takes the deepest penetration, so a resolved wall cannot hide another one.
+    for(let pass=0;pass<4;pass++){
+      let hit=null,best=0,nx=0,nz=0;
+      for(let i=0;i<near.length;i++){
+        const w=near[i],rx=this.x-w.x,rz=this.z-w.z;
+        if(Math.abs(rx)>w.hx+RADIUS||Math.abs(rz)>w.hz+RADIUS)continue;
+        let pen,tx,tz;
+        if(w.curved){
+          // Closest point on the same sampled centerline used by the 3D mesh.
+          // Each short piece is a capsule; no new vectors are made per step.
+          const points=w.points;let closest=Infinity,dx=0,dz=0;
+          for(let j=0;j<points.length-2;j+=2){
+            const ax=points[j],az=points[j+1],sx=points[j+2]-ax,sz=points[j+3]-az;
+            const t=clamp(((this.x-ax)*sx+(this.z-az)*sz)/(sx*sx+sz*sz),0,1);
+            const ex=this.x-(ax+sx*t),ez=this.z-(az+sz*t),d2=ex*ex+ez*ez;
+            if(d2<closest){closest=d2;dx=ex;dz=ez;}
+          }
+          const d=Math.sqrt(closest);pen=RADIUS+WALL/2-d;
+          if(d>1e-6){tx=dx/d;tz=dz/d;}
+          else if(w.vertical){tx=this.vx>0?-1:1;tz=0;}
+          else {tx=0;tz=this.vz>0?-1:1;}
+        }else{
+          const dx=rx-clamp(rx,-w.hx,w.hx),dz=rz-clamp(rz,-w.hz,w.hz),d2=dx*dx+dz*dz;
+          if(d2>1e-12){const d=Math.sqrt(d2);pen=RADIUS-d;tx=dx/d;tz=dz/d;}
+          else { // Exactly within the rectangle: choose minimum separating axis.
+            const px=w.hx+RADIUS-Math.abs(rx),pz=w.hz+RADIUS-Math.abs(rz);
+            if(px<pz){pen=px;tx=rx>=0?1:-1;tz=0;}else{pen=pz;tx=0;tz=rz>=0?1:-1;}
+          }
+        }
+        if(pen>best+1e-7){best=pen;hit=w;nx=tx;nz=tz;}
+      }
+      if(!hit)break;
+      this.x+=nx*(best+1e-5);this.z+=nz*(best+1e-5);
+      const approach=this.vx*nx+this.vz*nz;
+      if(approach<0){
+        const bounce=approach<-.18?restitution:0;
+        this.vx-=(1+bounce)*approach*nx;this.vz-=(1+bounce)*approach*nz;
+        // Slight tangential energy loss at impact; the marble keeps sliding away.
+        this.vx*=.985;this.vz*=.985;
+      }
+    }
+  }
+}
+
+class SensorController {
+  constructor(){this.x=0;this.y=0;this.zeroX=0;this.zeroY=0;this.have=false;this.usingMotion=false;this.last=0;this.enabled=false;
+    this.motion=e=>this.onMotion(e);this.orientation=e=>this.onOrientation(e);}
+  transform(x,y){const a=(screen.orientation?.angle ?? window.orientation ?? 0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*x-s*y,s*x+c*y];}
+  update(x,y){const [tx,ty]=this.transform(x,y),now=performance.now();
+    // 25 ms time constant removes sensor noise with little perceptible delay.
+    const dt=this.last?Math.min(.1,(now-this.last)/1000):.02,blend=this.have?1-Math.exp(-dt/.025):1;
+    this.x+=angleDiff(tx,this.x)*blend;this.y+=angleDiff(ty,this.y)*blend;this.last=now;this.have=true;
+  }
+  onMotion(e){const a=e.accelerationIncludingGravity;
+    if(a&&Number.isFinite(a.x)&&Number.isFinite(a.y)&&Number.isFinite(a.z)){
+      this.usingMotion=true;
+      // Use angles rather than raw projected gravity. Near upright, raw y is
+      // saturated; atan2 still detects a 10° change around the calibrated pose.
+      this.update(Math.atan2(-a.x,Math.hypot(a.y,a.z)),Math.atan2(a.y,a.z));
+    }
+  }
+  onOrientation(e){if(this.usingMotion||!Number.isFinite(e.beta)||!Number.isFinite(e.gamma))return;
+    // DeviceOrientation angles are the fallback when gravity samples are absent.
+    this.update(e.gamma*Math.PI/180,e.beta*Math.PI/180);
+  }
+  async request(){
+    if(!window.isSecureContext)return false;
+    // Both requests are started directly inside the click handler, before any await.
+    const asks=[];
+    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function') asks.push(DeviceMotionEvent.requestPermission());
+    if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function') asks.push(DeviceOrientationEvent.requestPermission());
+    // Either granted API is sufficient. Do not reject working motion input just
+    // because the orientation permission was denied (or vice versa).
+    const results=await Promise.allSettled(asks);
+    if(asks.length&&!results.some(x=>x.status==='fulfilled'&&x.value==='granted'))return false;
+    window.addEventListener('devicemotion',this.motion,{passive:true});window.addEventListener('deviceorientation',this.orientation,{passive:true});this.enabled=true;return true;
+  }
+  calibrate(){if(!this.have)return false;this.zeroX=this.x;this.zeroY=this.y;return true;}
+  // Sensor X is opposite the rendered board's downhill X on iPhone Safari.
+  // Invert only sensor input; keyboard and touch already use screen directions.
+  get tiltX(){return clamp(-angleDiff(this.x,this.zeroX),-.42,.42);}
+  get tiltY(){return clamp(angleDiff(this.y,this.zeroY),-.42,.42);}
+}
+
+class InputController {
+  constructor(sensor){this.sensor=sensor;this.keys=new Set();this.keyboardX=0;this.keyboardY=0;this.touchX=0;this.touchY=0;this.touchActive=false;this.mode='keyboard';
+    const joystick=document.querySelector('#joystick'),stick=document.querySelector('#stick');
+    const move=e=>{const b=joystick.getBoundingClientRect(),x=(e.clientX-b.left-b.width/2)/(b.width/2-21),y=(e.clientY-b.top-b.height/2)/(b.height/2-21),len=Math.max(1,Math.hypot(x,y));this.touchX=x/len*.36;this.touchY=y/len*.36;stick.style.transform=`translate(${this.touchX/.36*36}px,${this.touchY/.36*36}px)`;};
+    joystick.addEventListener('pointerdown',e=>{joystick.setPointerCapture(e.pointerId);this.touchActive=true;move(e);});
+    joystick.addEventListener('pointermove',e=>{if(this.touchActive)move(e);});
+    const release=()=>{this.touchActive=false;this.touchX=this.touchY=0;stick.style.transform='';};
+    joystick.addEventListener('pointerup',release);joystick.addEventListener('pointercancel',release);
+    window.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD'].includes(e.code)){e.preventDefault();this.keys.add(e.code);}});
+    window.addEventListener('keyup',e=>this.keys.delete(e.code));window.addEventListener('blur',()=>this.keys.clear());
+  }
+  step(dt){const x=(this.keys.has('KeyD')||this.keys.has('ArrowRight')?1:0)-(this.keys.has('KeyA')||this.keys.has('ArrowLeft')?1:0);
+    const y=(this.keys.has('KeyS')||this.keys.has('ArrowDown')?1:0)-(this.keys.has('KeyW')||this.keys.has('ArrowUp')?1:0);
+    const a=1-Math.exp(-dt/(x||y ? .09 : .13));
+    this.keyboardX+=(x*.29-this.keyboardX)*a;this.keyboardY+=(y*.29-this.keyboardY)*a;
+  }
+  getX(){return this.touchActive?this.touchX:(this.keys.size?this.keyboardX:this.mode==='sensor'?this.sensor.tiltX:this.keyboardX);}
+  getY(){return this.touchActive?this.touchY:(this.keys.size?this.keyboardY:this.mode==='sensor'?this.sensor.tiltY:this.keyboardY);}
+  showTouch(show){document.querySelector('#joystick').classList.toggle('hidden',!show);this.mode=show?'touch':this.mode;}
+}
+
+function curvedWallGeometry(){
+  const positions=[],indices=[],height=.46,length=CELL+WALL;
+  for(let i=0;i<=CURVE_STEPS;i++){
+    const t=i/CURVE_STEPS,z=(t-.5)*length,x=CURVE_BEND*Math.sin(Math.PI*t)**2;
+    const slope=CURVE_BEND*Math.PI*Math.sin(2*Math.PI*t)/length;
+    const nx=1/Math.hypot(1,slope),nz=-slope*nx;
+    positions.push(x-nx*WALL/2,0,z-nz*WALL/2, x-nx*WALL/2,height,z-nz*WALL/2,
+                   x+nx*WALL/2,0,z+nz*WALL/2, x+nx*WALL/2,height,z+nz*WALL/2);
+    if(i===CURVE_STEPS)continue;
+    const a=i*4,b=a+4;
+    // Top, left, right. The bottom is covered by the maze floor.
+    indices.push(a+1,b+1,a+3, a+3,b+1,b+3,
+                 a,b,a+1, a+1,b,b+1,
+                 a+2,a+3,b+2, a+3,b+3,b+2);
+  }
+  const end=CURVE_STEPS*4;
+  indices.push(0,1,2, 1,3,2, end,end+2,end+1, end+1,end+2,end+3);
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geometry.setIndex(indices);geometry.computeVertexNormals();
+  return geometry;
+}
+
+class Renderer {
+  constructor(canvas){
+    this.engine=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance',alpha:false});
+    this.engine.setClearColor(0xe7e9e6);this.engine.outputColorSpace=THREE.SRGBColorSpace;
+    this.scene=new THREE.Scene();this.camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,150);
+    this.scene.add(new THREE.HemisphereLight(0xf9fffa,0x879e98,2.25));
+    const sun=new THREE.DirectionalLight(0xffffff,2.35);sun.position.set(-5,13,8);this.scene.add(sun);
+    const rim=new THREE.DirectionalLight(0xb7d4ca,.6);rim.position.set(9,8,-7);this.scene.add(rim);
+    this.floorMat=new THREE.MeshStandardMaterial({color:0xd4dfd8,roughness:.94});
+    this.wallMat=new THREE.MeshStandardMaterial({color:0x9eb0a9,roughness:.65,metalness:.05});
+    this.ballMat=new THREE.MeshStandardMaterial({color:0x9cff47,emissive:0x2f7e15,emissiveIntensity:.35,roughness:.27,metalness:.18});
+    this.wallVGeo=new THREE.BoxGeometry(WALL,.46,CELL+WALL);this.wallHGeo=new THREE.BoxGeometry(CELL+WALL,.46,WALL);
+    this.curveGeo=curvedWallGeometry();
+    this.ballGeo=new THREE.SphereGeometry(RADIUS,20,14);
+    this.ball=new THREE.Mesh(this.ballGeo,this.ballMat);this.scene.add(this.ball);
+    this.ballMarker=new THREE.Mesh(new THREE.TorusGeometry(.075,.012,6,24),new THREE.MeshStandardMaterial({color:0x556b69,roughness:.38,metalness:.3}));this.ball.add(this.ballMarker);this.ballMarker.rotation.x=Math.PI/2;this.ballMarker.position.y=RADIUS*.65;
+    // One tiny reusable radial texture makes a cheap contact shadow without a shadow map.
+    const shadowCanvas=document.createElement('canvas');shadowCanvas.width=shadowCanvas.height=64;
+    const ctx=shadowCanvas.getContext('2d'),grad=ctx.createRadialGradient(32,32,3,32,32,32);grad.addColorStop(0,'rgba(20,40,38,.32)');grad.addColorStop(.45,'rgba(20,40,38,.19)');grad.addColorStop(1,'rgba(20,40,38,0)');ctx.fillStyle=grad;ctx.fillRect(0,0,64,64);
+    this.shadowTex=new THREE.CanvasTexture(shadowCanvas);this.shadow=new THREE.Mesh(new THREE.PlaneGeometry(.78,.78),new THREE.MeshBasicMaterial({map:this.shadowTex,transparent:true,depthWrite:false}));this.shadow.rotation.x=-Math.PI/2;this.shadow.position.y=.012;this.scene.add(this.shadow);
+    this.startGeo=new THREE.TorusGeometry(.34,.018,7,32);this.finishGeo=new THREE.CylinderGeometry(.35,.35,.012,32);
+    this.startMat=new THREE.MeshBasicMaterial({color:0x5f8378});this.finishMat=new THREE.MeshStandardMaterial({color:0x4ad7ab,emissive:0x1b986f,emissiveIntensity:.55,roughness:.35});
+    this.root=null;this.maze=null;this.focusX=0;this.focusZ=0;this.width=0;this.height=0;
+    window.addEventListener('resize',()=>this.resize());this.resize();
+  }
+  build(maze){
+    if(this.root){this.scene.remove(this.root); // Shared geometries/materials survive; old floor and instance buffers do not.
+      this.root.traverse(o=>{
+        if(o.isInstancedMesh)o.dispose(); // Releases per-instance GPU attributes.
+        if(o.geometry&&o.geometry!==this.wallVGeo&&o.geometry!==this.wallHGeo&&o.geometry!==this.curveGeo&&o.geometry!==this.startGeo&&o.geometry!==this.finishGeo)o.geometry.dispose();
+      });
+    }
+    this.maze=maze;this.root=new THREE.Group();this.scene.add(this.root);
+    const floor=new THREE.Mesh(new THREE.BoxGeometry(maze.n*CELL+.28,.20,maze.n*CELL+.28),this.floorMat);floor.position.y=-.12;this.root.add(floor);
+    let vs=0,hs=0,cs=0;for(const w of maze.walls)w.curved?cs++:w.vertical?vs++:hs++;
+    const v=new THREE.InstancedMesh(this.wallVGeo,this.wallMat,vs),h=new THREE.InstancedMesh(this.wallHGeo,this.wallMat,hs);
+    const curve=cs?new THREE.InstancedMesh(this.curveGeo,this.wallMat,cs):null;
+    const dummy=new THREE.Object3D();let vi=0,hi=0,ci=0;
+    for(const w of maze.walls){
+      dummy.position.set(w.x,w.curved?0:.23,w.z);
+      dummy.rotation.y=w.curved?(w.vertical?(w.sign>0?0:Math.PI):(w.sign>0?-Math.PI/2:Math.PI/2)):0;
+      dummy.updateMatrix();
+      if(w.curved)curve.setMatrixAt(ci++,dummy.matrix);
+      else if(w.vertical)v.setMatrixAt(vi++,dummy.matrix);
+      else h.setMatrixAt(hi++,dummy.matrix);
+    }
+    v.instanceMatrix.needsUpdate=h.instanceMatrix.needsUpdate=true;v.computeBoundingSphere();h.computeBoundingSphere();this.root.add(v,h);
+    if(curve){curve.instanceMatrix.needsUpdate=true;curve.computeBoundingSphere();this.root.add(curve);}
+    const start=new THREE.Mesh(this.startGeo,this.startMat);start.rotation.x=-Math.PI/2;start.position.set(center(0,maze.n),.014,center(0,maze.n));this.root.add(start);
+    const finish=new THREE.Mesh(this.finishGeo,this.finishMat);finish.position.set(center(maze.finish%maze.n,maze.n),.017,center((maze.finish/maze.n)|0,maze.n));this.root.add(finish);
+    this.resetView();this.resize();
+  }
+  resetView(){
+    // Large boards show only part of the maze; frame the start cell immediately.
+    const startFocus=this.maze.n<=11?0:center(0,this.maze.n)*.66;
+    this.focusX=this.focusZ=startFocus;
+    this.ball.rotation.set(0,0,0);
+  }
+  resize(){const w=window.innerWidth,h=window.innerHeight;if(!w||!h)return;this.width=w;this.height=h;
+    this.engine.setPixelRatio(Math.min(window.devicePixelRatio||1,1.75));this.engine.setSize(w,h,false);
+    const visible=this.maze?(this.maze.n<=11?this.maze.n*CELL+1.6:12*CELL):18;
+    this.camera.left=-visible/2;this.camera.right=visible/2;this.camera.top=visible*h/w/2;this.camera.bottom=-this.camera.top;this.camera.updateProjectionMatrix();
+  }
+  render(x,z,dt,rollingX,rollingZ){
+    this.ball.position.set(x,.19,z);this.shadow.position.set(x,.012,z);
+    this.ball.rotation.z-=rollingX/RADIUS;this.ball.rotation.x+=rollingZ/RADIUS;
+    const targetFactor=this.maze.n<=11?.13:.66;
+    const a=1-Math.exp(-dt*2.3);this.focusX+=(x*targetFactor-this.focusX)*a;this.focusZ+=(z*targetFactor-this.focusZ)*a;
+    this.camera.position.set(this.focusX,31,this.focusZ+10);this.camera.lookAt(this.focusX,0,this.focusZ);
+    this.engine.render(this.scene,this.camera);
+  }
+}
+
+class PerformanceMonitor {
+  constructor(renderer){this.renderer=renderer;this.el=document.querySelector('#debug');this.frames=0;this.sum=0;this.physics=0;this.last=performance.now();this.enabled=false;}
+  frame(delta,physicsMs,tx,ty){if(!this.enabled)return;this.frames++;this.sum+=delta;this.physics+=physicsMs;
+    if(performance.now()-this.last<450)return;
+    const info=this.renderer.engine.info.render,elapsed=performance.now()-this.last;
+    this.el.textContent=`FPS ${Math.round(this.frames*1000/elapsed)}  Frame ${(this.sum/this.frames*1000).toFixed(1)} ms\nPhysics ${(this.physics/this.frames).toFixed(2)} ms  Draws ${info.calls}\nTriangles ${info.triangles}  Meshes ${this.renderer.scene.children.length+this.renderer.root.children.length}\nTilt ${tx.toFixed(2)}, ${ty.toFixed(2)}`;
+    this.last=performance.now();this.frames=0;this.sum=this.physics=0;
+  }
+}
+
+class UI {
+  constructor(game){this.game=game;this.start=document.querySelector('#start');this.settings=document.querySelector('#settings');this.finish=document.querySelector('#finish');this.gear=document.querySelector('#gear');this.messageEl=document.querySelector('#message');this.messageTimer=0;
+    const on=(id,fn)=>document.querySelector('#'+id).addEventListener('click',fn);
+    on('startButton',()=>game.start());on('gear',()=>this.open());on('closeSettings',()=>this.close());
+    on('calibrate',()=>this.message(game.sensor.calibrate()?'Current position is level.':'Waiting for motion sensor.'));
+    on('restart',()=>{game.restart();this.close();});on('newMaze',()=>{game.newMaze();this.close();});on('replayMaze',()=>{game.replay();this.close();});
+    on('finishNew',()=>{game.newMaze();this.closeFinish();});
+    on('finishReplay',()=>{game.restart();this.closeFinish();});
+    on('touchMode',()=>{game.input.showTouch(true);this.message('Touch joystick enabled.');this.close();});
+    // Size changes take effect when creating the next maze.
+    const sensitivity=document.querySelector('#sensitivity'),weight=document.querySelector('#weight');
+    sensitivity.addEventListener('input',()=>{document.querySelector('#sensitivityValue').textContent=Number(sensitivity.value).toFixed(2)+'×';});
+    weight.addEventListener('input',()=>{document.querySelector('#weightValue').textContent=weight.value+' / 100';});
+    document.querySelector('#fps').addEventListener('change',e=>{game.perf.enabled=e.target.value==='on';game.perf.el.classList.toggle('hidden',!game.perf.enabled);});
+  }
+  open(){this.settings.classList.remove('hidden');this.game.paused=true;}
+  close(){this.settings.classList.add('hidden');this.game.paused=document.hidden||!this.game.active||this.game.finished;this.game.resetClock();}
+  closeFinish(){this.finish.classList.add('hidden');this.game.paused=document.hidden||!this.game.active;this.game.resetClock();}
+  message(text){this.messageEl.textContent=text;this.messageEl.classList.remove('hidden');clearTimeout(this.messageTimer);this.messageTimer=setTimeout(()=>this.messageEl.classList.add('hidden'),4000);}
+  setSeed(seed,style){document.querySelector('#seed').textContent=`Maze seed: ${seed} · ${style==='curved'?'Curved walls':'Straight walls'}`;} 
+}
+
+class Game {
+  constructor(){this.sensor=new SensorController();this.input=new InputController(this.sensor);this.renderer=new Renderer(document.querySelector('#game'));this.physics=new Physics();this.perf=new PerformanceMonitor(this.renderer);this.ui=new UI(this);
+    this.seed=randomSeed();this.size=11;this.maze=null;this.active=false;this.finished=false;this.paused=true;this.idleDrawn=false;this.elapsed=0;this.moving=false;this.accumulator=0;this.last=0;this.prevX=0;this.prevZ=0;
+    this.makeMaze(this.seed,this.size);window.addEventListener('resize',()=>{this.idleDrawn=false;});
+    document.addEventListener('visibilitychange',()=>{this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.ui.settings.classList.contains('hidden')||this.finished;});
+    requestAnimationFrame(t=>this.loop(t));
+  }
+  makeMaze(seed,size){this.seed=seed;this.size=size;document.querySelector('#size').value=String(size);this.maze=MazeGenerator.create(size,seed);this.physics.reset(this.maze);this.renderer.build(this.maze);this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.ui.setSeed(seed,this.maze.style);this.resetClock();}
+  newMaze(){this.makeMaze(randomSeed(),Number(document.querySelector('#size').value));}
+  replay(){this.makeMaze(this.seed,this.size);}
+  restart(){this.physics.reset(this.maze);this.renderer.resetView();this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.resetClock();}
+  resetClock(){this.accumulator=0;this.last=0;}
+  async start(){
+    // The permission request itself occurs synchronously before the first await.
+    const attempt=this.sensor.request();this.ui.start.classList.add('hidden');this.ui.gear.classList.remove('hidden');this.active=true;this.paused=true;this.resetClock();
+    const permitted=await attempt;
+    if(permitted){setTimeout(()=>{if(!this.sensor.have){this.input.showTouch(true);this.ui.message('No sensor data received. Use the touch joystick.');}
+      else {this.sensor.calibrate();this.input.mode='sensor';this.ui.message('Tilt to roll · Calibrate in Settings');}
+      if(this.ui.settings.classList.contains('hidden')&&!document.hidden){this.paused=false;this.resetClock();}
+    },1100);
+    }else{this.input.showTouch(true);this.ui.message(window.isSecureContext?'Motion unavailable or denied. Use the touch joystick.':'Tilt requires HTTPS on iPhone. Use the touch joystick.');this.paused=false;this.resetClock();}
+  }
+  complete(){this.finished=true;this.paused=true;document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
+  loop(now){requestAnimationFrame(t=>this.loop(t));if(!this.last)this.last=now;
+    let delta=Math.min((now-this.last)/1000,.08);this.last=now;
+    if(!this.active||this.paused){this.accumulator=0;if(!this.idleDrawn&&!document.hidden){this.renderer.render(this.physics.x,this.physics.z,0,0,0);this.idleDrawn=true;}return;}
+    this.idleDrawn=false;
+    this.accumulator=Math.min(this.accumulator+delta,FIXED*MAX_STEPS);
+    const start=performance.now(),weight=Number(document.querySelector('#weight').value),sensitivity=Number(document.querySelector('#sensitivity').value);
+    let steps=0;while(this.accumulator>=FIXED&&steps<MAX_STEPS){
+      this.input.step(FIXED);
+      let tx=this.input.getX()*sensitivity,ty=this.input.getY()*sensitivity;
+      const tiltLength=Math.hypot(tx,ty);
+      if(tiltLength>.72){const scale=.72/tiltLength;tx*=scale;ty*=scale;}
+      this.prevX=this.physics.x;this.prevZ=this.physics.z;this.physics.step(FIXED,tx,ty,weight);
+      if(!this.moving&&Math.hypot(this.physics.vx,this.physics.vz)>.14)this.moving=true;
+      if(this.moving)this.elapsed+=FIXED;
+      const fx=center(this.maze.finish%this.size,this.size),fz=center((this.maze.finish/this.size)|0,this.size);
+      if(Math.hypot(this.physics.x-fx,this.physics.z-fz)<.31){this.complete();break;}
+      this.accumulator-=FIXED;steps++;
+    }
+    // Interpolate between physics samples. For sensors, never delay the actual simulation.
+    const alpha=clamp(this.accumulator/FIXED,0,1),rx=this.prevX+(this.physics.x-this.prevX)*alpha,rz=this.prevZ+(this.physics.z-this.prevZ)*alpha;
+    this.renderer.render(rx,rz,delta,this.physics.vx*delta,this.physics.vz*delta);
+    this.perf.frame(delta,performance.now()-start,this.input.getX(),this.input.getY());
+  }
+}
+
+try {window.game=new Game();} catch(error){console.error(error);document.querySelector('#start .panel').innerHTML='<h1>Unable to start</h1><p>WebGL is unavailable. Open this page in Safari or a recent desktop browser. An internet connection is required to load Three.js.</p>';}
+</script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a402fac6ff91943c',t:'MTc5MDI2NTM5MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
