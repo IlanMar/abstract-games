@@ -27,7 +27,8 @@
   button, select { font:inherit; }
   button { cursor:pointer; touch-action:manipulation; }
   .gear { position:fixed; right:calc(env(safe-area-inset-right) + 19px); bottom:calc(env(safe-area-inset-bottom) + 19px); width:54px; height:54px; border:1px solid #ffffffb8; border-radius:50%; background:#f9fbf6e8; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:25px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:4; }
-  .gear:active, .pill:active { transform:scale(.96); }
+  .level { position:fixed; right:calc(env(safe-area-inset-right) + 83px); bottom:calc(env(safe-area-inset-bottom) + 19px); height:54px; padding:0 18px; border:1px solid #ffffffb8; border-radius:27px; background:#f9fbf6e8; color:#37484a; box-shadow:0 7px 26px #354c4740; font-size:14px; font-weight:630; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:4; }
+  .gear:active, .pill:active, .level:active { transform:scale(.96); }
   .scrim { position:fixed; inset:0; background:#18282975; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top) + 18px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 18px) calc(env(safe-area-inset-left) + 18px); z-index:6; }
   .hidden { display:none !important; }
   .panel { width:min(100%,390px); max-height:100%; overflow:auto; overscroll-behavior:contain; background:#f9faf5; border-radius:25px; padding:26px; box-shadow:0 24px 80px #15252655; }
@@ -64,6 +65,7 @@
 <div id="debug" class="hidden"></div>
 <div id="message" class="hidden"></div>
 <button id="gear" class="gear hidden" aria-label="Settings">⚙</button>
+<button id="levelButton" class="level hidden">Calibrate</button>
 <div id="start" class="scrim"><div class="panel"><h1>Find your way.</h1><p>Tilt your phone to roll the marble through a new maze. Hold it comfortably, then start: that position becomes level. On a computer, use WASD or the arrow keys.</p><button id="startButton" class="pill" style="width:100%">Start Game</button><p style="font-size:12px;margin:15px 0 0">Motion sensors require Safari permission and an HTTPS page. Touch controls appear if sensors are unavailable.</p></div></div>
 <div id="settings" class="scrim hidden"><div class="panel"><h2>Settings</h2>
   <label class="setting">Maze size <select id="size"><option value="7">Small · 7 × 7</option><option value="11" selected>Medium · 11 × 11</option><option value="15">Large · 15 × 15</option><option value="21">Extra Large · 21 × 21</option></select></label>
@@ -304,7 +306,7 @@ class SensorController {
 // All sounds are synthesized: low, soft and lowpassed so nothing rings or clicks sharply.
 const VOLUME=.4;
 class SoundController {
-  constructor(){this.ctx=null;this.enabled=true;this.rollLevel=0;this.lastHit=0;}
+  constructor(){this.ctx=null;this.enabled=true;this.lastHit=0;}
   unlock(){ // Must run inside a tap/click: iOS only starts audio from a user gesture.
     if(!this.ctx){
       const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
@@ -316,45 +318,10 @@ class SoundController {
       this.master.connect(tone);tone.connect(ctx.destination);
       // Short white noise for the soft knock of a wall hit.
       this.white=ctx.createBuffer(1,rate*.1|0,rate);const w=this.white.getChannelData(0);for(let i=0;i<w.length;i++)w[i]=Math.random()*2-1;
-      this.buildRoll(ctx);
     }
     if(this.ctx.state!=='running')this.ctx.resume().catch(()=>{});
   }
-  buildRoll(ctx){
-    // A rolling marble is thousands of tiny contacts with the board, not a smooth
-    // hiss. The loop holds sparse micro-clicks; playing it faster at higher speed
-    // makes them denser, and fixed wooden-board resonances give them their tone.
-    const rate=ctx.sampleRate,len=rate*2,buf=ctx.createBuffer(1,len,rate),d=buf.getChannelData(0);
-    const decay=Math.exp(-1/(rate*.0007));let amp=0,body=0;
-    for(let i=0;i<len;i++){
-      if(Math.random()<700/rate)amp+=.15+.85*Math.random()**3;
-      amp*=decay;body=body*.995+(Math.random()*2-1)*.005;
-      d[i]=amp*(Math.random()*2-1)+body*1.5;
-    }
-    // Fade the loop seam so no periodic click appears every two seconds.
-    const fade=rate*.01|0;for(let i=0;i<fade;i++){const k=i/fade;d[i]=d[i]*k+d[len-fade+i]*(1-k);}
-    const src=ctx.createBufferSource();src.buffer=buf;src.loop=true;this.rollSource=src;
-    const low=ctx.createBiquadFilter();low.type='highpass';low.frequency.value=70;
-    const board=ctx.createBiquadFilter();board.type='bandpass';board.frequency.value=210;board.Q.value=3;
-    const tone=ctx.createBiquadFilter();tone.type='bandpass';tone.frequency.value=540;tone.Q.value=4.5;
-    const toneGain=ctx.createGain();toneGain.gain.value=.55;
-    const grit=ctx.createBiquadFilter();grit.type='lowpass';grit.frequency.value=1300;
-    const gritGain=ctx.createGain();gritGain.gain.value=.12;
-    this.rollGain=ctx.createGain();this.rollGain.gain.value=0;
-    src.connect(low);low.connect(board);low.connect(tone);low.connect(grit);
-    tone.connect(toneGain);grit.connect(gritGain);
-    board.connect(this.rollGain);toneGain.connect(this.rollGain);gritGain.connect(this.rollGain);
-    this.rollGain.connect(this.master);src.start();
-  }
   setEnabled(on){this.enabled=on;if(this.ctx)this.master.gain.setTargetAtTime(on?VOLUME:0,this.ctx.currentTime,.03);}
-  roll(speed){ // Called every frame; only touches the audio graph when the level changes.
-    if(!this.ctx)return;
-    const s=speed<.06?0:Math.min(1,speed/5.5);
-    if(Math.abs(s-this.rollLevel)<.012&&(s>0||this.rollLevel===0))return;
-    this.rollLevel=s;const t=this.ctx.currentTime;
-    this.rollGain.gain.setTargetAtTime(s?3.2*s**.7:0,t,s?.05:.04);
-    this.rollSource.playbackRate.setTargetAtTime(.45+1.15*s,t,.05);
-  }
   hit(impact){
     if(!this.ctx||!this.enabled||this.ctx.state!=='running')return;
     const k=Math.min(1,(impact-.35)/3.2),ctx=this.ctx,t=ctx.currentTime;
@@ -404,7 +371,7 @@ class InputController {
   }
   getX(){return this.touchActive?this.touchX:(this.keys.size?this.keyboardX:this.mode==='sensor'?this.sensor.tiltX:this.keyboardX);}
   getY(){return this.touchActive?this.touchY:(this.keys.size?this.keyboardY:this.mode==='sensor'?this.sensor.tiltY:this.keyboardY);}
-  showTouch(show){document.querySelector('#joystick').classList.toggle('hidden',!show);this.mode=show?'touch':this.mode;}
+  showTouch(show){document.querySelector('#joystick').classList.toggle('hidden',!show);document.querySelector('#levelButton').classList.toggle('hidden',show);this.mode=show?'touch':this.mode;}
 }
 
 function curvedWallGeometry(){
@@ -518,9 +485,11 @@ class PerformanceMonitor {
 }
 
 class UI {
-  constructor(game){this.game=game;this.start=document.querySelector('#start');this.settings=document.querySelector('#settings');this.finish=document.querySelector('#finish');this.gear=document.querySelector('#gear');this.messageEl=document.querySelector('#message');this.messageTimer=0;
+  constructor(game){this.game=game;this.start=document.querySelector('#start');this.settings=document.querySelector('#settings');this.finish=document.querySelector('#finish');this.gear=document.querySelector('#gear');this.level=document.querySelector('#levelButton');this.messageEl=document.querySelector('#message');this.messageTimer=0;
     const on=(id,fn)=>document.querySelector('#'+id).addEventListener('click',fn);
-    on('startButton',()=>game.start());on('gear',()=>this.open());on('closeSettings',()=>this.close());
+    on('startButton',()=>game.start());
+    // The tap itself jolts the phone; keep levelling briefly so the settled pose wins.
+    on('levelButton',()=>{if(game.sensor.have){game.sensor.relevel(350);this.message('Current position is level.');}else this.message('Waiting for motion sensor.');});on('gear',()=>this.open());on('closeSettings',()=>this.close());
     on('calibrate',()=>this.message(game.sensor.calibrate()?'Current position is level.':'Waiting for motion sensor.'));
     on('restart',()=>{game.restart();this.close();});on('newMaze',()=>{game.newMaze();this.close();});on('replayMaze',()=>{game.replay();this.close();});
     on('finishNew',()=>{game.newMaze();this.closeFinish();});
@@ -554,7 +523,7 @@ class Game {
     window.addEventListener('orientationchange',rotated);screen.orientation?.addEventListener?.('change',rotated);
     // iOS can suspend audio (calls, backgrounding); any later tap resumes it.
     const wake=()=>{if(this.active)this.sound.unlock();};window.addEventListener('touchend',wake,true);window.addEventListener('click',wake,true);
-    document.addEventListener('visibilitychange',()=>{this.sound.roll(0);this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
+    document.addEventListener('visibilitychange',()=>{this.resetClock();this.idleDrawn=false;this.input.keys.clear();this.paused=document.hidden||!this.active||!this.controlsReady||!this.ui.settings.classList.contains('hidden')||this.finished;});
     requestAnimationFrame(t=>this.loop(t));
   }
   makeMaze(seed,size){this.seed=seed;this.size=size;document.querySelector('#size').value=String(size);this.maze=MazeGenerator.create(size,seed);this.physics.reset(this.maze);this.renderer.build(this.maze);this.prevX=this.physics.x;this.prevZ=this.physics.z;this.elapsed=0;this.moving=false;this.finished=false;this.idleDrawn=false;this.ui.setSeed(seed,this.maze.style);this.resetClock();}
@@ -569,17 +538,17 @@ class Game {
     const permitted=await attempt.catch(()=>false);
     if(permitted){setTimeout(()=>{if(this.input.mode!=='touch'){
         if(!this.sensor.have){this.input.showTouch(true);this.ui.message('No sensor data received. Use the touch joystick.');}
-        else {this.sensor.calibrate();this.input.mode='sensor';this.ui.message('Tilt to roll · Calibrate in Settings');}
+        else {this.sensor.calibrate();this.input.mode='sensor';this.ui.level.classList.remove('hidden');}
       }
       this.controlsReady=true;
       if(this.ui.settings.classList.contains('hidden')&&!document.hidden){this.paused=false;this.resetClock();}
     },1100);
     }else{this.input.showTouch(true);this.ui.message(window.isSecureContext?'Motion unavailable or denied. Use the touch joystick.':'Tilt requires HTTPS on iPhone. Use the touch joystick.');this.controlsReady=true;this.paused=document.hidden||!this.ui.settings.classList.contains('hidden');this.resetClock();}
   }
-  complete(){this.finished=true;this.paused=true;this.sound.roll(0);this.sound.finish();this.input.keys.clear();document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
+  complete(){this.finished=true;this.paused=true;this.sound.finish();this.input.keys.clear();document.querySelector('#finalTime').textContent=`Time: ${this.elapsed.toFixed(1)} s`;this.ui.finish.classList.remove('hidden');}
   loop(now){requestAnimationFrame(t=>this.loop(t));if(!this.last)this.last=now;
     let delta=Math.min((now-this.last)/1000,.08);this.last=now;
-    if(!this.active||this.paused){this.accumulator=0;this.sound.roll(0);if(!this.idleDrawn&&!document.hidden){this.renderer.render(this.physics.x,this.physics.z,0,0,0);this.idleDrawn=true;}return;}
+    if(!this.active||this.paused){this.accumulator=0;if(!this.idleDrawn&&!document.hidden){this.renderer.render(this.physics.x,this.physics.z,0,0,0);this.idleDrawn=true;}return;}
     this.idleDrawn=false;
     this.accumulator=Math.min(this.accumulator+delta,FIXED*MAX_STEPS);
     const start=performance.now(),weight=Number(document.querySelector('#weight').value),sensitivity=Number(document.querySelector('#sensitivity').value);
@@ -599,7 +568,7 @@ class Game {
     // Interpolate between physics samples. For sensors, never delay the actual simulation.
     const alpha=clamp(this.accumulator/FIXED,0,1),rx=this.prevX+(this.physics.x-this.prevX)*alpha,rz=this.prevZ+(this.physics.z-this.prevZ)*alpha;
     this.renderer.render(rx,rz,delta,this.physics.vx*delta,this.physics.vz*delta);
-    if(!this.finished){this.sound.hit(this.physics.impact);this.sound.roll(Math.hypot(this.physics.vx,this.physics.vz));}
+    if(!this.finished)this.sound.hit(this.physics.impact);
     this.perf.frame(delta,performance.now()-start,this.input.getX(),this.input.getY());
   }
 }
