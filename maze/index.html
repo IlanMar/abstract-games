@@ -239,7 +239,11 @@ class Physics {
 class SensorController {
   constructor(){this.x=0;this.y=0;this.zeroX=0;this.zeroY=0;this.have=false;this.usingMotion=false;this.last=0;this.enabled=false;
     this.motion=e=>this.onMotion(e);this.orientation=e=>this.onOrientation(e);}
-  transform(x,y){const a=(screen.orientation?.angle ?? window.orientation ?? 0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*x-s*y,s*x+c*y];}
+  transform(x,y){
+    // The game's y axis points down; rotate the sensor vector in screen coordinates.
+    const a=(screen.orientation?.angle ?? window.orientation ?? 0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+    return [c*x+s*y,-s*x+c*y];
+  }
   update(x,y){const [tx,ty]=this.transform(x,y),now=performance.now();
     // 25 ms time constant removes sensor noise with little perceptible delay.
     const dt=this.last?Math.min(.1,(now-this.last)/1000):.02,blend=this.have?1-Math.exp(-dt/.025):1;
