@@ -3,45 +3,101 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-  <meta name="theme-color" content="#090c16">
-  <title>Snakes 3D</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="arcade.css">
+  <meta name="theme-color" content="#000000">
+  <title>Snakes Subsonic</title>
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <main id="app">
-    <canvas id="game" aria-label="3D snake arena"></canvas>
-    <div class="vignette"></div>
-    <header id="hud" class="hidden">
-      <div class="hud-block"><small>LEVEL</small><strong id="hud-level">01</strong></div>
-      <div class="hud-mid"><div id="hud-name">THE GRID</div><div class="score-line"><strong id="hud-score">000000</strong><span id="hud-mult">×1</span></div><div class="meter"><div id="progress"></div></div></div>
-      <div class="hud-block right"><small>PATH</small><strong id="hud-progress">0 / 12</strong></div>
-    </header>
-    <div id="timer-hud" class="hidden"><span id="hud-time">90</span><div class="timer-meter"><div id="timer-progress"></div></div></div>
-    <button id="pause-button" class="icon-button hidden" aria-label="Pause">Ⅱ</button>
-    <div id="speed-indicator" class="hidden"></div>
-    <div id="controls" class="hidden" aria-label="Direction controls">
-      <button data-action="left" aria-label="Turn left">◀</button>
-      <div><button data-action="up" aria-label="Accelerate">▲</button><button data-action="down" aria-label="Brake">▼</button></div>
-      <button data-action="right" aria-label="Turn right">▶</button>
-    </div>
-    <div id="toast" aria-live="polite"></div>
-    <section id="menu" class="screen">
-      <div class="menu-content">
-        <div class="eyebrow">A LOW-POLY ARCADE RECONSTRUCTION</div>
-        <h1>SNAKES <span>3D</span></h1>
-        <p class="subtitle">TRACE THE PATH · OWN THE GRID</p>
-        <div class="menu-actions"><button id="play" class="primary">PLAY <span>›</span></button><button id="levels">LEVEL SELECT</button><button id="settings">SETTINGS</button></div>
-        <div class="menu-footer">SWIPE LEFT / RIGHT TO TURN<br>SWIPE UP TO ACCELERATE · DOWN TO BRAKE</div>
+    <canvas id="game" aria-label="Snakes 3D"></canvas>
+
+    <section id="hud" class="hidden">
+      <div class="top">
+        <div class="third popups" id="popups"></div>
+        <div class="third state">
+          <div id="score">000000</div>
+          <div class="power"><div></div></div>
+        </div>
+        <div class="third combo"><span id="mult">x1</span></div>
+      </div>
+      <div class="bottom">
+        <div class="left-box"></div>
+        <div class="record-box"><div id="record">00:00</div><div id="top-record" class="hidden">00:00</div></div>
+      </div>
+      <button id="pause-button" aria-label="Pause"><span>Pause</span></button>
+    </section>
+
+    <section id="menu">
+      <div class="panel" data-panel="main">
+        <div class="logo">SNAKES<small>SUBSONIC</small></div>
+        <button data-go="start">Start Game</button>
+        <button data-go="top">Top Score</button>
+        <button data-go="options">Option</button>
+        <button data-go="help">Instructions</button>
+      </div>
+      <div class="panel hidden" data-panel="start">
+        <h2>Start Game</h2>
+        <button id="continue">Continue</button>
+        <button data-go="new">New Game</button>
+        <div class="space"></div>
+        <button data-back>Back</button>
+      </div>
+      <div class="panel hidden" data-panel="new">
+        <h2>New Game</h2>
+        <div class="level-card">
+          <canvas id="level-preview" width="120" height="120"></canvas>
+          <div><div id="level-name">Level 0</div><div id="level-kind">Initial</div></div>
+        </div>
+        <button id="select-level">Select</button>
+        <div class="space"></div>
+        <div class="row"><button id="prev-level">Previous</button><button id="next-level">Next</button></div>
+        <button data-back>Back</button>
+      </div>
+      <div class="panel hidden" data-panel="top">
+        <h2>Top Score</h2>
+        <div class="stats" id="stats"></div>
+        <div class="space"></div>
+        <button data-back>Back</button>
+      </div>
+      <div class="panel hidden" data-panel="options">
+        <h2>Options</h2>
+        <div class="label">Music</div>
+        <input type="range" id="music-volume" min="0" max="1" step="0.01" aria-label="Music volume">
+        <div class="label">Sound</div>
+        <input type="range" id="sfx-volume" min="0" max="1" step="0.01" aria-label="Sound volume">
+        <div class="label">Graphics</div>
+        <div class="row"><button data-quality="low">Low</button><button data-quality="high">High</button></div>
+        <div class="label">Color grading</div>
+        <div class="row"><button data-grading="on">On</button><button data-grading="off">Off</button></div>
+        <div class="space"></div>
+        <button data-back>Back</button>
+      </div>
+      <div class="panel hidden" data-panel="help">
+        <h2>Instructions</h2>
+        <div class="help">
+          <p>Tap the left or right half of the screen, or press ← / →, to turn.</p>
+          <p>Hold two fingers, ↑ or Space to accelerate.</p>
+          <p>A cell with a spinning gem makes the snake longer. Cross a whole chain of pulsing blue cells without a break to raise the multiplier.</p>
+          <p>Crawl over an edge to reach the underside. A spike costs one segment, a wall costs four.</p>
+          <p>Clear every level as fast as you can: the best time is saved.</p>
+        </div>
+        <button data-back>Back</button>
+      </div>
+      <div class="panel hidden" data-panel="pause">
+        <h2>Pause</h2>
+        <button id="resume">Continue</button>
+        <button data-go="options">Options</button>
+        <button data-go="help">Instructions</button>
+        <div class="space"></div>
+        <button id="to-menu">Main Menu</button>
       </div>
     </section>
-    <section id="level-screen" class="screen hidden"><div class="panel"><div class="panel-heading"><button class="back" data-back="menu">‹ BACK</button><h2>LEVEL SELECT</h2></div><div id="level-grid"></div></div></section>
-    <section id="settings-screen" class="screen hidden"><div class="panel"><div class="panel-heading"><button class="back" data-back="menu">‹ BACK</button><h2>SETTINGS</h2></div><div class="setting"><span>CONTROLS</span><button id="setting-controls"></button></div><div class="setting"><span>SOUND</span><button id="setting-sound"></button></div><div class="setting"><span>CAMERA</span><button id="setting-camera"></button></div><div class="setting"><span>GRAPHICS</span><button id="setting-graphics"></button></div></div></section>
-    <section id="overlay" class="screen hidden"><div class="result"><div id="overlay-kicker" class="eyebrow"></div><h2 id="overlay-title"></h2><p id="overlay-text"></p><div id="overlay-actions"></div></div></section>
-    <aside id="debug" class="hidden"><div id="debug-stats"></div><div class="debug-actions"><button data-debug="prev">Prev</button><button data-debug="next">Next</button><button data-debug="restart">Restart</button><button data-debug="unlock">Unlock all</button></div></aside>
+
+    <div id="fade"></div>
+    <div id="loading" class="hidden">Loading...</div>
   </main>
   <script src="vendor/three.min.js"></script>
-  <script src="classic-map.js"></script>
-  <script src="game.js"></script>
+  <script src="nsnakes-data.js?v=5"></script>
+  <script src="game.js?v=5"></script>
 </body>
 </html>
