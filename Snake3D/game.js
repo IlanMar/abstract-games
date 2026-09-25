@@ -134,7 +134,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, grading: 'on', lastLevel: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, grading: 'on', showFps: false, lastLevel: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -1492,6 +1492,9 @@
       this.save = new Save();
       this.audio = new AudioManager(this.save);
       this.canvas = $('game');
+      this.fpsCounter = $('fps-counter');
+      this.fpsFrames = 0;
+      this.fpsStarted = 0;
       this.renderer = new T.WebGLRenderer({canvas: this.canvas, antialias: false, alpha: false, powerPreference: 'high-performance'});
       this.renderer.outputColorSpace = T.LinearSRGBColorSpace;
       this.renderer.toneMapping = T.NoToneMapping;
@@ -1547,6 +1550,12 @@
       this.post.setSize(Math.floor(w * q), Math.floor(h * q));
       this.drawnState = null;
     }
+    syncFpsCounter() {
+      this.fpsCounter.classList.toggle('hidden', !(this.state === 'playing' && this.save.data.showFps));
+      this.fpsCounter.textContent = 'FPS: --';
+      this.fpsFrames = 0;
+      this.fpsStarted = 0;
+    }
     later(delay, fn) { this.timers.push({at: this.time + delay, fn}); }
     // ---------------- scene management
     startMap(index, level = 0) {
@@ -1588,6 +1597,7 @@
       this.awaitingStart = level > 0;
       if (this.awaitingStart) this.player.onGame = true;
       this.state = 'playing';
+      this.syncFpsCounter();
       this.ui.hideMenu();
       this.ui.hud(true);
       this.ui.updateScore(0, 1);
@@ -1610,6 +1620,7 @@
     }
     toMenu() {
       this.state = 'menu';
+      this.syncFpsCounter();
       if (this.world) { this.world.dispose(); this.world = null; }
       this.player = null;
       this.particles.clear();
@@ -1624,11 +1635,13 @@
     pause(on) {
       if (on && this.state === 'playing') {
         this.state = 'paused';
+        this.syncFpsCounter();
         this.audio.stopEffects();
         this.audio.playMusic(this.audio.pauseMusic);
         this.ui.showMenu('pause', true);
       } else if (!on && this.state === 'paused') {
         this.state = 'playing';
+        this.syncFpsCounter();
         this.audio.playMusic(this.player && (this.player.tailTouched || this.player.isDead) ? null : this.audio.gameMusic);
         this.ui.hideMenu();
         this.last = performance.now();
@@ -1732,6 +1745,20 @@
       if (this.state === 'playing' || this.drawnState !== this.state) {
         this.render();
         this.drawnState = this.state === 'playing' ? null : this.state;
+        if (this.state === 'playing' && this.save.data.showFps) {
+          if (!this.fpsStarted) this.fpsStarted = now;
+          this.fpsFrames++;
+          const elapsed = now - this.fpsStarted;
+          if (elapsed >= 500) {
+            this.fpsCounter.textContent = `FPS: ${Math.round(this.fpsFrames * 1000 / elapsed)}`;
+            this.fpsFrames = 0;
+            this.fpsStarted = now;
+          }
+        }
+      }
+      if (this.state !== 'playing' || !this.save.data.showFps) {
+        this.fpsFrames = 0;
+        this.fpsStarted = 0;
       }
     }
     update(dt) {
@@ -1874,11 +1901,22 @@
       sfx.addEventListener('input', () => { s.sfx = +sfx.value; game.audio.applyVolumes(); game.save.write(); });
       document.querySelectorAll('[data-grading]').forEach(b => b.addEventListener('click', () => { s.grading = b.dataset.grading; game.fx.grade = s.grading !== 'off'; game.drawnState = null; game.save.write(); this.gradingButtons(); }));
       this.gradingButtons();
+      document.querySelectorAll('[data-fps]').forEach(b => b.addEventListener('click', () => {
+        s.showFps = b.dataset.fps === 'on';
+        game.syncFpsCounter();
+        game.save.write();
+        this.fpsButtons();
+      }));
+      game.syncFpsCounter();
+      this.fpsButtons();
       document.addEventListener('pointerdown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
       document.addEventListener('keydown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
     }
     gradingButtons() {
       document.querySelectorAll('[data-grading]').forEach(b => b.classList.toggle('selected', b.dataset.grading === (this.game.save.data.grading || 'on')));
+    }
+    fpsButtons() {
+      document.querySelectorAll('[data-fps]').forEach(b => b.classList.toggle('selected', (b.dataset.fps === 'on') === this.game.save.data.showFps));
     }
     showMenu(panel, overlay = false) {
       const menu = $('menu');
