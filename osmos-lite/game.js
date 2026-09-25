@@ -1440,6 +1440,11 @@ function membrane(sr, ph) {
     MEM[2 * i] = Math.cos(th) * k;
     MEM[2 * i + 1] = Math.sin(th) * k;
   }
+  tracePath(n);
+}
+
+// Замкнутый гладкий путь через n точек MEM: квадратичные кривые через середины соседних
+function tracePath(n) {
   ctx.beginPath();
   ctx.moveTo((MEM[2 * n - 2] + MEM[0]) / 2, (MEM[2 * n - 1] + MEM[1]) / 2);
   for (let i = 0; i < n; i++) {
@@ -1505,13 +1510,25 @@ function drawBody(c, pal, a) {
   }
 }
 
-// Бактерия: тёмное непрозрачное тело (не светится, а наоборот — затеняет всё вокруг),
-// ободок по цвету угрозы с лиловым отливом, шевелящиеся щупальца, а хватающие —
-// длинные, с присоской, тянутся к добыче
+// Бактерия: тёмный аморфный комок (не светится, а наоборот — затеняет всё вокруг),
+// ободок по цвету угрозы с лиловым отливом. Контур — несколько медленных волн по
+// окружности с плавающими амплитудами и фазами: лопасти ползут и перетекают одна в
+// другую, а куда тянется хватающее щупальце, там вздувается ложноножка. Внутри —
+// свой перетекающий сгусток. Щупальца — сужающиеся ленты, по которым от основания к
+// кончику бежит волна; хватающее тянется к добыче натянутым и обвивает её кончиком.
+// Для физики бактерия — по-прежнему круг радиуса r: форма только в отрисовке.
 const RGB_BACT = [140, 88, 170], RGB_DEEP = [14, 8, 20];
 const BACT_PAL = new Map();
 const SHADOW = sprite(128, [[0, 'rgba(0,0,0,0.6)'], [0.45, 'rgba(0,0,0,0.4)'], [1, 'rgba(0,0,0,0)']]);
-const IDLE_ARMS = 9;
+const IDLE_ARMS = 8;
+// Лопасти контура по четвёркам: номер гармоники, амплитуда (доля радиуса), скорость
+// ползания (рад/с), скорость «дыхания» амплитуды. Скорости взаимно простые — форма не
+// повторяется
+const LOBES = [2, 0.1, 0.23, 0.31, 3, 0.08, -0.31, 0.43, 4, 0.05, 0.47, 0.57, 5, 0.03, -0.61, 0.71, 7, 0.015, 1.3, 1.1];
+const NLOBES = LOBES.length / 4;
+const LOBE_A = new Float64Array(NLOBES), LOBE_P = new Float64Array(NLOBES);   // для текущей бактерии и кадра
+const TX = new Float64Array(40), TY = new Float64Array(40);           // средняя линия щупальца
+const TNX = new Float64Array(40), TNY = new Float64Array(40);         // и полуширина по нормали
 
 function bactPaletteOf(c) {
   const key = Math.round((clamp(c.tint, -1, 1) + 1) * 16);
@@ -1527,15 +1544,88 @@ function bactPaletteOf(c) {
     body.addColorStop(1, rgba(mix(RGB_DEEP, rim, 0.6), 0.95));
     p = {
       body,
-      rim: rgba(rim, 0.85),
-      arm: rgba(mix(rim, RGB_DEEP, 0.35), 0.85),
-      grab: rgba(light(rim), 0.9),
+      rim: rgba(rim, 0.55),
+      arm: rgba(mix(rim, RGB_DEEP, 0.3), 0.8),
+      grab: rgba(mix(light(rim), rim, 0.4), 0.92),
+      core: rgba(rim, 0.13),
       gran: rgba(rim, 0.4),
       dot: rgba(rim, 0.8),
     };
     BACT_PAL.set(key, p);
   }
   return p;
+}
+
+// Амплитуды и фазы лопастей этой бактерии на этот кадр
+function lobes(c) {
+  for (let i = 0; i < NLOBES; i++) {
+    const j = LOBES[4 * i];
+    LOBE_A[i] = LOBES[4 * i + 1] * (0.55 + 0.45 * Math.sin(time * LOBES[4 * i + 3] + c.ph * j));
+    LOBE_P[i] = c.ph * (j + 1) + time * LOBES[4 * i + 2];
+  }
+}
+
+// Радиус комка в направлении th, в долях r (перед этим — lobes)
+function blobR(c, th) {
+  let k = 1;
+  for (let i = 0; i < NLOBES; i++) k += LOBE_A[i] * Math.sin(LOBES[4 * i] * th + LOBE_P[i]);
+  for (let i = 0; i < c.arms.length; i++) {
+    const s = c.arms[i];
+    if (s.ext < 0.02) continue;
+    let d = th - s.ang;
+    d -= TAU * Math.round(d / TAU);
+    k += 0.18 * s.ext * Math.exp(-d * d * 5);          // ложноножка к добыче
+  }
+  return k;
+}
+
+// Средняя линия свободного щупальца: из (x, y) под углом h, длиной L (px экрана), n
+// отрезков. По ней бежит волна: к кончику сильнее; curl — общий изгиб; (dx, dy) — снос
+// (растёт как s²: основание держится, кончик полощется)
+function tentacleLine(x, y, h, L, n, wave, phase, curl, dx, dy) {
+  const seg = L / n;
+  TX[0] = x; TY[0] = y;
+  for (let j = 1; j <= n; j++) {
+    const s = j / n;
+    const a = h + curl * s + wave * s * Math.sin(TAU * 1.2 * s - phase);
+    x += Math.cos(a) * seg; y += Math.sin(a) * seg;
+    TX[j] = x + dx * s * s; TY[j] = y + dy * s * s;
+  }
+}
+
+// Средняя линия натянутого щупальца: из (x0, y0) ровно в (x1, y1), с волной поперёк,
+// которая на концах сходит на нет — кончик попадает точно в добычу
+function tentacleTo(x0, y0, x1, y1, n, amp, phase) {
+  const dx = x1 - x0, dy = y1 - y0, l = Math.sqrt(dx * dx + dy * dy) || 1;
+  const px = -dy / l, py = dx / l;
+  for (let j = 0; j <= n; j++) {
+    const s = j / n, o = amp * Math.sin(Math.PI * s) * Math.sin(TAU * 1.5 * s - phase);
+    TX[j] = x0 + dx * s + px * o; TY[j] = y0 + dy * s + py * o;
+  }
+}
+
+// Средняя линия кончика, обвивающего добычу: дуга по её мембране (cx, cy, R) от угла
+// a0 на span радиан, чуть затягиваясь
+function tentacleWrap(cx, cy, R, a0, span, n) {
+  for (let j = 0; j <= n; j++) {
+    const s = j / n, a = a0 + span * s, rr = R * (1.04 - 0.1 * s);
+    TX[j] = cx + Math.cos(a) * rr; TY[j] = cy + Math.sin(a) * rr;
+  }
+}
+
+// Сужающаяся лента вдоль средней линии TX/TY: ширина w0 у основания → w1 у кончика.
+// Добавляется к текущему пути: все щупальца одного цвета заливаются одним fill
+function taper(n, w0, w1) {
+  for (let j = 0; j <= n; j++) {
+    const a = j > 0 ? j - 1 : 0, b = j < n ? j + 1 : n;
+    const nx = TY[a] - TY[b], ny = TX[b] - TX[a], l = Math.sqrt(nx * nx + ny * ny) || 1;
+    const w = (w1 + (w0 - w1) * (1 - j / n)) / 2 / l;
+    TNX[j] = nx * w; TNY[j] = ny * w;
+    if (j === 0) ctx.moveTo(TX[0] + TNX[0], TY[0] + TNY[0]);
+    else ctx.lineTo(TX[j] + TNX[j], TY[j] + TNY[j]);
+  }
+  for (let j = n; j >= 0; j--) ctx.lineTo(TX[j] - TNX[j], TY[j] - TNY[j]);
+  ctx.closePath();
 }
 
 function drawBact(c, pal, a) {
@@ -1547,77 +1637,112 @@ function drawBact(c, pal, a) {
     ctx.globalAlpha = 1;
     return;
   }
-  const R = sr * 1.9;
+  const R = sr * 2;
   ctx.drawImage(SHADOW, c.sx - R, c.sy - R, R * 2, R * 2);
-  ctx.lineCap = 'round';
 
-  // Щупальца в покое: короткие, колышутся, на ходу их сносит назад
-  if (sr > 5) {
-    const L = reachOf(c) * 0.45 * z;
-    let lx = -c.svx * 0.12 * z, ly = -c.svy * 0.12 * z;
-    const ll = Math.sqrt(lx * lx + ly * ly);
-    if (ll > L * 0.6) { lx *= L * 0.6 / ll; ly *= L * 0.6 / ll; }
-    ctx.strokeStyle = pal.arm;
-    ctx.lineWidth = Math.max(1, sr * 0.07);
-    ctx.beginPath();
-    for (let i = 0; i < IDLE_ARMS; i++) {
-      const th = i / IDLE_ARMS * TAU + c.ph + 0.15 * Math.sin(time * 0.7 + i);
-      const sway = 0.5 * Math.sin(time * 2.6 + i * 1.9 + c.ph);
-      const a1 = th + sway * 0.5, a2 = th + sway;
-      ctx.moveTo(c.sx + Math.cos(th) * sr * 0.9, c.sy + Math.sin(th) * sr * 0.9);
-      ctx.quadraticCurveTo(
-        c.sx + Math.cos(a1) * (sr + L * 0.5) + lx * 0.4, c.sy + Math.sin(a1) * (sr + L * 0.5) + ly * 0.4,
-        c.sx + Math.cos(a2) * (sr + L) + lx, c.sy + Math.sin(a2) * (sr + L) + ly);
-    }
-    ctx.stroke();
-  }
-
-  // Хватающие: от тела до мембраны добычи, извиваются; отпустив — втягиваются
-  ctx.strokeStyle = ctx.fillStyle = pal.grab;
-  ctx.lineWidth = Math.max(1.2, sr * 0.09);
+  // Куда тянутся хватающие — до формы тела: туда вздуваются ложноножки
   for (let k = 0; k < c.arms.length; k++) {
     const s = c.arms[k];
-    if (s.t) {
-      const dx = s.t.x - c.x, dy = s.t.y - c.y, d = Math.sqrt(dx * dx + dy * dy);
-      s.ang = Math.atan2(dy, dx);
-      s.len = Math.max(c.r, d - s.t.r * 0.7);
+    if (!s.t) continue;
+    const dx = s.t.x - c.x, dy = s.t.y - c.y;
+    s.ang = Math.atan2(dy, dx);
+    s.len = Math.max(c.r, Math.sqrt(dx * dx + dy * dy) - s.t.r);   // от центра до мембраны добычи
+  }
+  lobes(c);
+
+  // Щупальца в покое: разной длины, у каждого своя волна и изгиб, на ходу их сносит назад
+  if (sr > 4) {
+    const L0 = reachOf(c) * 0.75 * z, n = sr > 12 ? 12 : 6;
+    let lx = -c.svx * 0.15 * z, ly = -c.svy * 0.15 * z;
+    const ll = Math.sqrt(lx * lx + ly * ly);
+    if (ll > L0 * 0.7) { lx *= L0 * 0.7 / ll; ly *= L0 * 0.7 / ll; }
+    ctx.fillStyle = pal.arm;
+    ctx.beginPath();
+    for (let i = 0; i < IDLE_ARMS; i++) {
+      const u = rnd(c.id * 8 + i, 3), v = rnd(c.id * 8 + i, 5);   // своя длина и характер
+      const th = (i + 0.6 * u) / IDLE_ARMS * TAU + c.ph + 0.25 * Math.sin(time * 0.3 + i);
+      const br = sr * blobR(c, th) * 0.82;             // основание — из-под мембраны
+      const L = L0 * (0.5 + 0.8 * u) * (0.85 + 0.15 * Math.sin(time * (0.5 + v) + i * 2));
+      tentacleLine(c.sx + Math.cos(th) * br, c.sy + Math.sin(th) * br, th, L, n,
+        0.6 + 0.5 * v, time * (1.6 + 1.4 * v) + i * 1.7, (v - 0.5) * 1.6, lx, ly);
+      taper(n, Math.max(1.5, sr * 0.14), 0.5);
     }
+    ctx.fill();
+  }
+
+  // Хватающие: натянуто к добыче, кончик обвивает её с двух сторон; отпустив —
+  // сворачиваются и втягиваются
+  ctx.fillStyle = pal.grab;
+  const w0 = Math.max(1.8, sr * 0.16), w1 = Math.max(0.8, sr * 0.05);
+  for (let k = 0; k < c.arms.length; k++) {
+    const s = c.arms[k];
     if (s.ext < 0.02) continue;
     const cs = Math.cos(s.ang), sn = Math.sin(s.ang);
-    const len = Math.max(sr, s.len * z * s.ext);
-    const x0 = c.sx + cs * sr * 0.8, y0 = c.sy + sn * sr * 0.8;
-    const x2 = c.sx + cs * len, y2 = c.sy + sn * len;
-    const wig = Math.sin(time * 7 + k * 2.1 + c.ph) * (len - sr * 0.8) * 0.18;
+    const br = sr * blobR(c, s.ang) * 0.85, x0 = c.sx + cs * br, y0 = c.sy + sn * br;
+    const L = Math.max(0, s.len * z - br) * s.ext;
+    if (L < 1) continue;
+    const n = clamp(Math.round(L / 6), 6, 30);
+    const t = s.t;
     ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.quadraticCurveTo((x0 + x2) / 2 - sn * wig, (y0 + y2) / 2 + cs * wig, x2, y2);
-    ctx.stroke();
-    ctx.beginPath(); ctx.arc(x2, y2, Math.max(1.6, sr * 0.08), 0, TAU); ctx.fill();
+    if (t) {
+      tentacleTo(x0, y0, x0 + cs * L, y0 + sn * L, n, Math.min(L * 0.08, sr * 0.4), time * 9 + k * 2.1);
+      taper(n, w0, w1);
+      if (s.ext > 0.9 && t.sr > 1.5) {
+        // кончик обхватывает: две ветви по мембране в разные стороны
+        const m = 8, a0 = s.ang + Math.PI, span = 0.7 + 0.15 * Math.sin(time * 3 + k);
+        tentacleWrap(t.sx, t.sy, t.sr, a0, span, m); taper(m, w1, 0.4);
+        tentacleWrap(t.sx, t.sy, t.sr, a0, -span, m); taper(m, w1, 0.4);
+      }
+    } else {
+      tentacleLine(x0, y0, s.ang, L, n, 0.3, time * 6 + k, (k & 1 ? 1 : -1) * 2.5 * (1 - s.ext), 0, 0);
+      taper(n, w0, 0.4);
+    }
+    ctx.fill();
   }
-  ctx.lineCap = 'butt';
 
-  // Тело — поверх корней щупалец
+  // Тело — поверх корней щупалец, в масштабе радиуса
   ctx.save();
   ctx.translate(c.sx, c.sy);
-  ctx.rotate(c.ang);
-  const st = 1 + c.st;
-  ctx.scale(st * sr, sr / st);
-  membrane(sr, c.ph);
+  ctx.scale(sr, sr);
+  const n = clamp(Math.round(sr * 0.7), 20, 96);
+  for (let i = 0; i < n; i++) {
+    const th = i / n * TAU, k = blobR(c, th);
+    MEM[2 * i] = Math.cos(th) * k;
+    MEM[2 * i + 1] = Math.sin(th) * k;
+  }
+  tracePath(n);
   ctx.fillStyle = pal.body;
   ctx.fill();
-  ctx.lineWidth = Math.max(1, sr * 0.05) / sr;
+  ctx.lineWidth = Math.max(1, sr * 0.04) / sr;
   ctx.strokeStyle = pal.rim;
   ctx.stroke();
+
+  // Сгусток внутри: сам по себе перетекает и плавает
+  const gx = 0.12 * Math.sin(time * 0.37 + c.ph), gy = 0.12 * Math.cos(time * 0.29 + c.ph * 1.7);
+  if (sr > 6) {
+    const m = 18;
+    for (let i = 0; i < m; i++) {
+      const th = i / m * TAU;
+      const k = 0.42 * (1 + 0.2 * Math.sin(2 * th + time * 0.5 + c.ph) + 0.12 * Math.sin(3 * th - time * 0.7 + c.ph * 2));
+      MEM[2 * i] = gx + Math.cos(th) * k;
+      MEM[2 * i + 1] = gy + Math.sin(th) * k;
+    }
+    tracePath(m);
+    ctx.fillStyle = pal.core;
+    ctx.fill();
+  }
   ctx.restore();
 
-  // Гранулы внутри вместо ядра
+  // Гранулы — вокруг сгустка
   if (sr > 6) {
     ctx.fillStyle = pal.gran;
-    const gs = Math.max(0.8, sr * 0.06);
+    const gs = Math.max(0.8, sr * 0.055);
     for (let k = 0; k < 5; k++) {
       const an = c.ph * (k + 2) + time * 0.2 * (k & 1 ? 1 : -1);
-      const rr = sr * (0.2 + 0.1 * k);
-      ctx.beginPath(); ctx.arc(c.sx + Math.cos(an) * rr, c.sy + Math.sin(an) * rr, gs, 0, TAU); ctx.fill();
+      const rr = sr * (0.15 + 0.09 * k);
+      ctx.beginPath();
+      ctx.arc(c.sx + gx * sr + Math.cos(an) * rr, c.sy + gy * sr + Math.sin(an) * rr, gs, 0, TAU);
+      ctx.fill();
     }
   }
   ctx.globalAlpha = 1;
