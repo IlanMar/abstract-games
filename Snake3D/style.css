@@ -162,8 +162,6 @@ button { font: inherit; color: inherit; }
 }
 #level-preview { width: max(96px, calc(150 * var(--u))); height: max(96px, calc(150 * var(--u))); image-rendering: pixelated; background: #000; }
 #level-kind { color: rgb(125 255 238); margin-top: 0.3em; }
-.stats { text-align: center; line-height: 1.8; font-size: max(17px, calc(24 * var(--u))); }
-.stats b { font-family: "Tomorrow", var(--menu-font); font-weight: 400; color: rgb(230 255 102); }
 
 #fade { position: absolute; inset: 0; background: #000; opacity: 1; pointer-events: none; transition: opacity 1s linear; }
 #loading {

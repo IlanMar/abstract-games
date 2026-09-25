@@ -8,8 +8,6 @@
   const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
   const lerp = (a, b, t) => a + (b - a) * clamp01(t);
   const mod = (a, n) => ((a % n) + n) % n;
-  const pad2 = n => String(Math.max(0, n | 0)).padStart(2, '0');
-  const formatTime = s => `${pad2(s / 60)}:${pad2(s % 60)}`;
   const DEG = Math.PI / 180;
 
   // ---------------------------------------------------------------- constants
@@ -136,11 +134,11 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, grading: 'on', topRecord: {}, bestScore: {}, lastLevel: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, grading: 'on', lastLevel: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
-      this.data = Object.assign(defaults, stored || {});
-      delete this.data.quality;
+      this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
+      if (stored && Object.keys(stored).some(key => !(key in defaults))) this.write();
     }
     write() { try { localStorage.setItem('nsnakes-save', JSON.stringify(this.data)); } catch (e) { /* storage unavailable */ } }
   }
@@ -1586,9 +1584,6 @@
       this.shownScore = 0;
       this.scoreTick = 0;
       this.multiply = 1;
-      this.recording = false;
-      this.recordEligible = level === 0;
-      this.record = 0;
       this.enabled = false;
       this.awaitingStart = level > 0;
       if (this.awaitingStart) this.player.onGame = true;
@@ -1690,15 +1685,10 @@
       this.ui.updateScore(this.shownScore, this.multiply);
     }
     nextLevel() {
-      this.recording = true;
       let index = this.levels.index + 1;
       const key = MAPS[this.mapIndex].key;
       if (index >= this.map.levels.length) {
         index = 0;
-        const best = this.save.data.topRecord[key];
-        if (this.recordEligible && (best === undefined || this.record < best)) this.save.data.topRecord[key] = this.record;
-        this.recordEligible = true;
-        this.record = 0;
         this.ui.loading(true);
         setTimeout(() => this.ui.loading(false), 350);
       }
@@ -1714,9 +1704,6 @@
     }
     onDeath(at) {
       const p = this.player;
-      const key = MAPS[this.mapIndex].key;
-      this.save.data.bestScore[key] = Math.max(this.save.data.bestScore[key] || 0, this.score);
-      this.save.write();
       this.cameraRig.startRotating();
       p.visible = false;
       this.audio.play('explosion');
@@ -1771,7 +1758,6 @@
         this.scoreTick += dt * 20;
         if (this.scoreTick >= 1) { this.scoreTick = 0; this.shownScore += 5 * this.multiply; this.ui.updateScore(Math.min(this.shownScore, 999999), this.multiply); }
       }
-      if (this.recording) this.record += dt;
       this.glowItems = [];
       if (this.levels) for (const it of this.levels.items.values()) if (it.type === 'energy' && it.inView && this.time - it.bornAt < 1) this.glowItems.push(it);
       this.particles.update(dt);
@@ -1912,7 +1898,6 @@
         $('continue').disabled = !(s.lastLevel[s.lastMap] > 0);
       }
       if (panel === 'new') this.levelCard();
-      if (panel === 'top') this.stats();
       const first = document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
       if (first && matchMedia('(hover: hover)').matches) first.focus({preventScroll: true});
     }
@@ -1940,13 +1925,6 @@
         img.data[o] = c[idx * 3] * k; img.data[o + 1] = c[idx * 3 + 1] * k; img.data[o + 2] = c[idx * 3 + 2] * k; img.data[o + 3] = 255;
       }
       ctx.putImageData(img, 0, 0);
-    }
-    stats() {
-      const s = this.game.save.data;
-      $('stats').innerHTML = MAPS.map(m => {
-        const t = s.topRecord[m.key];
-        return `<div>${m.name} · ${m.kind}</div><div>Best time <b>${t === undefined ? '--:--' : formatTime(t)}</b> · Score <b>${String(s.bestScore[m.key] || 0).padStart(6, '0')}</b></div>`;
-      }).join('<br>');
     }
     hud(on) { $('hud').classList.toggle('hidden', !on); }
     updateStage(index, total) { $('stage-indicator').textContent = `Stage ${index + 1} / ${total}`; }
