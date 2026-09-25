@@ -15,7 +15,7 @@
   // ---------------------------------------------------------------- constants
   // Values come from the serialized scene components of the Unity build.
   const FIXED_DT = 0.02;
-  const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 10, goStage1: 5, goStage2: 10, sizeBegin: 4, up: 0.5};
+  const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, goStage2: 10, sizeBegin: 4, up: 0.5};
   const CAMERA = {startRotation: 360, rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
