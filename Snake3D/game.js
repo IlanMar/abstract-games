@@ -1608,9 +1608,10 @@
       });
     }
     beginSelectedStage() {
-      if (!this.awaitingStart) return;
+      if (!this.awaitingStart) return false;
       this.awaitingStart = false;
       this.ui.startPrompt(false);
+      return true;
     }
     toMenu() {
       this.state = 'menu';
@@ -1823,7 +1824,7 @@
         this.pointers.set(e.pointerId, e.clientX);
         if (!inGame()) return;
         if (this.pointers.size >= 2) { game.player.clearControls(); return; }
-        game.beginSelectedStage();
+        if (game.beginSelectedStage()) return;
         const left = e.clientX <= canvas.clientWidth / 2;
         game.player.turn(!left);
       });
@@ -1840,7 +1841,10 @@
           return;
         }
         if (!inGame()) return;
-        if (['ArrowLeft', 'KeyA', 'KeyQ', 'ArrowRight', 'KeyD', 'ArrowUp', 'KeyW', 'KeyZ', 'Space'].includes(k)) game.beginSelectedStage();
+        if (['ArrowLeft', 'KeyA', 'KeyQ', 'ArrowRight', 'KeyD', 'ArrowUp', 'KeyW', 'KeyZ', 'Space'].includes(k) && game.beginSelectedStage()) {
+          e.preventDefault();
+          return;
+        }
         if (['ArrowLeft', 'KeyA', 'KeyQ'].includes(k)) { e.preventDefault(); if (!e.repeat) game.player.turn(false); }
         else if (['ArrowRight', 'KeyD'].includes(k)) { e.preventDefault(); if (!e.repeat) game.player.turn(true); }
         else if (['ArrowUp', 'KeyW', 'KeyZ', 'Space'].includes(k)) { e.preventDefault(); game.player.boostKey = true; }
