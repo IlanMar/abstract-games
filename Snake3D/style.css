@@ -70,31 +70,6 @@ button { font: inherit; color: inherit; }
   white-space: nowrap;
   text-shadow: 0 0 calc(6 * var(--u)) rgb(255 255 255 / 0.4);
 }
-#hud .bottom {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: env(safe-area-inset-bottom, 0);
-  height: calc(76 * var(--u));
-  background: rgb(59 59 59 / 0.56);
-}
-#hud .left-box { position: absolute; left: 0; top: 0; bottom: 0; width: calc(100 * var(--u)); background: rgb(255 255 255 / 0.15); }
-#hud .record-box {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: calc(195 * var(--u));
-  background: rgb(255 255 255 / 0.15);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  font-family: var(--menu-font);
-  font-size: calc(22.1 * var(--u));
-  line-height: 1.25;
-}
-#top-record { color: rgb(230 255 102); }
 #pause-button {
   position: absolute;
   right: 0;
@@ -147,6 +122,17 @@ button { font: inherit; color: inherit; }
 .panel button:active { background: rgb(200 200 200); color: var(--button); }
 .panel button:disabled { color: rgb(255 255 255 / 0.4); cursor: default; background: var(--button); }
 .panel button.selected { background: var(--button-hover); color: var(--button); }
+.panel select {
+  width: 100%;
+  height: max(36px, calc(30 * var(--u)));
+  border: 0;
+  padding: 0 0.5em;
+  background: var(--button);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.panel select:focus-visible { outline: 2px solid var(--button-hover); outline-offset: 2px; }
 .panel .space { height: max(14px, calc(20 * var(--u))); }
 .panel .row { display: flex; gap: max(10px, calc(20 * var(--u))); }
 .panel .row button { flex: 1 1 0; }

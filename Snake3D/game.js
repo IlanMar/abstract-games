@@ -1497,13 +1497,15 @@
       this.audio.unlock();
       this.mapIndex = index;
       const def = MAPS[index];
-      this.save.data.lastMap = def.key;
-      this.save.write();
       if (this.world) this.world.dispose();
       this.map = this.mapData(index);
+      level = Number.isInteger(level) && level >= 0 && level < this.map.levels.length ? level : 0;
+      this.save.data.lastMap = def.key;
+      this.save.data.lastLevel[def.key] = level;
+      this.save.write();
       this.map.reset();
       this.levels = new Levels(this.map);
-      if (level) this.levels.load(level % this.map.levels.length);
+      if (level) this.levels.load(level);
       this.world = new WorldView(this.scene, this.map);
       this.player = new Player(this);
       this.player.visible = true;
@@ -1523,13 +1525,13 @@
       this.scoreTick = 0;
       this.multiply = 1;
       this.recording = false;
+      this.recordEligible = level === 0;
       this.record = 0;
       this.enabled = false;
       this.state = 'playing';
       this.ui.hideMenu();
       this.ui.hud(true);
       this.ui.updateScore(0, 1);
-      this.ui.updateRecord(0, this.save.data.topRecord[def.key]);
       this.audio.restartMusic(this.audio.gameMusic);
       this.ui.fade(1, 0);
       // MenuManager.waitingInstatiat: the player is enabled after one second, then the fade out.
@@ -1622,9 +1624,9 @@
       if (index >= this.map.levels.length) {
         index = 0;
         const best = this.save.data.topRecord[key];
-        if (best === undefined || this.record < best) this.save.data.topRecord[key] = this.record;
+        if (this.recordEligible && (best === undefined || this.record < best)) this.save.data.topRecord[key] = this.record;
+        this.recordEligible = true;
         this.record = 0;
-        this.ui.updateRecord(0, this.save.data.topRecord[key]);
         this.ui.loading(true);
         setTimeout(() => this.ui.loading(false), 350);
       }
@@ -1696,11 +1698,7 @@
         this.scoreTick += dt * 20;
         if (this.scoreTick >= 1) { this.scoreTick = 0; this.shownScore += 5 * this.multiply; this.ui.updateScore(Math.min(this.shownScore, 999999), this.multiply); }
       }
-      if (this.recording) {
-        const before = Math.floor(this.record);
-        this.record += dt;
-        if (Math.floor(this.record) !== before) this.ui.updateRecord(this.record, this.save.data.topRecord[MAPS[this.mapIndex].key]);
-      }
+      if (this.recording) this.record += dt;
       this.glowItems = [];
       if (this.levels) for (const it of this.levels.items.values()) if (it.type === 'energy' && it.inView && this.time - it.bornAt < 1) this.glowItems.push(it);
       this.particles.update(dt);
@@ -1798,7 +1796,7 @@
         const index = Math.max(0, MAPS.findIndex(m => m.key === key));
         game.startMap(index, game.save.data.lastLevel[key] || 0);
       });
-      $('select-level').addEventListener('click', () => game.startMap(this.selected));
+      $('select-level').addEventListener('click', () => game.startMap(this.selected, Number($('stage-select').value)));
       $('next-level').addEventListener('click', () => { this.selected = Math.min(MAPS.length - 1, this.selected + 1); this.levelCard(); });
       $('prev-level').addEventListener('click', () => { this.selected = Math.max(0, this.selected - 1); this.levelCard(); });
       $('resume').addEventListener('click', () => game.pause(false));
@@ -1833,7 +1831,7 @@
       document.querySelectorAll('#menu .panel').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== panel));
       if (panel === 'start') {
         const s = this.game.save.data;
-        $('continue').disabled = !Object.values(s.lastLevel).some(v => v > 0);
+        $('continue').disabled = !(s.lastLevel[s.lastMap] > 0);
       }
       if (panel === 'new') this.levelCard();
       if (panel === 'top') this.stats();
@@ -1847,6 +1845,11 @@
       $('prev-level').disabled = this.selected === 0;
       $('next-level').disabled = this.selected === MAPS.length - 1;
       const map = this.game.mapData(this.selected);
+      const stages = $('stage-select');
+      if (stages.dataset.map !== def.key) {
+        stages.replaceChildren(...map.levels.map((_, index) => new Option(`Stage ${index + 1}`, index)));
+        stages.dataset.map = def.key;
+      }
       const cv = $('level-preview'), ctx = cv.getContext('2d');
       cv.width = map.w;
       cv.height = map.h;
@@ -1871,12 +1874,6 @@
     updateScore(score, mult) {
       $('score').textContent = String(Math.max(0, score | 0)).padStart(6, '0');
       $('mult').textContent = `x${mult}`;
-    }
-    updateRecord(record, top) {
-      $('record').textContent = formatTime(record);
-      const el = $('top-record');
-      el.classList.toggle('hidden', top === undefined);
-      if (top !== undefined) el.textContent = formatTime(top);
     }
     popup(value) {
       const host = $('popups');
