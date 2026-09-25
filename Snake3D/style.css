@@ -88,6 +88,45 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
 }
 #pause-button span { font-size: max(10px, calc(12 * var(--u))); }
+/* Options > Boost button: held down, the snake runs 30% faster. */
+#boost-button {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + max(14px, calc(24 * var(--u))));
+  width: clamp(88px, calc(150 * var(--u)), 160px);
+  height: clamp(88px, calc(150 * var(--u)), 160px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: url("ui/ring.png") center / contain no-repeat, radial-gradient(circle, rgb(20 40 60 / 0.45) 0 58%, transparent 60%);
+  font-family: "Tomorrow", var(--menu-font);
+  font-size: clamp(13px, calc(20 * var(--u)), 20px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  transform: translateX(-50%);
+  transition: opacity 0.1s, transform 0.1s, filter 0.1s;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  cursor: pointer;
+}
+#boost-button::before {
+  content: "";
+  width: 0.9em;
+  height: 0.9em;
+  margin-top: 0.4em;
+  border: solid rgb(125 255 238);
+  border-width: 0.2em 0.2em 0 0;
+  transform: rotate(-45deg);
+}
+#boost-button.held { opacity: 1; transform: translateX(-50%) scale(0.93); filter: drop-shadow(0 0 10px rgb(125 255 238 / 0.7)); }
+#start-prompt:not(.hidden) ~ #boost-button { display: none; }
 
 /* ---------- Menus ---------- */
 #menu {
@@ -140,7 +179,16 @@ button { font: inherit; color: inherit; }
 .panel .row { display: flex; gap: max(10px, calc(20 * var(--u))); }
 .panel .row button { flex: 1 1 0; }
 .panel .label { text-align: center; font-size: max(17px, calc(24 * var(--u))); margin-top: max(4px, calc(6 * var(--u))); }
-.panel input[type="range"] { width: 100%; accent-color: rgb(43 55 108); height: max(28px, calc(30 * var(--u))); }
+.panel input[type="range"] { width: 100%; margin: 0; accent-color: rgb(43 55 108); height: max(28px, calc(30 * var(--u))); }
+/* Options: a name on the left, its control on the right. */
+.panel .settings {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: max(14px, calc(24 * var(--u)));
+  row-gap: max(8px, calc(10 * var(--u)));
+}
+.panel .settings > label, .panel .settings > span { font-size: max(16px, calc(24 * var(--u))); white-space: nowrap; }
 .logo {
   text-align: center;
   font-family: "Tomorrow", var(--menu-font);

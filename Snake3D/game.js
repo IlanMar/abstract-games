@@ -14,7 +14,8 @@
   // Values come from the serialized scene components of the Unity build.
   const FIXED_DT = 0.02;
   const MAX_FPS = 60;        // frame cap on any screen: a steady 60 looks smoother than 60…120 and saves battery
-  const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, goStage2: 10, sizeBegin: 4, up: 0.5};
+  const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5,
+    dash: 1.3};              // the on-screen boost button (not in the original): 30% faster while held
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
@@ -188,7 +189,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, grading: 'on', lastLevel: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, grading: 'on', popups: 'on', boostButton: 'off', lastLevel: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -720,9 +721,12 @@
   }
 
   // Obs: a cube scaled to 1 x 0.49 x 1. Spike: the square pyramid scaled 1.3 x 1.3 x 0.8 and turned 45 degrees.
+  // Both stand a little off the floor plane. A base lying in it would fight the see-through floor
+  // for depth, and a prop on the far face would flicker through the tile above it.
+  const HEX_LIFT = 0.006;
   function obstacleGeometry(hex, down) {
     let g;
-    if (hex) g = hexPrism(0.6545 * 0.99, 0.5236 * 0.99, 0.44, false);
+    if (hex) { g = hexPrism(0.6545 * 0.99, 0.5236 * 0.99, 0.44, false); g.translate(0, HEX_LIFT, 0); }
     else { g = new T.BoxGeometry(1, 0.49, 1).toNonIndexed(); g.translate(0, 0.254, 0); }
     g.computeVertexNormals();
     if (down) g.scale(1, -1, 1);
@@ -730,7 +734,7 @@
   }
   function spikeGeometry(hex, down) {
     let g;
-    if (hex) g = hexPrism(0.6545 * 1.04, 0.5236 * 1.04, 0.44, true);
+    if (hex) { g = hexPrism(0.6545 * 1.04, 0.5236 * 1.04, 0.44, true); g.translate(0, HEX_LIFT, 0); }
     else {
       g = new T.ConeGeometry(0.715, 0.44, 4, 1, false);
       g.rotateY(Math.PI / 4);
@@ -945,6 +949,7 @@
       this.boostKey = false;
       this.boostedOn = false;
       this.speedHold = false;
+      this.dash = false;
       this.rots = [0, 0];
       this.beenRev = false;
       this.nextTargetInvoke = false;
@@ -992,8 +997,14 @@
     fixedUpdate(dt) {
       if (this.isDead) return;
       this.time += dt * this.speed;
-      if (!this.returnOrgSpeed) this.speed = lerp(this.speed, PLAYER.org, dt * PLAYER.returning);
-      else this.speed = lerp(this.speed, (this.boostKey && this.slowDown) ? PLAYER.org : (this.slowDown ? PLAYER.min : PLAYER.max), dt * PLAYER.accel);
+      let target = PLAYER.org, rate = PLAYER.returning;
+      if (this.returnOrgSpeed) { target = (this.boostKey && this.slowDown) ? PLAYER.org : (this.slowDown ? PLAYER.min : PLAYER.max); rate = PLAYER.accel; }
+      // The boost button raises whatever speed the snake is heading for, but never past a boost pad.
+      if (this.dash && this.onGame && !this.tailTouched) {
+        target = Math.min(PLAYER.max, target * PLAYER.dash);
+        if (this.speed < target) rate = PLAYER.accel;
+      }
+      this.speed = lerp(this.speed, target, dt * rate);
       if (this.time < 1) return;
       this.step();
       this.time = 0;
@@ -1028,6 +1039,7 @@
             this.deathPos = head.clone();
             g.audio.stopMusic();
             g.cameraRig.startRotating();
+            g.lose();
             break;
           }
         }
@@ -1628,6 +1640,7 @@
       this.highlights.clear();
       this.glowItems = [];
       this.timers = [];
+      this.lost = false;
       this.time = 0;
       this.acc = 0;
       this.spectro = level ? 0 : 1;
@@ -1662,13 +1675,14 @@
       this.ui.startPrompt(false);
       return true;
     }
-    // Pause > Restart Level: the current stage from its start.
+    // Pause > Restart Level and Game Over > Restart Level: the current stage from its start.
     restartLevel() {
-      if (this.state !== 'paused' || !this.levels) return;
+      if ((this.state !== 'paused' && !this.lost) || !this.levels) return;
       this.startMap(this.mapIndex, this.levels.index);
     }
     toMenu() {
       this.state = 'menu';
+      this.lost = false;
       if (this.world) { this.world.dispose(); this.world = null; }
       this.player = null;
       this.particles.clear();
@@ -1681,7 +1695,7 @@
       this.ui.fade(0, 1);
     }
     pause(on) {
-      if (on && this.state === 'playing') {
+      if (on && this.state === 'playing' && !this.lost) {
         this.state = 'paused';
         this.audio.stopEffects();
         this.audio.playMusic(this.audio.pauseMusic);
@@ -1777,7 +1791,17 @@
       this.later(PLAYER.goStage1, () => {
         this.setSpectro(1, 0.5);
         this.cameraRig.flash(1);
-        this.later(PLAYER.goStage2, () => { this.ui.fade(1, 1); this.later(1.1, () => this.toMenu()); });
+      });
+      this.lose();
+    }
+    // Not in the original, which faded to the main menu 16 s after the explosion: a second after a
+    // bitten tail or a fatal hit the player is offered the stage again, while the crash plays on behind.
+    lose() {
+      if (this.lost) return;
+      this.lost = true;
+      this.later(1, () => {
+        $('lost-stage').textContent = `Stage ${this.levels.index + 1} / ${this.map.levels.length}`;
+        this.ui.showMenu('lost', true);
       });
     }
     // ---------------- frame loop
@@ -1903,11 +1927,25 @@
       window.addEventListener('keyup', e => {
         if (['ArrowUp', 'KeyW', 'KeyZ', 'Space'].includes(e.code) && game.player) game.player.boostKey = false;
       });
-      window.addEventListener('blur', () => { if (game.player) game.player.boostKey = false; this.pointers.clear(); });
+      window.addEventListener('blur', () => { if (game.player) game.player.boostKey = false; this.pointers.clear(); this.holdDash(false); });
+      // Options > Boost button: one finger holds it while the other one steers.
+      const dash = $('boost-button');
+      this.dashHeld = false;
+      dash.addEventListener('pointerdown', e => {
+        try { dash.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is already gone */ }
+        this.holdDash(true);
+      });
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) dash.addEventListener(type, () => this.holdDash(false));
+      dash.addEventListener('contextmenu', e => e.preventDefault());
+    }
+    holdDash(on) {
+      this.dashHeld = on;
+      $('boost-button').classList.toggle('held', on);
     }
     poll() {
       const g = this.game;
       if (g.player && this.pointers.size >= 2) g.player.boost = true;
+      if (g.player) g.player.dash = this.dashHeld && g.save.data.boostButton === 'on';
     }
   }
 
@@ -1931,6 +1969,8 @@
       $('resume').addEventListener('click', () => game.pause(false));
       $('to-menu').addEventListener('click', () => { game.state = 'menu'; game.toMenu(); });
       $('restart-level').addEventListener('click', () => game.restartLevel());
+      $('retry-level').addEventListener('click', () => game.restartLevel());
+      $('lost-to-menu').addEventListener('click', () => { game.state = 'menu'; game.toMenu(); });
       $('pause-button').addEventListener('click', e => { e.stopPropagation(); game.pause(true); });
       const s = game.save.data;
       const music = $('music-volume'), sfx = $('sfx-volume');
@@ -1938,14 +1978,30 @@
       sfx.value = s.sfx;
       music.addEventListener('input', () => { s.music = +music.value; game.audio.applyVolumes(); game.save.write(); });
       sfx.addEventListener('input', () => { s.sfx = +sfx.value; game.audio.applyVolumes(); game.save.write(); });
-      document.querySelectorAll('[data-grading]').forEach(b => b.addEventListener('click', () => { s.grading = b.dataset.grading; game.fx.grade = s.grading !== 'off'; game.drawnState = null; game.save.write(); this.gradingButtons(); }));
-      this.gradingButtons();
+      // The On/Off rows in Options: a row names its save key, each button a value.
+      const apply = {
+        grading: () => { game.fx.grade = s.grading !== 'off'; game.drawnState = null; },
+        popups: () => { if (s.popups === 'off') while (this.popups.length) this.popups.shift().remove(); },
+        boostButton: () => this.boostButton()
+      };
+      document.querySelectorAll('[data-setting] button').forEach(b => b.addEventListener('click', () => {
+        const key = b.parentElement.dataset.setting;
+        s[key] = b.dataset.value;
+        if (apply[key]) apply[key]();
+        game.save.write();
+        this.settingButtons();
+      }));
+      this.settingButtons();
+      this.boostButton();
       document.addEventListener('pointerdown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
       document.addEventListener('keydown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
     }
-    gradingButtons() {
-      document.querySelectorAll('[data-grading]').forEach(b => b.classList.toggle('selected', b.dataset.grading === (this.game.save.data.grading || 'on')));
+    settingButtons() {
+      document.querySelectorAll('[data-setting]').forEach(row => {
+        for (const b of row.querySelectorAll('button')) b.classList.toggle('selected', b.dataset.value === this.game.save.data[row.dataset.setting]);
+      });
     }
+    boostButton() { $('boost-button').classList.toggle('hidden', this.game.save.data.boostButton !== 'on'); }
     showMenu(panel, overlay = false) {
       const menu = $('menu');
       menu.classList.remove('hidden');
@@ -2001,6 +2057,7 @@
       $('mult').textContent = `x${mult}`;
     }
     popup(value) {
+      if (this.game.save.data.popups === 'off') return;
       const host = $('popups');
       const el = document.createElement('div');
       el.className = 'popup';
