@@ -1413,7 +1413,6 @@ function palette(key) {
     p = {
       body,
       rim: rgba(lc, key < 0 ? 0.6 : 0.45),
-      ring: rgba(lc, 0.75),
       dot: rgba(lc, 0.7),
       organelle: rgba(lc, 0.32),
       glow: sprite(128, [[0, rgba(col, 1)], [inner, rgba(col, 1)], [1, rgba(col, 0)]]),
@@ -1755,15 +1754,6 @@ function drawBact(c, pal, a) {
   ctx.globalAlpha = 1;
 }
 
-// Чужой игрок — своим цветом, а съедобен он или опасен — тонким кольцом вокруг
-function drawThreatRing(c) {
-  ctx.globalAlpha = alphaOf(c) * 0.7;
-  ctx.strokeStyle = palette(Math.round((clamp(c.tint, -1, 1) + 1) * 16)).ring;
-  ctx.lineWidth = Math.max(1.2, c.sr * 0.06);
-  ctx.beginPath(); ctx.arc(c.sx, c.sy, c.sr * 1.2 + 2, 0, TAU); ctx.stroke();
-  ctx.globalAlpha = 1;
-}
-
 const byRadius = (a, b) => a.r - b.r;
 
 function drawCells() {
@@ -1789,7 +1779,6 @@ function drawCells() {
   for (const c of order) {
     if (c.bact) drawBact(c, bactPaletteOf(c), alphaOf(c));
     else drawBody(c, paletteOf(c), alphaOf(c));
-    if (c.isPlayer && c !== player && c.sr > 2.5) drawThreatRing(c);
   }
 }
 
