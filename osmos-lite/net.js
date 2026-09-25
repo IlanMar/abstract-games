@@ -598,7 +598,7 @@ function updateNetUI() {
 // Гость не трогает настройки мира: их задаёт хост
 function netMenuState() {
   const guest = net.role === 'client';
-  for (const id of ['s-eject', 's-enemies', 's-diff', 's-map', 's-maxe', 's-bact', 'b-new']) $(id).disabled = guest;
+  for (const id of ['s-eject', 's-enemies', 's-diff', 's-map', 's-maxe', 's-bact', 's-bamt', 'b-new']) $(id).disabled = guest;
   for (const el of aiInputs) el.disabled = guest;
   $('mp-note').textContent = guest
     ? 'The host sets up the world. If the host leaves, one of you takes over and a new world starts'

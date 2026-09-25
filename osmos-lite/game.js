@@ -78,8 +78,8 @@ const CONFIG = {
   // хватка слабее очереди выстрелов, а натянутое сильнее reach·bacteriaHold щупальце рвётся.
   // Двигаются всегда как в режиме hunt, какое бы поведение ни было у остальных.
   bacteria: false,
-  bacteriaCount: 5,       // на карте радиуса densityRadius; растёт с площадью, √плотности и
-  bacteriaMax: 60,        // сложностью, но не больше этого
+  bacteriaCount: 3,       // на карте радиуса densityRadius (ползунок); растёт с площадью,
+  bacteriaMax: 60,        // √плотности и сложностью, но не больше этого
   bacteriaSize: [1.25, 2.2], // радиус в долях стартовой клетки (при рестарте — текущей)
   bacteriaReach: [30, 0.6],  // px + доля радиуса: докуда дотягиваются щупальца от мембраны
   bacteriaGrip: 85,       // px/с²: с каким ускорением щупальце подтягивает добычу. Стоящую
@@ -296,16 +296,23 @@ function removeCell(c) {
   if (i >= 0) cells.splice(i, 1);
 }
 
-// Включили в меню — подсаживаем вне экрана; выключили — убираем (кроме тех, кого уже едят)
-function setBacteria(on) {
-  if (on) {
-    let n = 0;
-    for (const c of cells) if (c.bact) n++;
-    const pr = player.dead ? CONFIG.playerRadius : Math.max(CONFIG.playerRadius, player.r);
-    for (let i = n; i < bacteriaTotal(); i++) spawnBact(bactRadius(pr), 400, true);
-  } else {
-    for (const c of cells.filter(o => o.bact && !o.eatenBy)) removeCell(c);
-  }
+// Переключатель или ползунок в меню — сразу, без нового мира: недостающих подсаживаем вне
+// экрана, лишних убираем, начиная с самых далёких от игроков (кого уже едят — не трогаем)
+function syncBacteria() {
+  const want = bacteriaTotal(), live = [];
+  for (const c of cells) if (c.bact && !c.eatenBy) live.push(c);
+  const pr = player.dead ? CONFIG.playerRadius : Math.max(CONFIG.playerRadius, player.r);
+  for (let n = live.length; n < want; n++) spawnBact(bactRadius(pr), 400, true);
+  if (live.length <= want) return;
+  const far = live.map(c => {
+    let d = Math.hypot(c.x - cam.x, c.y - cam.y);
+    for (const rp of net.remotes) {
+      const o = rp.cell || rp.eater;
+      if (o) d = Math.min(d, Math.hypot(c.x - o.x, c.y - o.y));
+    }
+    return { c, d };
+  }).sort((a, b) => b.d - a.d);
+  for (let i = 0; i < live.length - want; i++) removeCell(far[i].c);
 }
 
 // Сколько организмов в мире: плотность постоянна, число растёт с площадью карты
@@ -1944,6 +1951,7 @@ function frame(now) {
 // ============================================================================
 
 const menuBtn = $('menuBtn'), menuEl = $('menu'), newBtn = $('b-new'), sepEl = $('sep-world');
+const bactAmtEl = $('bact-amt');        // ползунок числа бактерий — только когда они включены
 // v2: храним только отличия от умолчаний. В v1 лежали все значения разом, и новые
 // умолчания (например, баланс Normal) не доходили до тех, кто хоть раз тронул меню.
 const SAVE_KEY = 'abstract-cell-settings-v2';
@@ -1953,6 +1961,10 @@ const SAVE_KEY = 'abstract-cell-settings-v2';
 const LOG_STEPS = 1000;
 const SLIDERS = [
   { id: 'eject',   key: 'ejectMassFraction', k: 0.01, fmt: v => `${+(v * 100).toFixed(2)}%` },
+  // сколько бактерий: на обычной карте 1…30, на большой больше; действует сразу (apply)
+  { id: 'bamt',    key: 'bacteriaCount',     log: [1, 30], round: v => +v.toPrecision(2),
+    fmt: () => { const n = bacteriaTotal(); return `${n} on the map${n >= CONFIG.bacteriaMax ? ' (max)' : ''}`; },
+    apply: () => { if (net.role !== 'client') { syncBacteria(); render(0); } } },
   { id: 'enemies', key: 'enemyDensity',      log: [0.1, 20], round: v => +v.toPrecision(2), world: true,
     fmt: v => { const n = enemyTotal(); return `${v}× · ${n} cells${n >= CONFIG.maxEnemies ? ' (max)' : ''}`; } },
   { id: 'diff',    key: 'difficulty',        k: 0.01, world: true,
@@ -1980,7 +1992,7 @@ const AI_MODES = {
 };
 const aiInputs = menuEl.querySelectorAll('input[name="ai"]');
 const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'sound', 'ambience', 'enemyDensity', 'difficulty',
-  'worldRadius', 'maxEnemySize', 'enemyAI', 'bacteria'];
+  'worldRadius', 'maxEnemySize', 'enemyAI', 'bacteria', 'bacteriaCount'];
 const SWITCHES = { zoom: 'cameraAutoZoom', sound: 'sound', amb: 'ambience', bact: 'bacteria' };   // id переключателя → ключ
 const DEFAULTS = {};
 for (const k of SAVED_KEYS) DEFAULTS[k] = CONFIG[k];
@@ -2031,6 +2043,7 @@ function syncMenu() {
   $('o-ai').textContent = AI_MODES[CONFIG.enemyAI];
   for (const [id, key] of Object.entries(SWITCHES)) $('s-' + id).checked = CONFIG[key];
   $('s-amb').disabled = !CONFIG.sound;
+  bactAmtEl.hidden = !CONFIG.bacteria;
   $('s-debug').checked = debug;
   markPending();
 }
@@ -2060,6 +2073,7 @@ function closeMenu() {
 for (const sl of SLIDERS) {
   $('s-' + sl.id).addEventListener('input', e => {
     CONFIG[sl.key] = fromUI(sl, Number(e.target.value));
+    if (sl.apply) sl.apply();
     for (const o of SLIDERS) $('o-' + o.id).textContent = o.fmt(CONFIG[o.key]);
     markPending();
     saveSettings();
@@ -2090,16 +2104,17 @@ for (const el of aiInputs) {
 }
 $('s-bact').addEventListener('change', e => {
   CONFIG.bacteria = e.target.checked;
-  setBacteria(CONFIG.bacteria);         // сразу, без нового мира
+  syncBacteria();                       // сразу, без нового мира
+  bactAmtEl.hidden = !CONFIG.bacteria;
+  for (const o of SLIDERS) $('o-' + o.id).textContent = o.fmt(CONFIG[o.key]);
   saveSettings();
   render(0);                            // на паузе кадр сам не нарисуется
 });
 $('s-debug').addEventListener('change', e => { setDebug(e.target.checked); saveSettings(); });
 $('b-defaults').addEventListener('click', () => {
-  const hadBact = CONFIG.bacteria;
   Object.assign(CONFIG, DEFAULTS);
   if (net.role === 'client') netAfterDefaults();
-  if (CONFIG.bacteria !== hadBact && net.role !== 'client') { setBacteria(CONFIG.bacteria); render(0); }
+  else { syncBacteria(); render(0); }   // бактерий по умолчанию нет — лишние уходят сразу
   syncMenu();
   saveSettings();
   Sound.unlock();
@@ -2107,7 +2122,21 @@ $('b-defaults').addEventListener('click', () => {
   startLoop();                          // зум мог поменяться — пусть доедет за меню
 });
 newBtn.addEventListener('click', () => { newWorld(); closeMenu(); });
-menuBtn.addEventListener('click', () => (menuOpen ? closeMenu() : openMenu()));
+// Кнопка меню — по касанию, а не по click: click браузер не присылает, если другой палец
+// в это время держит канвас (очередь выстрелов) или палец при тапе чуть съехал, — кнопка
+// «иногда не нажималась». click остаётся для клавиатуры и экранного диктора
+let menuBtnDown = false;                // меню уже переключено касанием — его click не в счёт
+const toggleMenu = () => (menuOpen ? closeMenu() : openMenu());
+menuBtn.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  menuBtnDown = true;
+  toggleMenu();
+});
+menuBtn.addEventListener('click', () => {
+  if (menuBtnDown) menuBtnDown = false;
+  else toggleMenu();
+});
+menuBtn.addEventListener('keydown', () => { menuBtnDown = false; });
 // Тапы по меню не должны доходить до игры
 for (const el of [menuBtn, menuEl]) el.addEventListener('pointerdown', e => e.stopPropagation());
 window.addEventListener('resize', () => { if (menuOpen) render(0); });   // на паузе кадр не рисуется сам

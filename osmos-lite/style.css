@@ -97,6 +97,8 @@ canvas {
   cursor: pointer;
   touch-action: manipulation;
 }
+/* Область касания шире видимой кнопки: в углу экрана палец легко промахивается */
+#menuBtn::before { content: ""; position: absolute; inset: -10px; border-radius: 50% }
 #menuBtn[aria-expanded="true"] { background: rgba(40, 70, 110, .85); color: #e6f0ff }
 #menuBtn:focus-visible { outline: 2px solid #6ebeff; outline-offset: 2px }
 
