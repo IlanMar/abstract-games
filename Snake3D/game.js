@@ -76,6 +76,63 @@
     }
   }
 
+  // Start a selected stage close to its active group, on the correct side of the map.
+  function stageSpawn(map, index) {
+    const group = map.levels[index][0];
+    if (!group || !group.cells.length) return null;
+    const side = group.rev ? BOTTOM : TOP;
+    const rev = side === TOP;
+    const sign = rev ? -1 : 1;
+    const directions = (map.hex ? HEX_CONTROL : CONTROL).map(([x, z], ci) => ({
+      ci, x: sign * x, z: map.hex ? sign / z : sign * z
+    }));
+    const floor = (x, z) => {
+      const idx = map.index(x, z);
+      return map.env[side][idx] === 0 && map.env[TOP][idx] !== -1;
+    };
+    const cell = offset => map.worldOf(group.cells[offset], group.cells[offset + 1], map.start.x, map.start.z, {x: 0, z: 0});
+    const anchors = [{point: cell(0), next: group.cells.length > 3 ? 3 : -1}];
+    if (group.cells.length > 3) anchors.push({point: cell(group.cells.length - 3), next: group.cells.length - 6});
+
+    // Follow the chain from either end when there is enough clear runway.
+    for (const anchor of anchors) {
+      const nextIdx = anchor.next < 0 ? -1 : group.cells[anchor.next] * map.h + group.cells[anchor.next + 1];
+      for (const d of directions) {
+        if (nextIdx >= 0 && map.index(anchor.point.x + d.x, anchor.point.z + d.z) !== nextIdx) continue;
+        for (let runway = 3; runway >= 1; runway--) {
+          let clear = true;
+          for (let step = 1; step <= runway + 1; step++) {
+            if (!floor(anchor.point.x - d.x * step, anchor.point.z - d.z * step)) { clear = false; break; }
+          }
+          if (clear) return {x: anchor.point.x - d.x * (runway + 1), z: anchor.point.z - d.z * (runway + 1), ci: d.ci, rev};
+        }
+      }
+    }
+
+    // Single gems and tight corners may not have a straight approach. Find a nearby clear lane.
+    const anchor = anchors[0].point;
+    const queue = [{x: anchor.x, z: anchor.z, distance: 0}];
+    const seen = new Set([map.index(anchor.x, anchor.z)]);
+    let best = null;
+    for (let i = 0; i < queue.length; i++) {
+      const p = queue[i];
+      if (p.distance > 0) for (const d of directions) {
+        const start = {x: p.x - d.x, z: p.z - d.z};
+        const next = {x: p.x + d.x, z: p.z + d.z};
+        if (!floor(start.x, start.z) || !floor(next.x, next.z)) continue;
+        const toward = Math.hypot(next.x - anchor.x, next.z - anchor.z) < Math.hypot(p.x - anchor.x, p.z - anchor.z);
+        const score = Math.abs(p.distance - 3) * 10 + (toward ? 0 : 50);
+        if (!best || score < best.score) best = {x: start.x, z: start.z, ci: d.ci, rev, score};
+      }
+      if (p.distance >= 8) continue;
+      for (const d of directions) {
+        const x = p.x + d.x, z = p.z + d.z, idx = map.index(x, z);
+        if (!seen.has(idx) && floor(x, z)) { seen.add(idx); queue.push({x, z, distance: p.distance + 1}); }
+      }
+    }
+    return best;
+  }
+
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
@@ -822,10 +879,10 @@
       this.game = game;
       this.map = game.map;
       this.hex = this.map.hex;
-      const s = this.map.start;
-      this.rev = true;            // true: on top of the grid
-      this.dirIndex = -1;
-      this.upOffset = PLAYER.up;
+      const s = game.spawn || this.map.start;
+      this.rev = s.rev === undefined ? true : s.rev; // true: on top of the grid
+      this.dirIndex = this.rev ? -1 : 1;
+      this.upOffset = this.rev ? PLAYER.up : -PLAYER.up;
       this.ci = s.ci;
       this.oldCi = s.ci;
       this.speed = 0;
@@ -1507,20 +1564,24 @@
       this.map.reset();
       this.levels = new Levels(this.map);
       if (level) this.levels.load(level);
+      this.spawn = level ? stageSpawn(this.map, level) : null;
       this.world = new WorldView(this.scene, this.map);
       this.player = new Player(this);
+      this.spawn = null;
       this.player.visible = true;
       this.cameraRig = new CameraRig(this);
+      if (level) this.cameraRig.deltaStart = -1;
+      if (!this.player.rev) this.cameraRig.pivot = this.cameraRig.reversingAngle = 180;
       this.particles.clear();
       this.highlights.clear();
       this.glowItems = [];
       this.timers = [];
       this.time = 0;
       this.acc = 0;
-      this.spectro = 1;
-      this.spectroTarget = 1;
+      this.spectro = level ? 0 : 1;
+      this.spectroTarget = this.spectro;
       this.spectroSpeed = 0;
-      this.rev = 0;
+      this.rev = this.player.rev ? 0 : 1;
       this.score = 0;
       this.shownScore = 0;
       this.scoreTick = 0;
@@ -1529,18 +1590,27 @@
       this.recordEligible = level === 0;
       this.record = 0;
       this.enabled = false;
+      this.awaitingStart = level > 0;
+      if (this.awaitingStart) this.player.onGame = true;
       this.state = 'playing';
       this.ui.hideMenu();
       this.ui.hud(true);
       this.ui.updateScore(0, 1);
+      this.ui.updateStage(level, this.map.levels.length);
+      this.ui.startPrompt(this.awaitingStart);
       this.audio.restartMusic(this.audio.gameMusic);
       this.ui.fade(1, 0);
       // MenuManager.waitingInstatiat: the player is enabled after one second, then the fade out.
       this.later(1, () => {
         this.enabled = true;
-        this.later(PLAYER.startDelay, () => { this.setSpectro(0, 0.5); this.player.onGame = true; });
+        if (!level) this.later(PLAYER.startDelay, () => { this.setSpectro(0, 0.5); this.player.onGame = true; });
         this.later(0.5, () => this.ui.fade(0, 1));
       });
+    }
+    beginSelectedStage() {
+      if (!this.awaitingStart) return;
+      this.awaitingStart = false;
+      this.ui.startPrompt(false);
     }
     toMenu() {
       this.state = 'menu';
@@ -1634,6 +1704,7 @@
       this.save.data.lastLevel[key] = index;
       this.save.write();
       this.levels.load(index);
+      this.ui.updateStage(index, this.map.levels.length);
     }
     spikeBurst(target, side) {
       const sgn = side === TOP ? 1 : -1;
@@ -1687,7 +1758,7 @@
         this.spectro = this.spectro < this.spectroTarget ? Math.min(this.spectroTarget, this.spectro + d) : Math.max(this.spectroTarget, this.spectro - d);
       }
       const p = this.player;
-      if (this.enabled) {
+      if (this.enabled && !this.awaitingStart) {
         // Unity order: FixedUpdate steps first, then Update.
         this.acc += dt;
         while (this.acc >= FIXED_DT) { this.acc -= FIXED_DT; p.fixedUpdate(FIXED_DT); }
@@ -1752,6 +1823,7 @@
         this.pointers.set(e.pointerId, e.clientX);
         if (!inGame()) return;
         if (this.pointers.size >= 2) { game.player.clearControls(); return; }
+        game.beginSelectedStage();
         const left = e.clientX <= canvas.clientWidth / 2;
         game.player.turn(!left);
       });
@@ -1768,6 +1840,7 @@
           return;
         }
         if (!inGame()) return;
+        if (['ArrowLeft', 'KeyA', 'KeyQ', 'ArrowRight', 'KeyD', 'ArrowUp', 'KeyW', 'KeyZ', 'Space'].includes(k)) game.beginSelectedStage();
         if (['ArrowLeft', 'KeyA', 'KeyQ'].includes(k)) { e.preventDefault(); if (!e.repeat) game.player.turn(false); }
         else if (['ArrowRight', 'KeyD'].includes(k)) { e.preventDefault(); if (!e.repeat) game.player.turn(true); }
         else if (['ArrowUp', 'KeyW', 'KeyZ', 'Space'].includes(k)) { e.preventDefault(); game.player.boostKey = true; }
@@ -1872,6 +1945,8 @@
       }).join('<br>');
     }
     hud(on) { $('hud').classList.toggle('hidden', !on); }
+    updateStage(index, total) { $('stage-indicator').textContent = `Stage ${index + 1} / ${total}`; }
+    startPrompt(on) { $('start-prompt').classList.toggle('hidden', !on); }
     updateScore(score, mult) {
       $('score').textContent = String(Math.max(0, score | 0)).padStart(6, '0');
       $('mult').textContent = `x${mult}`;

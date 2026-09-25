@@ -60,6 +60,9 @@ button { font: inherit; color: inherit; }
 #hud .combo { display: flex; align-items: center; }
 #mult { font-family: "Tomorrow", var(--menu-font); font-size: calc(43.75 * var(--u)); }
 #popups { overflow: visible; }
+#stage-indicator { position: absolute; top: calc(20 * var(--u)); left: calc(12 * var(--u)); font-size: max(12px, calc(18 * var(--u))); white-space: nowrap; color: rgb(220 235 255); }
+@media (orientation: portrait) { #stage-indicator { top: calc(85 * var(--u)); } }
+#start-prompt { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: max(18px, calc(26 * var(--u))); text-shadow: 0 2px 8px #000; white-space: nowrap; }
 .popup {
   position: absolute;
   left: 50%;
