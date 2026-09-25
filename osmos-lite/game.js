@@ -72,6 +72,25 @@ const CONFIG = {
   fleeBoost: 2.1,         // и убегает от угрозы
   whirlSpeed: 1.8,        // скорость в водовороте — в долях своего дрейфа
 
+  // --- бактерии: тёмные хищники со щупальцами (переключатель в меню) ---------------
+  // Щупальцем хватают всех, кто меньше и проплывает в пределах досягаемости, и
+  // подтягивают к себе, пока не коснутся — дальше обычное поглощение. Вырваться можно:
+  // хватка слабее очереди выстрелов, а натянутое сильнее reach·bacteriaHold щупальце рвётся.
+  // Двигаются всегда как в режиме hunt, какое бы поведение ни было у остальных.
+  bacteria: true,
+  bacteriaCount: 5,       // на карте радиуса densityRadius; растёт с площадью, √плотности и
+  bacteriaMax: 60,        // сложностью, но не больше этого
+  bacteriaSize: [1.25, 2.2], // радиус в долях стартовой клетки (при рестарте — текущей)
+  bacteriaReach: [30, 0.6],  // px + доля радиуса: докуда дотягиваются щупальца от мембраны
+  bacteriaGrip: 85,       // px/с²: с каким ускорением щупальце подтягивает добычу. Стоящую
+                          // клетку с 40 px втягивает за ~1.1 с; очередь через 0.6 с после
+                          // хватки вырывает, стоит ~15 выстрелов (~20% массы)
+  bacteriaResist: 1.5,    // 1/с: и сколько гасит её попыток уплыть
+  bacteriaHold: 1.6,      // щупальце рвётся, если добыча дальше reach · hold
+  bacteriaArms: 3,        // скольких держит одновременно
+  bacteriaCooldown: 0.7,  // с: после обрыва не хватает снова
+  bacteriaSpeed: 0.6,     // дрейф в долях обычного: медленные, берут засадой
+
   // --- поглощение ---------------------------------------------------------------
   absorbRatio: 1.0,       // как в Osmos: кто больше хоть немного — тот и ест.
                           // >1 — почти равные не едят друг друга, а мягко отталкиваются
@@ -150,7 +169,7 @@ let W = 0, H = 0, DPR = 1;
 const cam = { x: 0, y: 0, vx: 0, vy: 0, zoom: 1, fx: 0, fy: 0, fr: CONFIG.playerRadius };
 const input = { down: false, x: 0, y: 0, held: 0, streamT: 0 };
 let cells = [], order = [], player = null, cellId = 0;
-let time = 0, dead = false, deadT = 0, spawnT = 0, shots = 0;
+let time = 0, dead = false, deadT = 0, spawnT = 0, bactT = 0, shots = 0;
 let firstRun = true, debug = false, fps = 60, last = performance.now();
 
 // ============================================================================
@@ -166,6 +185,7 @@ function makeCell(x, y, r, isPlayer) {
     wander: Math.random() * TAU, cruise: 0, ph: Math.random() * 100,
     steer: CONFIG.steerTime, parent: null, grace: 0, mote: false,   // для выброшенных капель
     tx: 0, ty: 0, think: Math.random() * 0.2,   // желаемая скорость по enemyAI и когда её пересчитать
+    bact: false, arms: null, grabCd: 0,           // бактерия: щупальца и пауза между хватками
     // только для отрисовки
     svx: 0, svy: 0, st: 0, ang: 0,     // сглаженная скорость, растяжение, его угол
     pvx: 0, pvy: 0, ax: 0, ay: 0,      // скорость до кадра и сглаженное ускорение
@@ -218,6 +238,51 @@ function spawn(r, safe, farFromView, maxDist) {
   return c;
 }
 
+// Бактерия — обычная клетка (ест и едома как все) плюс щупальца
+function spawnBact(r, safe, farFromView) {
+  const c = spawn(r, safe, farFromView);
+  if (!c) return null;
+  c.bact = true;
+  c.cruise *= CONFIG.bacteriaSpeed;
+  c.vx = c.tx = c.vx * CONFIG.bacteriaSpeed;
+  c.vy = c.ty = c.vy * CONFIG.bacteriaSpeed;
+  c.arms = [];
+  for (let i = 0; i < CONFIG.bacteriaArms; i++) c.arms.push({ t: null, ext: 0, ang: 0, len: 0 });
+  return c;
+}
+
+function bactRadius(pr) {
+  const [a, b] = CONFIG.bacteriaSize;
+  return Math.min(pr * lerp(a, b, Math.random()),
+    CONFIG.playerRadius * CONFIG.maxEnemySize, CONFIG.worldRadius * 0.12);
+}
+
+function bacteriaTotal() {
+  if (!CONFIG.bacteria) return 0;
+  const area = (CONFIG.worldRadius / CONFIG.densityRadius) ** 2;
+  const n = CONFIG.bacteriaCount * area * Math.sqrt(CONFIG.enemyDensity * dangerFactor());
+  return clamp(Math.round(n), 1, CONFIG.bacteriaMax);
+}
+
+const reachOf = b => CONFIG.bacteriaReach[0] + CONFIG.bacteriaReach[1] * b.r;
+
+// Включили в меню — подсаживаем вне экрана; выключили — убираем. Кого бактерия уже
+// растворяла, тот свободен (как когда растворился сам хищник)
+function setBacteria(on) {
+  if (on) {
+    let n = 0;
+    for (const c of cells) if (c.bact) n++;
+    const pr = player.dead ? CONFIG.playerRadius : Math.max(CONFIG.playerRadius, player.r);
+    for (let i = n; i < bacteriaTotal(); i++) spawnBact(bactRadius(pr), 400, true);
+  } else {
+    for (const c of cells) {
+      const e = c.eatenBy;
+      if (e && e.bact && !e.eatenBy) { c.eatenBy = null; c.vx = e.vx; c.vy = e.vy; }
+    }
+    cells = cells.filter(c => !c.bact || c.eatenBy);
+  }
+}
+
 // Сколько организмов в мире: плотность постоянна, число растёт с площадью карты
 function enemyTotal() {
   const area = (CONFIG.worldRadius / CONFIG.densityRadius) ** 2;
@@ -241,6 +306,10 @@ function reset() {
   const weight = weights.reduce((sum, w) => sum + w, 0);
   const near = Math.min(1, CONFIG.worldRadius / 1500);        // на маленькой карте всё ближе
   const top = CONFIG.population[CONFIG.population.length - 1], rMax = CONFIG.worldRadius * 0.3;
+  // бактерии — первыми, пока карта пуста: на тесной им иначе не находится места.
+  // Хищники: не ближе крупных, да ещё на длину щупальца дальше
+  const nb = bacteriaTotal();
+  for (let i = 0; i < nb; i++) spawnBact(bactRadius(r0), CONFIG.threatSafe * near + 120, false);
   for (const [gi, g] of CONFIG.population.entries()) {
     const n = Math.round(weights[gi] * total / weight);
     // Гиганты растут вслед за ползунком: при maxEnemySize больше их max — до maxEnemySize,
@@ -258,7 +327,7 @@ function reset() {
   }
   for (const c of cells) c.born = 1;    // стартовое население видно сразу
   resetParticles();
-  dead = false; deadT = 0; spawnT = 0;
+  dead = false; deadT = 0; spawnT = 0; bactT = 0;
   input.down = false; ripples.length = 0;
   overEl.classList.remove('show');
   if (firstRun) {
@@ -283,7 +352,7 @@ const Sound = (() => {
   const PENTA = [0, 3, 5, 7, 10, 12];                     // полутона от A3: A C D E G A
   const AMB_LEVEL = 0.02;                                 // фон — на пороге слышимости (автор просил тише)
   let ac = null, out = null, wet = null, noise = null, amb = null;
-  let lastEat = -1, bubbleT = 3;
+  let lastEat = -1, lastGrab = -1, bubbleT = 3;
 
   function init() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -414,6 +483,16 @@ const Sound = (() => {
       const t = ac.currentTime;
       tone(196, 65, 2.5, 0.1, 0.4, 2.6, 500, 0.8, t);
       tone(98, 49, 2.5, 0.05, 0.5, 2.4, 300, 0.6, t);
+    },
+
+    // Игрока схватило щупальце: глухой короткий рывок вниз
+    grab() {
+      if (!live()) return;
+      const t = ac.currentTime;
+      if (t - lastGrab < 0.3) return;
+      lastGrab = t;
+      tone(260, 175, 0.25, 0.06, 0.02, 0.45, 450, 0.5, t);
+      tone(390, 260, 0.2, 0.02, 0.02, 0.3, 700, 0.4, t);
     },
 
     // Новая жизнь: тихое восходящее A–E–A
@@ -581,8 +660,9 @@ function stepDrifters(h) {
     const k = expK(h, c.steer);          // у капли своя, быстрая вязкость
     c.wander += (Math.random() * 2 - 1) * jitter;
     // Капли всегда просто дрейфуют; организмы — к скорости, выбранной в think
-    const tx = ai && !c.mote ? c.tx : Math.cos(c.wander) * c.cruise;
-    const ty = ai && !c.mote ? c.ty : Math.sin(c.wander) * c.cruise;
+    const own = c.bact || (ai && !c.mote);
+    const tx = own ? c.tx : Math.cos(c.wander) * c.cruise;
+    const ty = own ? c.ty : Math.sin(c.wander) * c.cruise;
     c.vx += (tx - c.vx) * k;
     c.vy += (ty - c.vy) * k;
   }
@@ -703,7 +783,7 @@ function thinkSchool(c) {
     if (o.mote) continue;
     const dx = o.x - c.x, dy = o.y - c.y, d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
     const gap = d - c.r - o.r;
-    if (o.r > c.r * 1.4 || o.isPlayer) {
+    if (o.r > c.r * 1.4 || o.isPlayer || o.bact) {
       const zone = S * 0.7;
       if (gap < zone) { const w = 1 - Math.max(gap, 0) / zone; sx -= dx / d * w * 2; sy -= dy / d * w * 2; }
       continue;
@@ -733,18 +813,76 @@ function thinkWhirl(c) {
 
 function think(dt) {
   const mode = CONFIG.enemyAI;
-  if (mode === 'drift') return;
-  if (mode === 'hunt' || mode === 'school') buildGrid();
+  bacts.length = 0;
+  for (const c of cells) if (c.bact && !c.eatenBy) bacts.push(c);
+  if (mode === 'drift' && !bacts.length) return;
+  if (mode === 'hunt' || mode === 'school' || bacts.length) buildGrid();
   const [t0, t1] = CONFIG.aiThink;
   for (const c of cells) {
-    if (c.isPlayer || c.mote || c.eatenBy) continue;
+    if (c.isPlayer || c.mote || c.eatenBy || (mode === 'drift' && !c.bact)) continue;
     c.think -= dt;
     if (c.think > 0) continue;
     c.think = lerp(t0, t1, Math.random());   // вразнобой: не все решают в один кадр
-    if (mode === 'hunt') thinkHunt(c);
+    if (mode === 'hunt' || c.bact) thinkHunt(c);
     else if (mode === 'school') thinkSchool(c);
     else if (mode === 'whirl') thinkWhirl(c);
     else c.tx = c.ty = 0;                   // still
+  }
+  if (bacts.length) grabScan(dt);
+}
+
+// ============================================================================
+// Щупальца бактерий. Хватка — раз в кадр (кто ближе всех из тех, кто меньше и в
+// досягаемости), тяга — на каждом подшаге: равные и противоположные силы, импульс
+// сохраняется — крупная добыча тащит и саму бактерию.
+// ============================================================================
+
+const bacts = [];
+
+function grabScan(dt) {
+  for (const b of bacts) {
+    for (const s of b.arms) s.ext = s.t ? Math.min(1, s.ext + dt * 7) : Math.max(0, s.ext - dt * 4);
+    b.grabCd -= dt;
+    if (b.grabCd > 0) continue;
+    let free = null;
+    for (const s of b.arms) if (!s.t) { free = s; break; }
+    if (!free) continue;
+    gather(b, reachOf(b));
+    let best = null, bestGap = Infinity;
+    for (const o of near) {
+      if (o.mote || o.r >= b.r * 0.97) continue;
+      let held = false;
+      for (const s of b.arms) if (s.t === o) held = true;
+      if (held) continue;
+      const gap = Math.hypot(o.x - b.x, o.y - b.y) - b.r - o.r;
+      if (gap < bestGap) { bestGap = gap; best = o; }
+    }
+    if (!best) continue;
+    free.t = best;
+    free.ext = Math.min(free.ext, 0.3);    // щупальце выстреливает заново, а не появляется целым
+    b.grabCd = 0.25;                        // следующее — чуть погодя: хватают по одному
+    if (best.isPlayer) Sound.grab();
+  }
+}
+
+function stepTentacles(h) {
+  const grip = CONFIG.bacteriaGrip, resist = CONFIG.bacteriaResist;
+  for (const b of bacts) {
+    for (const s of b.arms) {
+      const t = s.t;
+      if (!t) continue;
+      if (b.eatenBy || t.eatenBy || t.dead || t.r >= b.r) { s.t = null; continue; }
+      const dx = b.x - t.x, dy = b.y - t.y, d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+      if (d - b.r - t.r > reachOf(b) * CONFIG.bacteriaHold) {     // вырвалась
+        s.t = null; b.grabCd = CONFIG.bacteriaCooldown;
+        continue;
+      }
+      const nx = dx / d, ny = dy / d;
+      const away = (b.vx - t.vx) * nx + (b.vy - t.vy) * ny;       // > 0 — расходятся
+      const a = grip + (away > 0 ? away * resist : 0), M = b.m + t.m;
+      t.vx += nx * a * b.m / M * h; t.vy += ny * a * b.m / M * h;
+      b.vx -= nx * a * t.m / M * h; b.vy -= ny * a * t.m / M * h;
+    }
   }
 }
 
@@ -888,6 +1026,7 @@ function stepCamera(h) {
 function step(h) {
   stepPlayer(h);
   stepDrifters(h);
+  if (bacts.length) stepTentacles(h);
   collide(h);
   walls(h);
   for (const c of cells) {
@@ -901,6 +1040,14 @@ function step(h) {
 
 // Подсаживаем мелочь вне экрана, чтобы мир не пустел
 function repopulate(dt) {
+  bactT -= dt;
+  if (CONFIG.bacteria && bactT <= 0) {
+    bactT = 3;
+    let n = 0;
+    for (const c of cells) if (c.bact) n++;
+    const pr = player.dead ? CONFIG.playerRadius : Math.max(CONFIG.playerRadius, player.r);
+    if (n < Math.round(bacteriaTotal() * CONFIG.refillShare)) spawnBact(bactRadius(pr), 400, true);
+  }
   spawnT -= dt;
   const others = cells.length - (player.dead ? 0 : 1);   // съеденного игрока в cells уже нет
   if (spawnT > 0 || others >= Math.round(enemyTotal() * CONFIG.refillShare)) return;
@@ -1275,6 +1422,124 @@ function drawBody(c, pal, a) {
   }
 }
 
+// Бактерия: тёмное непрозрачное тело (не светится, а наоборот — затеняет всё вокруг),
+// ободок по цвету угрозы с лиловым отливом, шевелящиеся щупальца, а хватающие —
+// длинные, с присоской, тянутся к добыче
+const RGB_BACT = [140, 88, 170], RGB_DEEP = [14, 8, 20];
+const BACT_PAL = new Map();
+const SHADOW = sprite(128, [[0, 'rgba(0,0,0,0.6)'], [0.45, 'rgba(0,0,0,0.4)'], [1, 'rgba(0,0,0,0)']]);
+const IDLE_ARMS = 9;
+
+function bactPaletteOf(c) {
+  const key = Math.round((clamp(c.tint, -1, 1) + 1) * 16);
+  let p = BACT_PAL.get(key);
+  if (!p) {
+    const t = key / 16 - 1;
+    const tc = t < 0 ? mix(RGB_EQUAL, RGB_FOOD, -t) : mix(RGB_EQUAL, RGB_THREAT, t);
+    const rim = mix(RGB_BACT, tc, 0.5);
+    const body = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.03);
+    body.addColorStop(0, rgba(RGB_DEEP, 0.95));
+    body.addColorStop(0.7, rgba(mix(RGB_DEEP, rim, 0.1), 0.95));
+    body.addColorStop(0.93, rgba(mix(RGB_DEEP, rim, 0.35), 0.95));
+    body.addColorStop(1, rgba(mix(RGB_DEEP, rim, 0.6), 0.95));
+    p = {
+      body,
+      rim: rgba(rim, 0.85),
+      arm: rgba(mix(rim, RGB_DEEP, 0.35), 0.85),
+      grab: rgba(light(rim), 0.9),
+      gran: rgba(rim, 0.4),
+      dot: rgba(rim, 0.8),
+    };
+    BACT_PAL.set(key, p);
+  }
+  return p;
+}
+
+function drawBact(c, pal, a) {
+  const sr = c.sr, z = cam.zoom;
+  ctx.globalAlpha = a;
+  if (sr < 2.5) {
+    ctx.fillStyle = pal.dot;
+    ctx.beginPath(); ctx.arc(c.sx, c.sy, Math.max(sr, 1), 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+    return;
+  }
+  const R = sr * 1.9;
+  ctx.drawImage(SHADOW, c.sx - R, c.sy - R, R * 2, R * 2);
+  ctx.lineCap = 'round';
+
+  // Щупальца в покое: короткие, колышутся, на ходу их сносит назад
+  if (sr > 5) {
+    const L = reachOf(c) * 0.45 * z;
+    let lx = -c.svx * 0.12 * z, ly = -c.svy * 0.12 * z;
+    const ll = Math.sqrt(lx * lx + ly * ly);
+    if (ll > L * 0.6) { lx *= L * 0.6 / ll; ly *= L * 0.6 / ll; }
+    ctx.strokeStyle = pal.arm;
+    ctx.lineWidth = Math.max(1, sr * 0.07);
+    ctx.beginPath();
+    for (let i = 0; i < IDLE_ARMS; i++) {
+      const th = i / IDLE_ARMS * TAU + c.ph + 0.15 * Math.sin(time * 0.7 + i);
+      const sway = 0.5 * Math.sin(time * 2.6 + i * 1.9 + c.ph);
+      const a1 = th + sway * 0.5, a2 = th + sway;
+      ctx.moveTo(c.sx + Math.cos(th) * sr * 0.9, c.sy + Math.sin(th) * sr * 0.9);
+      ctx.quadraticCurveTo(
+        c.sx + Math.cos(a1) * (sr + L * 0.5) + lx * 0.4, c.sy + Math.sin(a1) * (sr + L * 0.5) + ly * 0.4,
+        c.sx + Math.cos(a2) * (sr + L) + lx, c.sy + Math.sin(a2) * (sr + L) + ly);
+    }
+    ctx.stroke();
+  }
+
+  // Хватающие: от тела до мембраны добычи, извиваются; отпустив — втягиваются
+  ctx.strokeStyle = ctx.fillStyle = pal.grab;
+  ctx.lineWidth = Math.max(1.2, sr * 0.09);
+  for (let k = 0; k < c.arms.length; k++) {
+    const s = c.arms[k];
+    if (s.t) {
+      const dx = s.t.x - c.x, dy = s.t.y - c.y, d = Math.sqrt(dx * dx + dy * dy);
+      s.ang = Math.atan2(dy, dx);
+      s.len = Math.max(c.r, d - s.t.r * 0.7);
+    }
+    if (s.ext < 0.02) continue;
+    const cs = Math.cos(s.ang), sn = Math.sin(s.ang);
+    const len = Math.max(sr, s.len * z * s.ext);
+    const x0 = c.sx + cs * sr * 0.8, y0 = c.sy + sn * sr * 0.8;
+    const x2 = c.sx + cs * len, y2 = c.sy + sn * len;
+    const wig = Math.sin(time * 7 + k * 2.1 + c.ph) * (len - sr * 0.8) * 0.18;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.quadraticCurveTo((x0 + x2) / 2 - sn * wig, (y0 + y2) / 2 + cs * wig, x2, y2);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(x2, y2, Math.max(1.6, sr * 0.08), 0, TAU); ctx.fill();
+  }
+  ctx.lineCap = 'butt';
+
+  // Тело — поверх корней щупалец
+  ctx.save();
+  ctx.translate(c.sx, c.sy);
+  ctx.rotate(c.ang);
+  const st = 1 + c.st;
+  ctx.scale(st * sr, sr / st);
+  membrane(sr, c.ph);
+  ctx.fillStyle = pal.body;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, sr * 0.05) / sr;
+  ctx.strokeStyle = pal.rim;
+  ctx.stroke();
+  ctx.restore();
+
+  // Гранулы внутри вместо ядра
+  if (sr > 6) {
+    ctx.fillStyle = pal.gran;
+    const gs = Math.max(0.8, sr * 0.06);
+    for (let k = 0; k < 5; k++) {
+      const an = c.ph * (k + 2) + time * 0.2 * (k & 1 ? 1 : -1);
+      const rr = sr * (0.2 + 0.1 * k);
+      ctx.beginPath(); ctx.arc(c.sx + Math.cos(an) * rr, c.sy + Math.sin(an) * rr, gs, 0, TAU); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 const byRadius = (a, b) => a.r - b.r;
 
 function drawCells() {
@@ -1283,7 +1548,7 @@ function drawCells() {
     c.sx = (c.x - cam.x) * z + W / 2;
     c.sy = (c.y - cam.y) * z + H / 2;
     c.sr = c.r * z;
-    const m = c.sr * 2.5 + 4;
+    const m = c.sr * 2.5 + 4 + (c.bact ? reachOf(c) * 1.7 * z : 0);   // у бактерии — и щупальца
     c.vis = c.sx > -m && c.sx < W + m && c.sy > -m && c.sy < H + m && c.sr > 0.2;
   }
   // мелкие снизу: жертва видна сквозь полупрозрачного хищника, пока растворяется
@@ -1294,10 +1559,14 @@ function drawCells() {
 
   const minGlow = QUALITY[perf.q].detail ? 2 : 4;
   ctx.globalCompositeOperation = 'lighter';
-  for (const c of order) if (c.vis && c.sr > minGlow) drawGlow(c, paletteOf(c), alphaOf(c));
+  for (const c of order) if (c.vis && !c.bact && c.sr > minGlow) drawGlow(c, paletteOf(c), alphaOf(c));
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  for (const c of order) if (c.vis) drawBody(c, paletteOf(c), alphaOf(c));
+  for (const c of order) {
+    if (!c.vis) continue;
+    if (c.bact) drawBact(c, bactPaletteOf(c), alphaOf(c));
+    else drawBody(c, paletteOf(c), alphaOf(c));
+  }
 }
 
 const PART_COLOR = rgba(RGB_PLAYER, 0.45), RIPPLE_COLOR = rgba(RGB_PLAYER, 0.4);
@@ -1492,8 +1761,8 @@ const AI_MODES = {
 };
 const aiInputs = menuEl.querySelectorAll('input[name="ai"]');
 const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'sound', 'ambience', 'enemyDensity', 'difficulty',
-  'worldRadius', 'maxEnemySize', 'enemyAI'];
-const SWITCHES = { zoom: 'cameraAutoZoom', sound: 'sound', amb: 'ambience' };   // id переключателя → ключ
+  'worldRadius', 'maxEnemySize', 'enemyAI', 'bacteria'];
+const SWITCHES = { zoom: 'cameraAutoZoom', sound: 'sound', amb: 'ambience', bact: 'bacteria' };   // id переключателя → ключ
 const DEFAULTS = {};
 for (const k of SAVED_KEYS) DEFAULTS[k] = CONFIG[k];
 let menuOpen = false, worldBuiltWith = {};
@@ -1597,9 +1866,17 @@ for (const el of aiInputs) {
     saveSettings();
   });
 }
+$('s-bact').addEventListener('change', e => {
+  CONFIG.bacteria = e.target.checked;
+  setBacteria(CONFIG.bacteria);         // сразу, без нового мира
+  saveSettings();
+  render(0);                            // на паузе кадр сам не нарисуется
+});
 $('s-debug').addEventListener('change', e => { setDebug(e.target.checked); saveSettings(); });
 $('b-defaults').addEventListener('click', () => {
+  const hadBact = CONFIG.bacteria;
   Object.assign(CONFIG, DEFAULTS);
+  if (CONFIG.bacteria !== hadBact) { setBacteria(CONFIG.bacteria); render(0); }
   syncMenu();
   saveSettings();
   Sound.unlock();
