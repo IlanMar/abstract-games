@@ -17,6 +17,7 @@
 
 const NET = {
   lib: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
+  libHash: 'sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR',   // меняете версию — пересчитайте
   prefix: 'abstract-cell-',  // код комнаты → id хоста на сервере PeerJS
   maxPlayers: 6,             // по числу цветов в PLAYER_RGB
   snapHz: 20,                // снимков в секунду каждому гостю — пока влезают в бюджет:
@@ -34,7 +35,7 @@ const ROOM = (new URLSearchParams(location.search).get('room') || '')
   .toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12);
 const HEAD = 31, REC = 18, ARM = 5;   // байт: заголовок снимка, клетка, щупальце бактерии
 
-let peer = null, hostConn = null, retryTimer = 0, netStatus = '', wakeLock = null;
+let peer = null, hostConn = null, retryTimer = 0, netStatus = '', wakeLock = null, wakePending = false;
 let playersList = [];        // [{c: цвет, h: хост ли}] — для меню и полоски сверху
 let viewT = 0, pingT = 0, lastView = 0, rtt = 0, lastSnapAt = 0, snapIvl = 0.05;
 let snapBuf = new ArrayBuffer(64 * 1024), snapView = new DataView(snapBuf);
@@ -50,6 +51,8 @@ function loadPeer() {
     if (window.Peer) { ok(); return; }
     const s = document.createElement('script');
     s.src = NET.lib;
+    s.integrity = NET.libHash;
+    s.crossOrigin = 'anonymous';
     s.onload = ok;
     s.onerror = () => fail(new Error('PeerJS failed to load'));
     document.head.appendChild(s);
@@ -57,6 +60,7 @@ function loadPeer() {
 }
 
 async function netStart() {
+  document.documentElement.classList.add('live');   // меню без размытия: мир под ним живой
   $('mp-solo').hidden = true;
   $('mp-room').hidden = false;
   $('mp-code').textContent = ROOM;
@@ -87,6 +91,7 @@ function claimHost() {
   p.on('error', err => {
     if (p !== peer) return;
     if (!settled && err.type === 'unavailable-id') { settled = true; joinAsGuest(); return; }
+    if (net.role === 'host' && settled) return;   // сервер PeerJS моргнул — 'disconnected' переподключит
     netError(err);
   });
 }
@@ -106,12 +111,15 @@ function joinAsGuest() {
   });
   p.on('error', err => {
     if (p !== peer) return;
+    if (hostConn && hostConn.open) return;         // с хостом связь прямая, сервер PeerJS не нужен
     // хост ушёл между «код занят» и подключением — значит, код свободен: пробуем снова
     if (err.type === 'peer-unavailable') { retry(300 + Math.random() * 700); return; }
     netError(err);
   });
+  // Проверять соединение, а не роль: после ухода хоста бывший гость — ещё 'client',
+  // и зависшее подключение к новому хосту иначе никогда не повторилось бы
   clearTimeout(retryTimer);
-  retryTimer = setTimeout(() => { if (net.role !== 'client') claimHost(); }, NET.joinTimeout * 1000);
+  retryTimer = setTimeout(() => { if (!(hostConn && hostConn.open)) claimHost(); }, NET.joinTimeout * 1000);
 }
 
 function netError(err) {
@@ -186,12 +194,7 @@ function dropGuest(rp) {
   const i = net.remotes.indexOf(rp);
   if (i < 0) return;
   net.remotes.splice(i, 1);
-  const c = rp.cell;
-  if (c && !c.eatenBy) {
-    c.dead = true;                       // щупальца бактерий его отпустят
-    for (const o of cells) if (o.eatenBy === c) { o.eatenBy = null; o.vx = c.vx; o.vy = c.vy; }
-    cells = cells.filter(o => o !== c);
-  }
+  if (rp.cell && !rp.cell.eatenBy) removeCell(rp.cell);
   playersChanged();
 }
 
@@ -217,7 +220,7 @@ function onGuestData(rp, d) {
     const v = +m.r;
     if (Number.isFinite(v)) rp.viewR = clamp(v, 200, 8000);
   } else if (m.t === 'ping') {
-    send(rp.conn, { t: 'pong', c: m.c });
+    send(rp.conn, { t: 'pong', c: +m.c || 0 });
   }
 }
 
@@ -328,6 +331,7 @@ function becomeGuest() {
   clearTimeout(retryTimer);
   if (net.role !== 'client') net.localCfg = { worldRadius: CONFIG.worldRadius };
   net.role = 'client';
+  net.remotes.length = 0;                // бывший хост: его гости уже подключаются не к нему
   // свой мир больше не нужен: клетки придут от хоста
   cells = [];
   proxies.clear(); snaps.length = 0; clockOff = null;
@@ -405,7 +409,9 @@ function readSnapshot(buf) {
     s.f[k + 6] = v.getUint8(o + 16) / 255;
     o += REC;
     if (s.flags[i] & 2) {
+      if (o + 1 > buf.byteLength) return;
       const na = v.getUint8(o++);
+      if (o + na * ARM > buf.byteLength) return;
       s.armAt[i] = s.armT.length;
       s.armT.push(na); s.armE.push(0);
       for (let a = 0; a < na; a++) {
@@ -483,9 +489,9 @@ function applySnapshots() {
     }
   }
   cells.length = 0;
-  for (const [id, p] of proxies) {
+  for (const p of proxies.values()) {
     if (p.seen === tick) cells.push(p);
-    else proxies.delete(id);
+    else proxies.delete(p.id);
   }
 
   const me = B.myId ? proxies.get(B.myId) : null;
@@ -601,19 +607,21 @@ function netMenuState() {
 }
 
 async function requestWake() {
-  if (wakeLock || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  if (wakeLock || wakePending || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  wakePending = true;
   try {
     wakeLock = await navigator.wakeLock.request('screen');
     wakeLock.addEventListener('release', () => { wakeLock = null; });
   } catch (e) {}
+  wakePending = false;
 }
 document.addEventListener('visibilitychange', () => { if (net.role && !document.hidden) requestWake(); });
 window.addEventListener('pointerdown', () => { if (net.role) requestWake(); });
 
 function newRoomCode() {
-  const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789', r = crypto.getRandomValues(new Uint8Array(6));
   let s = '';
-  for (let i = 0; i < 5; i++) s += abc[Math.floor(Math.random() * abc.length)];
+  for (const b of r) s += abc[b % abc.length];
   return s;
 }
 

@@ -72,12 +72,12 @@ const CONFIG = {
   fleeBoost: 2.1,         // и убегает от угрозы
   whirlSpeed: 1.8,        // скорость в водовороте — в долях своего дрейфа
 
-  // --- бактерии: тёмные хищники со щупальцами (переключатель в меню) ---------------
+  // --- бактерии: тёмные хищники со щупальцами (переключатель в меню, по умолчанию выкл.)
   // Щупальцем хватают всех, кто меньше и проплывает в пределах досягаемости, и
   // подтягивают к себе, пока не коснутся — дальше обычное поглощение. Вырваться можно:
   // хватка слабее очереди выстрелов, а натянутое сильнее reach·bacteriaHold щупальце рвётся.
   // Двигаются всегда как в режиме hunt, какое бы поведение ни было у остальных.
-  bacteria: true,
+  bacteria: false,
   bacteriaCount: 5,       // на карте радиуса densityRadius; растёт с площадью, √плотности и
   bacteriaMax: 60,        // сложностью, но не больше этого
   bacteriaSize: [1.25, 2.2], // радиус в долях стартовой клетки (при рестарте — текущей)
@@ -286,8 +286,17 @@ function bacteriaTotal() {
 
 const reachOf = b => CONFIG.bacteriaReach[0] + CONFIG.bacteriaReach[1] * b.r;
 
-// Включили в меню — подсаживаем вне экрана; выключили — убираем. Кого бактерия уже
-// растворяла, тот свободен (как когда растворился сам хищник)
+// Убрать клетку из мира не через поглощение (выключили бактерий, ушёл гость, лишняя
+// капля). Кого она растворяла — свободны, как когда растворился сам хищник; dead —
+// чтобы отпустили щупальца бактерий
+function removeCell(c) {
+  c.dead = true;
+  for (const o of cells) if (o.eatenBy === c) { o.eatenBy = null; o.vx = c.vx; o.vy = c.vy; }
+  const i = cells.indexOf(c);
+  if (i >= 0) cells.splice(i, 1);
+}
+
+// Включили в меню — подсаживаем вне экрана; выключили — убираем (кроме тех, кого уже едят)
 function setBacteria(on) {
   if (on) {
     let n = 0;
@@ -295,11 +304,7 @@ function setBacteria(on) {
     const pr = player.dead ? CONFIG.playerRadius : Math.max(CONFIG.playerRadius, player.r);
     for (let i = n; i < bacteriaTotal(); i++) spawnBact(bactRadius(pr), 400, true);
   } else {
-    for (const c of cells) {
-      const e = c.eatenBy;
-      if (e && e.bact && !e.eatenBy) { c.eatenBy = null; c.vx = e.vx; c.vy = e.vy; }
-    }
-    cells = cells.filter(c => !c.bact || c.eatenBy);
+    for (const c of cells.filter(o => o.bact && !o.eatenBy)) removeCell(c);
   }
 }
 
@@ -667,17 +672,17 @@ function ejectCell(p, nx, ny) {
   trimMotes();
 }
 
-// Слишком много капель — убираем самые старые, которые никого не едят и не едомы.
-// Считаются только капли: организмов на большой карте может быть и 700.
+// Капель больше maxMotes — убираем самые старые (меньший id), кроме тех, что уже
+// растворяются. Упёрлись в потолок — обычно лишняя ровно одна: два прохода, без аллокаций
 function trimMotes() {
   let extra = -CONFIG.maxMotes;
   for (const c of cells) if (c.mote) extra++;
-  if (extra <= 0) return;
-  const busy = new Set();
-  for (const c of cells) if (c.eatenBy) busy.add(c.eatenBy);
-  const old = cells.filter(c => c.mote && !c.eatenBy && !busy.has(c)).sort((a, b) => a.id - b.id);
-  const drop = new Set(old.slice(0, extra));
-  cells = cells.filter(c => !drop.has(c));
+  for (; extra > 0; extra--) {
+    let old = null;
+    for (const c of cells) if (c.mote && !c.eatenBy && (!old || c.id < old.id)) old = c;
+    if (!old) return;
+    removeCell(old);
+  }
 }
 
 // Зажатый палец — очередь капель после короткой паузы
@@ -1065,7 +1070,10 @@ function absorb(h) {
     const eater = player.eatenBy;
     cam.fr = eater ? eater.r : player.r;
   }
-  cells = cells.filter(c => !c.dead);
+  // уплотняем на месте: filter создавал бы новый массив на тысячи клеток на каждое поглощение
+  let j = 0;
+  for (const c of cells) if (!c.dead) cells[j++] = c;
+  cells.length = j;
 }
 
 function stepCamera(h) {
@@ -1119,8 +1127,10 @@ function repopulate(dt) {
     if (n < Math.round(bacteriaTotal() * CONFIG.refillShare)) spawnBact(bactRadius(pr), 400, true);
   }
   spawnT -= dt;
-  const others = cells.length - (player.dead ? 0 : 1);   // съеденного игрока в cells уже нет
-  if (spawnT > 0 || others >= Math.round(enemyTotal() * CONFIG.refillShare)) return;
+  if (spawnT > 0) return;
+  let alive = 0;                         // только организмы: капли, игроки и бактерии не в счёт
+  for (const c of cells) if (!c.isPlayer && !c.mote && !c.bact) alive++;
+  if (alive >= Math.round(enemyTotal() * CONFIG.refillShare)) { spawnT = 0.5; return; }
   spawnT = 1.2;
   const pr = player.dead ? CONFIG.playerRadius : player.r;
   const f = dangerFactor(), big = Math.random() < 0.3 * f / (0.3 * f + 0.7 / f);
@@ -1394,7 +1404,7 @@ function palette(key) {
     body.addColorStop(0.86, rgba(col, 0.32 * k));
     body.addColorStop(1, rgba(col, 0.72));
     p = {
-      col, lc, body,
+      body,
       rim: rgba(lc, key < 0 ? 0.6 : 0.45),
       ring: rgba(lc, 0.75),
       dot: rgba(lc, 0.7),
@@ -1641,11 +1651,10 @@ function drawCells() {
 
   const minGlow = QUALITY[perf.q].detail ? 2 : 4;
   ctx.globalCompositeOperation = 'lighter';
-  for (const c of order) if (c.vis && !c.bact && c.sr > minGlow) drawGlow(c, paletteOf(c), alphaOf(c));
+  for (const c of order) if (!c.bact && c.sr > minGlow) drawGlow(c, paletteOf(c), alphaOf(c));
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   for (const c of order) {
-    if (!c.vis) continue;
     if (c.bact) drawBact(c, bactPaletteOf(c), alphaOf(c));
     else drawBody(c, paletteOf(c), alphaOf(c));
     if (c.isPlayer && c !== player && c.sr > 2.5) drawThreatRing(c);
@@ -1805,15 +1814,14 @@ function frame(now) {
 }
 
 // ============================================================================
-// Меню настроек — кнопка в правом нижнем углу. Пока оно открыто, игра на паузе.
-// Настройки запоминаются в localStorage этого браузера.
+// Меню настроек — кнопка в правом нижнем углу. Пока оно открыто, одиночная игра на паузе
+// (сетевая — нет: мир общий). Настройки запоминаются в localStorage этого браузера.
 // ============================================================================
 
 const menuBtn = $('menuBtn'), menuEl = $('menu'), newBtn = $('b-new'), sepEl = $('sep-world');
 // v2: храним только отличия от умолчаний. В v1 лежали все значения разом, и новые
 // умолчания (например, баланс Normal) не доходили до тех, кто хоть раз тронул меню.
 const SAVE_KEY = 'abstract-cell-settings-v2';
-try { localStorage.removeItem('abstract-cell-settings'); } catch (e) {}
 // Ползунок: линейный (значение = позиция · k) или логарифмический (log: [от, до],
 // позиция 0…LOG_STEPS) — там, где диапазон в десятки раз: иначе умолчание оказалось
 // бы у самого края, и малые значения было бы не выставить пальцем
@@ -1966,7 +1974,7 @@ $('b-defaults').addEventListener('click', () => {
   const hadBact = CONFIG.bacteria;
   Object.assign(CONFIG, DEFAULTS);
   if (net.role === 'client') netAfterDefaults();
-  if (CONFIG.bacteria !== hadBact) { setBacteria(CONFIG.bacteria); render(0); }
+  if (CONFIG.bacteria !== hadBact && net.role !== 'client') { setBacteria(CONFIG.bacteria); render(0); }
   syncMenu();
   saveSettings();
   Sound.unlock();
