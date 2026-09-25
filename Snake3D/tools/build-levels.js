@@ -39,7 +39,7 @@ function check(world) {
       const e = cells.get(ch);
       if (!e) { errors.push(`stage ${i + 1}: letter ${ch} is not on the map`); continue; }
       for (const [c, r] of e.list) if (e.side === 'bottom' && !/[.a-zA-Z]/.test(at('top', c, r))) errors.push(`stage ${i + 1}: ${ch} at ${c},${r} lies under a top tile`);
-      if (ch < 'a') { if (e.list.length !== 1) errors.push(`crystal ${ch} has ${e.list.length} cells`); continue; }
+      if (ch < 'a') continue;   // every cell of an upper-case letter is a crystal of its own
       // A chain must be one path: every cell has two chain neighbours except the two ends.
       const set = new Set(e.list.map(wrap));
       const degree = e.list.map(([c, r]) => new Set(neighbours(c, r).map(wrap).filter(k => set.has(k))).size);
@@ -85,8 +85,8 @@ if (!process.argv.includes('--check')) {
    Each face is drawn as text, one character per cell, the first line being the north edge; a world is as
    wide as its longest line and wraps round at its edges.
    ' ' hole (the snake wraps round its edge to the other face), '.' floor, '#' wall, '^' spike,
-   '>' boost pad, '=' slow pad. Letters are items on that face: an upper-case letter is a crystal,
-   all cells of one lower-case letter form a chain that has to be taken in one run.
+   '>' boost pad, '=' slow pad. Letters are items on that face: every cell of an upper-case letter is a
+   crystal, all cells of one lower-case letter form a chain that has to be taken in one run.
    stages: the letters of every stage in play order. start: [column, line, heading] on top.
    colors: gradient layers per face, [from, to, x | y | d(iagonal) | r(adial), optional [c0, l0, c1, l1]]. */
 window.SNAKES_LEVELS = [

@@ -15,7 +15,7 @@
   const FIXED_DT = 0.02;
   const MAX_FPS = 60;        // frame cap on any screen: a steady 60 looks smoother than 60…120 and saves battery
   const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, goStage2: 10, sizeBegin: 4, up: 0.5};
-  const CAMERA = {startRotation: 360, rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
+  const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
   const DATA_OFFSET = 12;    // world cell x maps to data column x + RenderingRange / 2
@@ -79,8 +79,8 @@
   }
 
   // levels.js draws each side of a world as text, one character per cell, the first line being the
-  // north edge. Letters are items: an upper-case letter is a crystal, the cells of a lower-case letter
-  // form one chain. `stages` lists the letters of each stage in play order.
+  // north edge. Letters are items: every cell of an upper-case letter is a crystal, the cells of a
+  // lower-case letter form one chain. `stages` lists the letters of each stage in play order.
   const TILES = {' ': -1, '.': 0, '#': 1, '^': 2, '>': 5, '=': 6};
   const SQUARE_DIRS = ['W', 'N', 'E', 'S'], HEX_DIRS = ['S', 'SW', 'NW', 'N', 'NE', 'SE'];
   function buildLevel(def) {
@@ -112,10 +112,16 @@
         }
       }
     });
-    const levels = def.stages.map((stage, i) => [...stage].map((ch, k) => {
-      const it = items.get(ch);
-      return {g: (i + 1) * 100 + k, rev: it.side === BOTTOM, combo: it.cells.length / 3, cells: it.cells};
-    }));
+    const levels = def.stages.map((stage, i) => {
+      const groups = [];
+      for (const ch of stage) {
+        const it = items.get(ch);
+        // An upper-case letter may mark several crystals: each one is a group of its own.
+        const parts = ch < 'a' ? Array.from({length: it.cells.length / 3}, (_, k) => it.cells.slice(k * 3, k * 3 + 3)) : [it.cells];
+        for (const cells of parts) groups.push({g: (i + 1) * 100 + groups.length, rev: it.side === BOTTOM, combo: cells.length / 3, cells});
+      }
+      return groups;
+    });
     const [sc, sr, sd] = def.start;
     const start = {x: sc - DATA_OFFSET, z: rows - 1 - sr - DATA_OFFSET - (def.hex && (sc & 1) ? 0.5 : 0),
       ci: (def.hex ? HEX_DIRS : SQUARE_DIRS).indexOf(sd)};
@@ -749,7 +755,7 @@
   // Every face is black with a white outline, like the "Skin" texture of the original.
   class SnakeMesh {
     constructor(material) {
-      this.max = 4096;
+      this.max = 16384;          // vertices: about 340 cells of snake; the rest of a longer tail is not drawn
       this.pos = new Float32Array(this.max * 3);
       this.edge = new Float32Array(this.max * 4);
       this.edge2 = new Float32Array(this.max);
@@ -1158,10 +1164,10 @@
   class CameraRig {
     constructor(game) {
       this.game = game;
-      this.yaw = -90 * DEG;
+      this.yaw = null;           // set to the heading on the first update, so the start has no orbit
       this.pivot = 0;
       this.reversingAngle = 0;
-      this.deltaStart = CAMERA.startRotation;
+      this.deltaStart = 0;       // grows while the camera circles the crash site
       this.rotating = false;
       this.shakeTime = 0;
       this.shakeOffset = {x: 0, y: 0};
@@ -1181,10 +1187,10 @@
     flash(time) { this.flashTime = 0; this.flashDuration = time; }
     update(dt, follow, lookYaw) {
       this.pos.copy(follow);
-      if (this.deltaStart >= 0) this.deltaStart -= dt * CAMERA.rotatingSpeed;
       this.pivot = lerp(this.pivot, this.reversingAngle, dt * CAMERA.speedRev);
       if (this.rotating) this.deltaStart -= dt * CAMERA.rotatingSpeed;
       const targetYaw = lookYaw - this.deltaStart * DEG;
+      if (this.yaw === null) this.yaw = targetYaw;
       let diff = mod(targetYaw - this.yaw + Math.PI, Math.PI * 2) - Math.PI;
       this.yaw += diff * clamp01(dt * CAMERA.speed);
       if (this.pendingReverse) { this.pendingReverse = false; this.game.onReversing(); }
@@ -1617,7 +1623,6 @@
       this.spawn = null;
       this.player.visible = true;
       this.cameraRig = new CameraRig(this);
-      if (level) this.cameraRig.deltaStart = -1;
       if (!this.player.rev) this.cameraRig.pivot = this.cameraRig.reversingAngle = 180;
       this.particles.clear();
       this.highlights.clear();

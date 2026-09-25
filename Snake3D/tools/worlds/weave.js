@@ -51,36 +51,37 @@ g.set('bottom', 1, 9, '^'); g.set('bottom', 3, 9, '^');
 g.rect('top', 6, 18, 9, 18, '^'); g.rect('top', 16, 17, 18, 17, '^');
 g.rect('bottom', 10, 18, 12, 18, '^'); g.rect('bottom', 15, 17, 17, 17, '^');
 
-// Stages, in play order. The start is (35, 2) heading west on top.
+// Stages, in play order. The start is (40, 2) heading west on top. Each stage can be seen from where
+// the previous one ends; crystal trails ('gems') mark long stretches and turns.
 const T = 'top', B = 'bottom';
-g.stage(['gem', T, 22, 2]);                                  // 1  first crystal
+g.stage(['gem', T, 27, 2]);                                  // 1  first crystal, next to the tightrope
 g.stage(['chain', T, 18, 2, 'WWWWWWWW']);                    // 2  the spiked channel
 g.stage(['gem', T, 2, 7]);                                   // 3  corner: turn south
 g.stage(['chain', T, 2, 22, 'SSSSSS']);                      // 4  through the gate
-g.stage(['gem', T, 7, 33]);                                  // 5  corner: turn east onto the porthole row
+g.stage(['gem', T, 7, 32]);                                  // 5  corner: turn east
 g.stage(['chain', T, 14, 33, 'EEEEE']);                      // 6  towards the porthole, top
 g.stage(['chain', B, 19, 33, 'WWWWW']);                      // 7  same cells underneath, after the dive
-g.stage(['gem', B, 8, 32]);                                  // 8  leave the shuttle, flip at the west edge
-g.stage(['chain', T, 29, 31, 'NNNNN']);                      // 9  up the south link
+g.stage(['gem', B, 2, 33]);                                  // 8  straight on to the west edge...
+g.stage(['gems', T, [[4, 32], [13, 32], [22, 32]]], ['chain', T, 29, 31, 'NNNNN']);   // 9  ...over it, back along the lane, up the south link
 g.stage(['gem', T, 32, 24]);                                 // 10 room hem
 g.stage(['chain', T, 34, 23, 'NNNNNNNNNNN']);                // 11 a vertical lane between spike stripes
 g.stage(['gem', B, 34, 10]);                                 // 12 dive off the north edge
 g.stage(['chain', B, 33, 11, 'WWWWWWWWW']);                  // 13 underside hem, turn right after the dive
 g.stage(['gem', B, 21, 15]);                                 // 14 west hem
 g.stage(['chain', B, 18, 18, 'WWWWNWWWWWW']);                // 15 the ribbon jog
-g.stage(['gem', B, 1, 27]);                                  // 16 underside gate
-g.stage(['chain', B, 22, 34, 'EEEEEEEEEE']);                 // 17 south lane, outer row
-g.stage(['gem', B, 44, 34]);                                 // 18
+g.stage(['gems', B, [[3, 18], [3, 26]]]);                    // 16 turn south, through the underside gate
+g.stage(['chain', B, 5, 34, 'EEEEEEEEEE']);                  // 17 south lane, outer row
+g.stage(['gems', B, [[24, 34], [35, 34], [46, 34], [57, 30]]]);   // 18 a trail to the east lane
 g.stage(['chain', B, 57, 21, 'NNNNNNNN']);                   // 19 after the boost pads
-g.stage(['gem', B, 57, 5]);                                  // 20 over the north edge next
+g.stage(['gem', B, 57, 3]);                                  // 20 over the north edge next
 g.stage(['chain', T, 57, 4, 'SWSSSEESSSS']);                 // 21 slalom
-g.stage(['chain', T, 42, 17, 'WWWWWWW']);                    // 22 off the boost runway, through the stripe gap
-g.stage(['gem', T, 30, 17]);                                 // 23 room centre
+g.stage(['gem', T, 56, 17], ['chain', T, 42, 17, 'WWWWWWW']);   // 22 into the boost runway, through the stripe gap
+g.stage(['gem', T, 29, 13]);                                 // 23 turn north in the room, towards the tightrope
 g.stage(['chain', T, 29, 9, 'NNNNN']);                       // 24 back up the tightrope, then the loop
 
 const colors = {
   top: [['#a01e96', '#e0406e', 'x'], ['#0a9a8c', '#14b45a', 'y', [20, 10, 39, 25]]],
   bottom: [['#dc3c1e', '#f08c1e', 'x'], ['#a0144a', '#d24678', 'y', [20, 10, 39, 25]]]
 };
-module.exports = {key: 'weave', name: 'Level 2', kind: 'Weave', start: [35, 2, 'W'], colors, grid: g};
+module.exports = {key: 'weave', name: 'Level 2', kind: 'Weave', start: [40, 2, 'W'], colors, grid: g};
 if (require.main === module) console.log(g.print());

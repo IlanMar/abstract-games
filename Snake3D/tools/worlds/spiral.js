@@ -36,7 +36,7 @@ g.rect(T, 30, 15, 32, 16, '=');
 g.set(T, 30, 21, '#'); g.set(T, 32, 21, '#');
 g.rect('both', 16, 30, 27, 30, '^'); g.rect('both', 16, 32, 27, 32, '^');   // a spiked channel on both faces
 // ---- arena
-g.rect(T, 21, 21, 22, 22, '#');
+g.set(T, 27, 20, '^'); g.set(T, 27, 22, '^');   // the lead-in to the edge can only be run eastwards
 g.rect(B, 19, 20, 24, 20, '^'); g.rect(B, 19, 23, 24, 23, '^');
 // ---- underside of the way out
 g.rect(B, 12, 20, 12, 24, '>');              // ring 2 left band, heading south
@@ -68,35 +68,36 @@ g.stage(['gem', T, 33, 7]);                                   // 15
 g.stage(['chain', T, 37, 10, 'SSSSSSSSSS']);                  // 16 past the first porthole
 g.stage(['gem', T, 35, 26]);                                  // 17 inside of the second porthole
 g.stage(['chain', T, 31, 36, 'WWNWWSWWSWWNWW']);              // 18 wave between spikes
-g.stage(['gem', T, 7, 36]);                                   // 19
+g.stage(['gem', T, 7, 33]);                                   // 19 past the corner
 g.stage(['chain', T, 7, 23, 'NNNNNN']);                       // 20
 g.stage(['gem', T, 10, 12]);                                  // 21 bridge to ring 2
 g.stage(['chain', T, 20, 12, 'EEEEEEE']);                     // 22
-g.stage(['gem', T, 31, 21]);                                  // 23 in the gate
+g.stage(['gems', T, [[31, 13], [31, 21]]]);                   // 23 round the corner and into the gate
 g.stage(['chain', T, 27, 31, 'WWWWWWWWWW']);                  // 24 spiked channel
 g.stage(['gem', T, 12, 27]);                                  // 25
 g.stage(['chain', T, 12, 20, 'NNNEEEE']);                     // 26 onto the arena bridge
-g.stage(['gem', T, 18, 19], ['gem', T, 25, 19], ['gem', T, 25, 24], ['gem', T, 18, 24]);   // 27 arena
+g.stage(['gems', T, [[18, 19], [25, 19], [25, 24], [18, 24]]]);   // 27 arena
+g.stage(['chain', T, 23, 21, 'EEEE']);                        // 28 a lead-in that runs off the arena's east edge
 // ---- and out on the underside
-g.stage(['gem', B, 27, 21]);                                  // 28 over the arena's east edge
-g.stage(['chain', B, 24, 17, 'WWWWWWWWWW']);                  // 29 back over the bridge
-g.stage(['gem', B, 12, 26]);                                  // 30
-g.stage(['chain', B, 17, 31, 'EEEEEEEEEE']);                  // 31 the channel from below
-g.stage(['gem', B, 31, 26]);                                  // 32
-g.stage(['chain', B, 27, 11, 'WWWWWWWWWWW']);                 // 33
-g.stage(['chain', B, 7, 16, 'SSSSSSS']);                      // 34
-g.stage(['gem', B, 9, 36]);                                   // 35
-g.stage(['chain', B, 11, 35, 'EEEEEEEEEE']);                  // 36
-g.stage(['chain', B, 35, 24, 'NNNNNNNNNN']);                  // 37
-g.stage(['gem', B, 33, 7]);                                   // 38
-g.stage(['chain', B, 31, 7, 'WWWWWWWWW']);                    // 39
-g.stage(['chain', B, 1, 12, 'SSSSSSSSSS']);                   // 40
-g.stage(['gem', B, 2, 41]);                                   // 41
-g.stage(['chain', B, 15, 41, 'EEEEEE']);                      // 42
-g.stage(['gem', B, 41, 38]);                                  // 43
-g.stage(['chain', B, 42, 27, 'NNNNNNNNNN']);                  // 44
-g.stage(['gem', B, 41, 4]);                                   // 45
-g.stage(['chain', B, 32, 2, 'WWWWWWW']);                      // 46 then over the west edge to the start
+g.stage(['gem', B, 27, 21]);                                  // 29 waits just past the edge
+g.stage(['chain', B, 24, 17, 'WWWWWWWWWW']);                  // 30 back over the bridge
+g.stage(['gem', B, 12, 26]);                                  // 31
+g.stage(['chain', B, 17, 31, 'EEEEEEEEEE']);                  // 32 the channel from below
+g.stage(['gem', B, 30, 23]);                                  // 33 straight up the band, through the gate
+g.stage(['chain', B, 27, 11, 'WWWWWWWWWWW']);                 // 34
+g.stage(['chain', B, 7, 16, 'SSSSSSS']);                      // 35
+g.stage(['gem', B, 9, 36]);                                   // 36
+g.stage(['chain', B, 11, 35, 'EEEEEEEEEE']);                  // 37
+g.stage(['gem', B, 30, 35], ['chain', B, 35, 24, 'NNNNNNNNNN']);   // 38 round the corner
+g.stage(['gem', B, 33, 7]);                                   // 39
+g.stage(['chain', B, 31, 7, 'WWWWWWWWW']);                    // 40
+g.stage(['gems', B, [[12, 7], [5, 7]]], ['chain', B, 1, 12, 'SSSSSSSSSS']);   // 41 over the bridge, then south
+g.stage(['gem', B, 2, 41]);                                   // 42
+g.stage(['chain', B, 15, 41, 'EEEEEE']);                      // 43
+g.stage(['gems', B, [[31, 41], [41, 38]]]);                   // 44
+g.stage(['chain', B, 42, 27, 'NNNNNNNNNN']);                  // 45
+g.stage(['gem', B, 41, 4]);                                   // 46
+g.stage(['chain', B, 32, 2, 'WWWWWWW'], ['gems', B, [[15, 2], [5, 2]]]);   // 47 then over the west edge to the start
 
 const colors = {
   top: [['#ff7a28', '#7a28c8', 'r']],

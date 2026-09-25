@@ -61,12 +61,13 @@ class Grid {
     if (k >= 26) throw new Error('out of letters for ' + kind);
     return String.fromCharCode((kind === 'gem' ? 65 : 97) + k);
   }
-  // Adds the next stage. Each group is ['gem', side, c, r], ['chain', side, c, r, moves] or
-  // ['chain', side, [[c, r], ...]] with the cells in walking order.
+  // Adds the next stage. Each group is ['gem', side, c, r], ['gems', side, [[c, r], ...]] (a trail of
+  // crystals under one letter), ['chain', side, c, r, moves] or ['chain', side, [[c, r], ...]] with the
+  // cells in walking order.
   stage(...groups) {
     let s = '';
     for (const [kind, side, c, r, moves] of groups) {
-      const ch = this.letter(kind);
+      const ch = this.letter(kind === 'chain' ? 'chain' : 'gem');
       const cells = kind === 'gem' ? [[c, r]] : Array.isArray(c) ? c : this.cells(c, r, moves);
       for (const [x, y] of cells) {
         const cur = this.get(side, x, y);
