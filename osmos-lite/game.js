@@ -38,7 +38,7 @@ const CONFIG = {
   enemyCount: 60,         // организмов на карте радиуса densityRadius; на другой карте их
   densityRadius: 1350,    // число растёт с площадью — плотность, а не пустота
   enemyDensity: 1,        // множитель плотности (ползунок в меню)
-  maxEnemies: 700,        // потолок — чтобы огромная и плотная карта держала 60+ FPS
+  maxEnemies: 4000,       // потолок — чтобы огромная и плотная карта держала 60 FPS
   maxEnemySize: 5,        // самый крупный организм — во столько раз больше стартовой клетки
   difficulty: 0.5,        // 0…1: доля крупных хищников против мелкой добычи. 0.5 — доли как в
                           // population (~31% крупнее игрока); 0 — ~3%, 1 — ~80%
@@ -59,6 +59,18 @@ const CONFIG = {
   driftSpeed: [12, 42],   // px/с: собственный дрейф организмов
   wanderTurn: 0.5,        // рад/√с: насколько блуждает направление дрейфа
   steerTime: 2.5,         // с: за сколько организм возвращается к своему дрейфу после толчка
+
+  // --- поведение организмов (переключается в меню, действует сразу) --------------
+  // drift — блуждают сами по себе; hunt — гонятся за мелкими и бегут от крупных (и от
+  // игрока тоже); school — плывут стаями с соседями своего размера; whirl — вся жидкость
+  // кружит водоворотом вокруг центра; still — стоят, пока их не толкнут
+  enemyAI: 'drift',
+  aiThink: [0.18, 0.36],  // с: как часто организм заново решает, куда плыть
+  aiSense: 240,           // px: базовое чутьё, у крупных дальше (+3·r, не больше aiSenseMax)
+  aiSenseMax: 650,
+  huntBoost: 1.9,         // во сколько раз быстрее своего дрейфа гонится за добычей
+  fleeBoost: 2.1,         // и убегает от угрозы
+  whirlSpeed: 1.8,        // скорость в водовороте — в долях своего дрейфа
 
   // --- поглощение ---------------------------------------------------------------
   absorbRatio: 1.0,       // как в Osmos: кто больше хоть немного — тот и ест.
@@ -153,6 +165,7 @@ function makeCell(x, y, r, isPlayer) {
     dead: false, born: isPlayer ? 1 : 0, flash: 0, tint: 0,
     wander: Math.random() * TAU, cruise: 0, ph: Math.random() * 100,
     steer: CONFIG.steerTime, parent: null, grace: 0, mote: false,   // для выброшенных капель
+    tx: 0, ty: 0, think: Math.random() * 0.2,   // желаемая скорость по enemyAI и когда её пересчитать
     // только для отрисовки
     svx: 0, svy: 0, st: 0, ang: 0,     // сглаженная скорость, растяжение, его угол
     pvx: 0, pvy: 0, ax: 0, ay: 0,      // скорость до кадра и сглаженное ускорение
@@ -170,8 +183,8 @@ function giveDrift(c) {
   // мелочь шустрее, гиганты еле ползут
   const [a, b] = CONFIG.driftSpeed;
   c.cruise = lerp(a, b, Math.random()) * clamp(Math.sqrt(CONFIG.playerRadius / c.r), 0.45, 1.3);
-  c.vx = Math.cos(c.wander) * c.cruise;
-  c.vy = Math.sin(c.wander) * c.cruise;
+  c.vx = c.tx = Math.cos(c.wander) * c.cruise;
+  c.vy = c.ty = Math.sin(c.wander) * c.cruise;
 }
 
 // Ищет свободное место; farFromView — только вне экрана (для подсадки новых),
@@ -187,8 +200,9 @@ function place(r, safe, farFromView, maxDist) {
       if (Math.hypot(x - cam.x, y - cam.y) < view + r * 2) continue;
     }
     let free = true;
+    const pad = 24 / Math.sqrt(Math.max(1, CONFIG.enemyDensity));   // в тесноте зазор меньше — иначе не влезут
     for (const o of cells) {
-      if (Math.hypot(x - o.x, y - o.y) < o.r + r + 24) { free = false; break; }
+      if (Math.hypot(x - o.x, y - o.y) < o.r + r + pad) { free = false; break; }
     }
     if (free) return { x, y };
   }
@@ -226,11 +240,16 @@ function reset() {
   const weights = CONFIG.population.map(groupWeight), total = enemyTotal();
   const weight = weights.reduce((sum, w) => sum + w, 0);
   const near = Math.min(1, CONFIG.worldRadius / 1500);        // на маленькой карте всё ближе
+  const top = CONFIG.population[CONFIG.population.length - 1], rMax = CONFIG.worldRadius * 0.3;
   for (const [gi, g] of CONFIG.population.entries()) {
     const n = Math.round(weights[gi] * total / weight);
-    const lo = Math.min(g.min, maxE), hi = Math.min(g.max, maxE);
+    // Гиганты растут вслед за ползунком: при maxEnemySize больше их max — до maxEnemySize,
+    // равномерно по логарифму, чтобы средних гигантов было не меньше, чем исполинов
+    const lo = Math.min(g.min, maxE), hi = g === top ? maxE : Math.min(g.max, maxE);
+    const logR = g === top && hi > g.max;
     for (let i = 0; i < n; i++) {
-      const r = r0 * lerp(lo, hi, Math.random());
+      const u = Math.random();
+      const r = Math.min(rMax, r0 * (logR ? lo * Math.pow(hi / lo, u) : lerp(lo, hi, u)));
       // крупных не сажаем рядом, а первые куски добычи — наоборот, в кольце у старта
       if (r > r0) spawn(r, CONFIG.threatSafe * near, false);
       else if (i < CONFIG.nearFood) spawn(r, CONFIG.nearFoodRing[0], false, CONFIG.nearFoodRing[1]);
@@ -555,13 +574,177 @@ function stepPlayer(h) {
 
 function stepDrifters(h) {
   const jitter = CONFIG.wanderTurn * Math.sqrt(h) * 1.732;   // случайное блуждание с дисперсией σ²·t
+  const ai = CONFIG.enemyAI !== 'drift';
   for (const c of cells) {
     if (c.isPlayer || c.eatenBy) continue;
     if (c.grace > 0) c.grace -= h;
     const k = expK(h, c.steer);          // у капли своя, быстрая вязкость
     c.wander += (Math.random() * 2 - 1) * jitter;
-    c.vx += (Math.cos(c.wander) * c.cruise - c.vx) * k;
-    c.vy += (Math.sin(c.wander) * c.cruise - c.vy) * k;
+    // Капли всегда просто дрейфуют; организмы — к скорости, выбранной в think
+    const tx = ai && !c.mote ? c.tx : Math.cos(c.wander) * c.cruise;
+    const ty = ai && !c.mote ? c.ty : Math.sin(c.wander) * c.cruise;
+    c.vx += (tx - c.vx) * k;
+    c.vy += (ty - c.vy) * k;
+  }
+}
+
+// ============================================================================
+// Поведение организмов (CONFIG.enemyAI). Раз в aiThink с каждый организм выбирает
+// желаемую скорость (tx, ty), а stepDrifters плавно к ней подтягивает — с той же
+// ленью steerTime, что и дрейф, так что вес и инерция не пропадают.
+// Соседей ищем по сетке: организмов бывают тысячи, перебор всех пар не потянуть.
+// Сетка — связные списки в типизированных массивах, в кадре ничего не создаётся.
+// ============================================================================
+
+const GRID = 200;                        // px: ячейка сетки соседей
+let gHead = new Int32Array(0), gNext = new Int32Array(0), gN = 0, gOff = 0;
+const bigs = [], near = [];              // крупнее пол-ячейки — отдельно: их край далеко от центра
+
+function buildGrid() {
+  gOff = CONFIG.worldRadius + GRID;
+  gN = Math.ceil(2 * gOff / GRID);
+  if (gHead.length < gN * gN) gHead = new Int32Array(gN * gN);
+  if (gNext.length < cells.length) gNext = new Int32Array(cells.length * 2);
+  gHead.fill(-1, 0, gN * gN);
+  bigs.length = 0;
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    if (c.eatenBy) continue;
+    if (c.r > GRID / 2) { bigs.push(c); continue; }
+    const gx = clamp(Math.floor((c.x + gOff) / GRID), 0, gN - 1);
+    const gy = clamp(Math.floor((c.y + gOff) / GRID), 0, gN - 1);
+    const b = gy * gN + gx;
+    gNext[i] = gHead[b]; gHead[b] = i;
+  }
+}
+
+// Все, чей край ближе S к краю c, — в near
+function gather(c, S) {
+  near.length = 0;
+  const reach = S + c.r + GRID / 2;
+  const x0 = clamp(Math.floor((c.x - reach + gOff) / GRID), 0, gN - 1);
+  const x1 = clamp(Math.floor((c.x + reach + gOff) / GRID), 0, gN - 1);
+  const y0 = clamp(Math.floor((c.y - reach + gOff) / GRID), 0, gN - 1);
+  const y1 = clamp(Math.floor((c.y + reach + gOff) / GRID), 0, gN - 1);
+  for (let gy = y0; gy <= y1; gy++) {
+    for (let gx = x0; gx <= x1; gx++) {
+      for (let i = gHead[gy * gN + gx]; i >= 0; i = gNext[i]) nearTest(c, cells[i], S);
+    }
+  }
+  for (const o of bigs) nearTest(c, o, S);
+}
+
+function nearTest(c, o, S) {
+  if (o === c) return;
+  const dx = o.x - c.x, dy = o.y - c.y, rr = S + c.r + o.r;
+  if (dx * dx + dy * dy < rr * rr) near.push(o);
+}
+
+// Итоговая желаемая скорость: направление (dx, dy) и модуль speed, у края мира
+// направление заворачивает внутрь — иначе беглецы липнут к стенке
+function aim(c, dx, dy, speed) {
+  let l = Math.sqrt(dx * dx + dy * dy);
+  if (l < 1e-9) { c.tx = c.ty = 0; return; }
+  dx /= l; dy /= l;
+  const d = Math.sqrt(c.x * c.x + c.y * c.y), edge = d + c.r - (CONFIG.worldRadius - 160);
+  if (edge > 0 && d > 1) {
+    const w = Math.min(edge / 160, 1) * 1.5;
+    dx -= c.x / d * w; dy -= c.y / d * w;
+    l = Math.sqrt(dx * dx + dy * dy) || 1;
+    dx /= l; dy /= l;
+  }
+  c.tx = dx * speed; c.ty = dy * speed;
+}
+
+// Охота: самая выгодная добыча рядом (масса / расстояние) и бегство от всех, кто крупнее.
+// Игрок для них такой же организм: мелкие от него удирают, крупные за ним гонятся.
+function thinkHunt(c) {
+  const S = Math.min(CONFIG.aiSense + 3 * c.r, CONFIG.aiSenseMax);
+  gather(c, S);
+  let fx = 0, fy = 0, fear = 0, prey = null, best = 0;
+  for (const o of near) {
+    const dx = o.x - c.x, dy = o.y - c.y, d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+    const gap = Math.max(0, d - c.r - o.r);
+    if (o.r > c.r) {
+      const w = 1 - gap / S;
+      fx -= dx / d * w * w; fy -= dy / d * w * w;
+      if (w > fear) fear = w;
+    } else if (o.r < c.r * 0.95) {
+      const score = o.m / (gap + 60);
+      if (score > best) { best = score; prey = o; }
+    }
+  }
+  let dx = 0, dy = 0, boost = 1;
+  if (fear > 0.1) {
+    const l = Math.sqrt(fx * fx + fy * fy) || 1;
+    dx += fx / l * fear * 2; dy += fy / l * fear * 2;
+    boost = lerp(1, CONFIG.fleeBoost, fear);
+  }
+  if (prey && fear < 0.7) {
+    // целимся с упреждением — туда, где добыча будет через полсекунды
+    const px = prey.x + prey.vx * 0.5 - c.x, py = prey.y + prey.vy * 0.5 - c.y;
+    const l = Math.sqrt(px * px + py * py) || 1;
+    dx += px / l * (1 - fear); dy += py / l * (1 - fear);
+    boost = Math.max(boost, CONFIG.huntBoost * (1 - fear));
+  }
+  if (dx === 0 && dy === 0) { dx = Math.cos(c.wander); dy = Math.sin(c.wander); }
+  else c.wander = Math.atan2(dy, dx);    // потеряв цель, плывёт дальше туда же, а не рывком вбок
+  aim(c, dx, dy, c.cruise * boost);
+}
+
+// Стая: плыть туда же, куда соседи своего размера, держаться их, но не вплотную —
+// касание означает, что один съест другого. От заметно крупных и от игрока — в сторону.
+function thinkSchool(c) {
+  const S = Math.min(170 + 2 * c.r, 500);
+  gather(c, S);
+  let ax = 0, ay = 0, cx = 0, cy = 0, sx = 0, sy = 0, n = 0;
+  const keep = 34 + c.r * 0.6;           // зазор, ближе которого расталкиваемся
+  for (const o of near) {
+    if (o.mote) continue;
+    const dx = o.x - c.x, dy = o.y - c.y, d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+    const gap = d - c.r - o.r;
+    if (o.r > c.r * 1.4 || o.isPlayer) {
+      const zone = S * 0.7;
+      if (gap < zone) { const w = 1 - Math.max(gap, 0) / zone; sx -= dx / d * w * 2; sy -= dy / d * w * 2; }
+      continue;
+    }
+    const sp = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
+    if (sp > 1) { ax += o.vx / sp; ay += o.vy / sp; }
+    cx += dx; cy += dy; n++;
+    if (gap < keep) { const w = 1 - Math.max(gap, 0) / keep; sx -= dx / d * w * 3; sy -= dy / d * w * 3; }
+  }
+  let dx = Math.cos(c.wander) * 0.5 + sx, dy = Math.sin(c.wander) * 0.5 + sy;
+  if (n > 0) {
+    dx += ax / n + cx / n / S * 0.6;
+    dy += ay / n + cy / n / S * 0.6;
+  }
+  c.wander = Math.atan2(dy, dx);         // курс стаи становится своим — одиночка его держит
+  aim(c, dx, dy, c.cruise * 1.3);
+}
+
+// Водоворот: по кругу вокруг центра мира, против часовой стрелки, с лёгким
+// рысканием от блуждания; у самого центра медленнее, чтобы там не мельтешило
+function thinkWhirl(c) {
+  const d = Math.sqrt(c.x * c.x + c.y * c.y) || 1;
+  const a = Math.atan2(c.x, -c.y) + 0.45 * Math.sin(c.wander);   // касательная (−y, x) + рыскание
+  const slow = 0.4 + 0.6 * Math.min(1, d / (CONFIG.worldRadius * 0.3));
+  aim(c, Math.cos(a), Math.sin(a), c.cruise * CONFIG.whirlSpeed * slow);
+}
+
+function think(dt) {
+  const mode = CONFIG.enemyAI;
+  if (mode === 'drift') return;
+  if (mode === 'hunt' || mode === 'school') buildGrid();
+  const [t0, t1] = CONFIG.aiThink;
+  for (const c of cells) {
+    if (c.isPlayer || c.mote || c.eatenBy) continue;
+    c.think -= dt;
+    if (c.think > 0) continue;
+    c.think = lerp(t0, t1, Math.random());   // вразнобой: не все решают в один кадр
+    if (mode === 'hunt') thinkHunt(c);
+    else if (mode === 'school') thinkSchool(c);
+    else if (mode === 'whirl') thinkWhirl(c);
+    else c.tx = c.ty = 0;                   // still
   }
 }
 
@@ -1104,8 +1287,9 @@ function drawCells() {
     c.vis = c.sx > -m && c.sx < W + m && c.sy > -m && c.sy < H + m && c.sr > 0.2;
   }
   // мелкие снизу: жертва видна сквозь полупрозрачного хищника, пока растворяется
+  // сортируются только видимые: на большой карте их десятки из тысяч
   order.length = 0;
-  for (const c of cells) order.push(c);
+  for (const c of cells) if (c.vis) order.push(c);
   order.sort(byRadius);
 
   const minGlow = QUALITY[perf.q].detail ? 2 : 4;
@@ -1224,6 +1408,7 @@ function frame(now) {
 
   for (const c of cells) { c.pvx = c.vx; c.pvy = c.vy; }
   updateInput(dt);
+  if (dt > 0) think(dt);
   if (dt > 0) {
     const n = Math.ceil(dt / CONFIG.maxStep), h = dt / n;
     for (let i = 0; i < n; i++) step(h);
@@ -1274,15 +1459,40 @@ const menuBtn = $('menuBtn'), menuEl = $('menu'), newBtn = $('b-new'), sepEl = m
 // умолчания (например, баланс Normal) не доходили до тех, кто хоть раз тронул меню.
 const SAVE_KEY = 'abstract-cell-settings-v2';
 try { localStorage.removeItem('abstract-cell-settings'); } catch (e) {}
+// Ползунок: линейный (значение = позиция · k) или логарифмический (log: [от, до],
+// позиция 0…LOG_STEPS) — там, где диапазон в десятки раз: иначе умолчание оказалось
+// бы у самого края, и малые значения было бы не выставить пальцем
+const LOG_STEPS = 1000;
 const SLIDERS = [
   { id: 'eject',   key: 'ejectMassFraction', k: 0.01, fmt: v => `${+(v * 100).toFixed(2)}%` },
-  { id: 'enemies', key: 'enemyDensity',      k: 0.01, fmt: v => `${+v.toFixed(2)}× · ${enemyTotal()} cells`, world: true },
+  { id: 'enemies', key: 'enemyDensity',      log: [0.1, 20], round: v => +v.toPrecision(2), world: true,
+    fmt: v => { const n = enemyTotal(); return `${v}× · ${n} cells${n >= CONFIG.maxEnemies ? ' (max)' : ''}`; } },
   { id: 'diff',    key: 'difficulty',        k: 0.01, world: true,
     fmt: v => `${['Easy', 'Normal', 'Hard', 'Brutal'][v < 0.3 ? 0 : v < 0.65 ? 1 : v < 0.9 ? 2 : 3]} · ${Math.round(v * 100)}%` },
-  { id: 'map',     key: 'worldRadius',       k: 1,    fmt: v => `${(v / DEFAULTS.worldRadius).toFixed(1)}×`, world: true },
-  { id: 'maxe',    key: 'maxEnemySize',      k: 1,    fmt: v => `${v.toFixed(1)}× you`, world: true },
+  { id: 'map',     key: 'worldRadius',       log: [600, 13500], round: v => Math.round(v / 50) * 50, world: true,
+    fmt: v => `${(v / DEFAULTS.worldRadius).toFixed(1)}×` },
+  { id: 'maxe',    key: 'maxEnemySize',      log: [0.5, 30], round: v => +v.toPrecision(2), world: true,
+    fmt: v => `${v < 10 ? v.toFixed(1) : Math.round(v)}× you` },
 ];
-const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'sound', 'ambience', 'enemyDensity', 'difficulty', 'worldRadius', 'maxEnemySize'];
+const toUI = (sl, v) => sl.log
+  ? Math.round(Math.log(v / sl.log[0]) / Math.log(sl.log[1] / sl.log[0]) * LOG_STEPS) : v / sl.k;
+const fromUI = (sl, u) => sl.log
+  ? sl.round(sl.log[0] * Math.pow(sl.log[1] / sl.log[0], u / LOG_STEPS)) : +(u * sl.k).toFixed(6);
+function limits(sl) {
+  const el = $('s-' + sl.id);
+  return sl.log || [el.min * sl.k, el.max * sl.k];
+}
+// Поведение организмов — действует сразу, без нового мира
+const AI_MODES = {
+  drift:  'Wander on their own',
+  hunt:   'Chase smaller cells, flee from bigger — you included',
+  school: 'Swim in schools with cells of their size',
+  whirl:  'The whole liquid swirls around the center',
+  still:  'Stay put until something pushes them',
+};
+const aiInputs = menuEl.querySelectorAll('input[name="ai"]');
+const SAVED_KEYS = ['ejectMassFraction', 'cameraAutoZoom', 'sound', 'ambience', 'enemyDensity', 'difficulty',
+  'worldRadius', 'maxEnemySize', 'enemyAI'];
 const SWITCHES = { zoom: 'cameraAutoZoom', sound: 'sound', amb: 'ambience' };   // id переключателя → ключ
 const DEFAULTS = {};
 for (const k of SAVED_KEYS) DEFAULTS[k] = CONFIG[k];
@@ -1306,10 +1516,11 @@ function loadSettings() {
   if (!data || typeof data !== 'object') return;
   for (const sl of SLIDERS) {
     if (!(sl.key in data)) continue;
-    const el = $('s-' + sl.id), v = Number(data[sl.key]);
-    if (Number.isFinite(v)) CONFIG[sl.key] = clamp(v, el.min * sl.k, el.max * sl.k);
+    const [lo, hi] = limits(sl), v = Number(data[sl.key]);
+    if (Number.isFinite(v)) CONFIG[sl.key] = clamp(v, lo, hi);
   }
   for (const key of Object.values(SWITCHES)) if (typeof data[key] === 'boolean') CONFIG[key] = data[key];
+  if (data.enemyAI in AI_MODES) CONFIG.enemyAI = data.enemyAI;
   if (data.debug === true) setDebug(true);
 }
 
@@ -1322,9 +1533,11 @@ function markPending() {
 
 function syncMenu() {
   for (const sl of SLIDERS) {
-    $('s-' + sl.id).value = CONFIG[sl.key] / sl.k;
+    $('s-' + sl.id).value = toUI(sl, CONFIG[sl.key]);
     $('o-' + sl.id).textContent = sl.fmt(CONFIG[sl.key]);
   }
+  for (const el of aiInputs) el.checked = el.value === CONFIG.enemyAI;
+  $('o-ai').textContent = AI_MODES[CONFIG.enemyAI];
   for (const [id, key] of Object.entries(SWITCHES)) $('s-' + id).checked = CONFIG[key];
   $('s-amb').disabled = !CONFIG.sound;
   $('s-debug').checked = debug;
@@ -1355,7 +1568,7 @@ function closeMenu() {
 
 for (const sl of SLIDERS) {
   $('s-' + sl.id).addEventListener('input', e => {
-    CONFIG[sl.key] = +(Number(e.target.value) * sl.k).toFixed(6);
+    CONFIG[sl.key] = fromUI(sl, Number(e.target.value));
     for (const o of SLIDERS) $('o-' + o.id).textContent = o.fmt(CONFIG[o.key]);
     markPending();
     saveSettings();
@@ -1373,6 +1586,15 @@ for (const id of ['sound', 'amb']) {
     saveSettings();
     Sound.unlock();                     // переключатель — тоже жест: можно будить звук
     Sound.update();
+  });
+}
+for (const el of aiInputs) {
+  el.addEventListener('change', () => {
+    if (!el.checked) return;
+    CONFIG.enemyAI = el.value;
+    for (const c of cells) c.think = Math.random() * 0.2;   // новое поведение — за пару кадров, вразнобой
+    $('o-ai').textContent = AI_MODES[el.value];
+    saveSettings();
   });
 }
 $('s-debug').addEventListener('change', e => { setDebug(e.target.checked); saveSettings(); });

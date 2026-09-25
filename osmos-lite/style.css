@@ -151,6 +151,25 @@ canvas {
   touch-action: pan-x;
 }
 
+.m-chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 8px }
+.m-chips label { position: relative; grid-column: span 2 }
+.m-chips label:nth-child(n+4) { grid-column: span 3 }
+.m-chips input { position: absolute; opacity: 0; pointer-events: none }
+.m-chips span {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(140, 190, 255, .2);
+  background: rgba(40, 60, 90, .5);
+  color: #cfe3ff;
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+.m-chips input:checked + span { background: #2f7fd0; border-color: #4a9ae6; color: #fff }
+.m-chips input:focus-visible + span { outline: 2px solid #6ebeff; outline-offset: 2px }
+.m-note { margin-top: 6px; font-size: 12px; line-height: 1.35; color: rgba(200, 225, 255, .55) }
+
 .m-switch { align-items: center }
 .m-switch input {
   -webkit-appearance: none;
