@@ -24,7 +24,9 @@
   const HEX_CONTROL = [[0, 1], [1, 2], [1, -2], [0, -1], [-1, -2], [-1, 2]];
   const MAPS = [
     {key: 'square', name: 'Level 0', kind: 'Initial', hex: false},
-    {key: 'hex', name: 'Level 1', kind: 'Hexagone', hex: true}
+    {key: 'hex', name: 'Level 1', kind: 'Hexagone', hex: true},
+    // New worlds drawn as ASCII in levels.js.
+    ...(window.SNAKES_LEVELS || []).map(def => ({key: def.key, name: def.name, kind: def.kind, hex: !!def.hex, source: def}))
   ];
   const TOP = 0, BOTTOM = 1;
   // HightLightFade.fadingEvaluation: two-key Hermite curve.
@@ -46,11 +48,12 @@
       this.w = src.w;
       this.h = src.h;
       this.zPeriod = hex ? src.h - 1 : src.h;
-      const top = decode(src.env), bottom = decode(src.revEnv);
+      const bytes = s => (typeof s === 'string' ? decode(s) : s);
+      const top = bytes(src.env), bottom = bytes(src.revEnv);
       this.env = [new Int8Array(top.length), new Int8Array(bottom.length)];
       for (let i = 0; i < top.length; i++) { this.env[0][i] = top[i] - 1; this.env[1][i] = bottom[i] - 1; }
       this.pristine = this.env.map(a => a.slice());
-      this.color = [decode(src.color), decode(src.revColor)];
+      this.color = [bytes(src.color), bytes(src.revColor)];
       this.levels = src.levels;
       this.start = src.start;
     }
@@ -73,6 +76,50 @@
       out.x = x; out.z = z;
       return out;
     }
+  }
+
+  // levels.js draws each side of a world as text, one character per cell, the first line being the
+  // north edge. Letters are items: an upper-case letter is a crystal, the cells of a lower-case letter
+  // form one chain. `stages` lists the letters of each stage in play order.
+  const TILES = {' ': -1, '.': 0, '#': 1, '^': 2, '>': 5, '=': 6};
+  const SQUARE_DIRS = ['W', 'N', 'E', 'S'], HEX_DIRS = ['S', 'SW', 'NW', 'N', 'NE', 'SE'];
+  function buildLevel(def) {
+    const rows = def.top.length, w = Math.max(...def.top.map(line => line.length));
+    const h = def.hex ? rows + 1 : rows;   // hex columns repeat every h - 1 cells
+    const env = [new Uint8Array(w * h), new Uint8Array(w * h)];   // tile value + 1, as in the packed data
+    const color = [new Uint8Array(w * h * 3), new Uint8Array(w * h * 3)];
+    const items = new Map();
+    [def.top, def.bottom].forEach((lines, side) => {
+      for (let r = 0; r < rows; r++) for (let x = 0; x < w; x++) {
+        const ch = lines[r][x] || ' ', y = rows - 1 - r;
+        let v = TILES[ch];
+        if (v === undefined) {
+          v = 0;
+          if (!items.has(ch)) items.set(ch, {side, cells: []});
+          items.get(ch).cells.push(x, y, ch < 'a' ? 3 : 4);
+        }
+        env[side][x * h + y] = v + 1;
+      }
+      // Colour layers: [from, to, direction x | y | d(iagonal) | r(adial), optional area [c0, r0, c1, r1]].
+      for (const [from, to, dir, area = [0, 0, w - 1, rows - 1]] of def.colors[side === TOP ? 'top' : 'bottom']) {
+        const a = [1, 3, 5].map(i => parseInt(from.slice(i, i + 2), 16)), b = [1, 3, 5].map(i => parseInt(to.slice(i, i + 2), 16));
+        const [c0, r0, c1, r1] = area;
+        for (let r = r0; r <= r1; r++) for (let x = c0; x <= c1; x++) {
+          const tx = (x - c0) / Math.max(1, c1 - c0), ty = (r - r0) / Math.max(1, r1 - r0);
+          const t = dir === 'x' ? tx : dir === 'y' ? ty : dir === 'd' ? (tx + ty) / 2 : Math.hypot(tx - 0.5, ty - 0.5) / Math.SQRT1_2;
+          const o = (x * h + rows - 1 - r) * 3;
+          for (let k = 0; k < 3; k++) color[side][o + k] = Math.round(lerp(a[k], b[k], t));
+        }
+      }
+    });
+    const levels = def.stages.map((stage, i) => [...stage].map((ch, k) => {
+      const it = items.get(ch);
+      return {g: (i + 1) * 100 + k, rev: it.side === BOTTOM, combo: it.cells.length / 3, cells: it.cells};
+    }));
+    const [sc, sr, sd] = def.start;
+    const start = {x: sc - DATA_OFFSET, z: rows - 1 - sr - DATA_OFFSET - (def.hex && (sc & 1) ? 0.5 : 0),
+      ci: (def.hex ? HEX_DIRS : SQUARE_DIRS).indexOf(sd)};
+    return {w, h, env: env[0], revEnv: env[1], color: color[0], revColor: color[1], levels, start};
   }
 
   // Start a selected stage close to its active group, on the correct side of the map.
@@ -1532,7 +1579,7 @@
     simulate(seconds) { for (let i = 0; i < seconds * 60 && this.state === 'playing'; i++) { this.update(1 / 60); this.render(); } }
     mapData(index) {
       const def = MAPS[index];
-      if (!this.maps[def.key]) this.maps[def.key] = new MapData(DATA[def.key], def.hex);
+      if (!this.maps[def.key]) this.maps[def.key] = new MapData(def.source ? buildLevel(def.source) : DATA[def.key], def.hex);
       return this.maps[def.key];
     }
     resize() {
@@ -1927,12 +1974,13 @@
         stages.replaceChildren(...map.levels.map((_, index) => new Option(`Stage ${index + 1}`, index)));
         stages.dataset.map = def.key;
       }
+      // The preview is square: a wide or tall map is centred on black.
       const cv = $('level-preview'), ctx = cv.getContext('2d');
-      cv.width = map.w;
-      cv.height = map.h;
-      const img = ctx.createImageData(map.w, map.h);
+      const size = Math.max(map.w, map.h), ox = (size - map.w) >> 1, oy = (size - map.h) >> 1;
+      cv.width = cv.height = size;
+      const img = ctx.createImageData(size, size);
       for (let x = 0; x < map.w; x++) for (let y = 0; y < map.h; y++) {
-        const idx = x * map.h + y, o = ((map.h - 1 - y) * map.w + x) * 4, v = map.pristine[TOP][idx];
+        const idx = x * map.h + y, o = ((oy + map.h - 1 - y) * size + ox + x) * 4, v = map.pristine[TOP][idx];
         const c = map.color[TOP];
         if (v === -1) { img.data[o + 3] = 255; continue; }
         const k = v === 1 || v === 2 ? 0.45 : 1;
