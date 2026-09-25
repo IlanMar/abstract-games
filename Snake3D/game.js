@@ -1618,6 +1618,11 @@
       this.ui.startPrompt(false);
       return true;
     }
+    // Options > Restart Level (only while a game is paused): the current stage from its start.
+    restartLevel() {
+      if (this.state !== 'paused' || !this.levels) return;
+      this.startMap(this.mapIndex, this.levels.index);
+    }
     toMenu() {
       this.state = 'menu';
       this.syncFpsCounter();
@@ -1892,6 +1897,7 @@
       $('prev-level').addEventListener('click', () => { this.selected = Math.max(0, this.selected - 1); this.levelCard(); });
       $('resume').addEventListener('click', () => game.pause(false));
       $('to-menu').addEventListener('click', () => { game.state = 'menu'; game.toMenu(); });
+      $('restart-level').addEventListener('click', () => game.restartLevel());
       $('pause-button').addEventListener('click', e => { e.stopPropagation(); game.pause(true); });
       const s = game.save.data;
       const music = $('music-volume'), sfx = $('sfx-volume');
@@ -1936,7 +1942,9 @@
         $('continue').disabled = !(s.lastLevel[s.lastMap] > 0);
       }
       if (panel === 'new') this.levelCard();
-      const first = document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
+      // Opened from the main menu there is no level to restart.
+      $('restart-level').classList.toggle('hidden', this.game.state !== 'paused');
+      const first =document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
       if (first && matchMedia('(hover: hover)').matches) first.focus({preventScroll: true});
     }
     levelCard() {
