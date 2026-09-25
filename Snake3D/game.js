@@ -140,8 +140,14 @@
     playMusic(el) {
       this.wantMusic = el;
       for (const other of [this.gameMusic, this.menuMusic, this.pauseMusic]) if (other !== el) other.pause();
-      if (!el || !this.unlocked) return;
+      if (!el || !this.unlocked || this.hidden) return;
       if (el.paused) el.play().catch(() => {});
+    }
+    // A hidden page stays silent; the wanted track resumes when the page is shown again.
+    setHidden(hidden) {
+      this.hidden = hidden;
+      if (hidden) for (const el of [this.gameMusic, this.menuMusic, this.pauseMusic]) el.pause();
+      else if (this.wantMusic) this.playMusic(this.wantMusic);
     }
     restartMusic(el) {
       try { el.currentTime = 0; } catch (e) { /* not loaded yet */ }
@@ -299,13 +305,13 @@
       this.uber = new T.ShaderMaterial({
         uniforms: {
           tMain: {value: null}, tBloom: {value: null}, texel: {value: new T.Vector2()}, bloomTexel: {value: new T.Vector2()},
-          scale: {value: 1}, bloomIntensity: {value: 0}, useBloom: {value: 1}, caAmount: {value: 0}, grade: {value: 1},
+          scale: {value: 1}, bloomIntensity: {value: 0}, caAmount: {value: 0}, grade: {value: 1},
           balance: {value: colorBalance(-87, -80)}, gain: {value: 1.8}, invGamma: {value: 1 / (1 + 0.317 * 0.8)},
           curve: {value: h.curve}, toeA: {value: h.toeA}, toeB: {value: h.toeB}, midA: {value: h.midA}, midB: {value: h.midB}, shoA: {value: h.shoA}, shoB: {value: h.shoB}
         },
         vertexShader: FULLSCREEN_VERT,
         fragmentShader: BLOOM_COMMON + `
-          uniform sampler2D tBloom; uniform vec2 bloomTexel; uniform float scale, bloomIntensity, useBloom, caAmount, grade;
+          uniform sampler2D tBloom; uniform vec2 bloomTexel; uniform float scale, bloomIntensity, caAmount, grade;
           uniform vec3 balance; uniform float gain, invGamma;
           uniform vec3 curve; uniform vec4 toeA, midA, shoA; uniform vec2 toeB, midB, shoB;
           const mat3 LIN_2_LMS = mat3(3.90405e-1, 7.08416e-2, 2.31082e-2, 5.49941e-1, 9.63172e-1, 1.28021e-1, 8.92632e-3, 1.35775e-3, 9.36245e-1);
@@ -323,7 +329,7 @@
               color = vec4(a.r, b.g, c.b, 1.0);
             } else color = texture2D(tMain, vUv);
             vec3 col = toLinear(color.rgb);
-            if (useBloom > 0.5) col += tent(tBloom, vUv, bloomTexel, scale).rgb * bloomIntensity;
+            col += tent(tBloom, vUv, bloomTexel, scale).rgb * bloomIntensity;
             vec2 d = abs(vUv - 0.5) * 1.779;
             d = pow(clamp(d, 0.0, 1.0), vec2(3.95));
             col *= pow(clamp(1.0 - dot(d, d), 0.0, 1.0), 1.405);
@@ -339,7 +345,6 @@
           }`,
         depthTest: false, depthWrite: false
       });
-      this.bloomEnabled = true;
     }
     target(w, h, samples) {
       return new T.WebGLRenderTarget(w, h, {type: this.type, format: T.RGBAFormat, depthBuffer: samples !== undefined, samples: samples || 0,
@@ -360,7 +365,7 @@
       this.up = [];
       for (let i = 0; i < this.iterations; i++) {
         this.down.push(this.target(tw, th));
-        this.up.push(this.target(tw, th));
+        if (i < this.iterations - 1) this.up.push(this.target(tw, th));   // the smallest level is never upsampled into
         tw = Math.max(1, tw >> 1);
         th = Math.max(1, th >> 1);
       }
@@ -374,35 +379,31 @@
       const r = this.renderer;
       r.setRenderTarget(this.scene);
       r.render(scene, camera);
-      const useBloom = this.bloomEnabled;
       let last = this.scene;
-      if (useBloom) {
-        const lthresh = Math.pow((0.78 + 0.055) / 1.055, 2.4), knee = lthresh * 0.257 + 1e-5;
-        this.prefilter.uniforms.threshold.value.set(lthresh, lthresh - knee, knee * 2, 0.25 / knee);
-        for (let i = 0; i < this.iterations; i++) {
-          const mat = i === 0 ? this.prefilter : this.downsample;
-          mat.uniforms.tMain.value = last.texture;
-          mat.uniforms.texel.value.set(1 / last.width, 1 / last.height);
-          this.pass(mat, this.down[i]);
-          last = this.down[i];
-        }
-        let lastUp = this.down[this.iterations - 1];
-        for (let i = this.iterations - 2; i >= 0; i--) {
-          const m = this.upsample.uniforms;
-          m.tMain.value = lastUp.texture;
-          m.tBloom.value = this.down[i].texture;
-          m.texel.value.set(1 / lastUp.width, 1 / lastUp.height);
-          m.scale.value = this.sampleScale;
-          this.pass(this.upsample, this.up[i]);
-          lastUp = this.up[i];
-        }
-        this.uber.uniforms.tBloom.value = lastUp.texture;
-        this.uber.uniforms.bloomTexel.value.set(1 / lastUp.width, 1 / lastUp.height);
+      const lthresh = Math.pow((0.78 + 0.055) / 1.055, 2.4), knee = lthresh * 0.257 + 1e-5;
+      this.prefilter.uniforms.threshold.value.set(lthresh, lthresh - knee, knee * 2, 0.25 / knee);
+      for (let i = 0; i < this.iterations; i++) {
+        const mat = i === 0 ? this.prefilter : this.downsample;
+        mat.uniforms.tMain.value = last.texture;
+        mat.uniforms.texel.value.set(1 / last.width, 1 / last.height);
+        this.pass(mat, this.down[i]);
+        last = this.down[i];
       }
+      let lastUp = this.down[this.iterations - 1];
+      for (let i = this.iterations - 2; i >= 0; i--) {
+        const m = this.upsample.uniforms;
+        m.tMain.value = lastUp.texture;
+        m.tBloom.value = this.down[i].texture;
+        m.texel.value.set(1 / lastUp.width, 1 / lastUp.height);
+        m.scale.value = this.sampleScale;
+        this.pass(this.upsample, this.up[i]);
+        lastUp = this.up[i];
+      }
+      this.uber.uniforms.tBloom.value = lastUp.texture;
+      this.uber.uniforms.bloomTexel.value.set(1 / lastUp.width, 1 / lastUp.height);
       const u = this.uber.uniforms;
       u.tMain.value = this.scene.texture;
       u.scale.value = this.sampleScale;
-      u.useBloom.value = useBloom ? 1 : 0;
       u.bloomIntensity.value = Math.pow(2, fx.bloom / 10) - 1;
       u.caAmount.value = fx.chromatic * 0.05;
       u.grade.value = fx.grade ? 1 : 0;
@@ -846,7 +847,6 @@
       this.onGame = false;
       this.combos = [];
       this.currentCombo = 0;
-      this.pos = {x: s.x, z: s.z};
       const d = this.dir(this.ci);
       this.oldpos = V(s.x, this.upOffset, s.z);
       this.target = V(s.x + d[0], this.upOffset, s.z + d[1]);
@@ -1291,7 +1291,8 @@
     }
     dispose() {
       this.group.parent.remove(this.group);
-      this.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+      // InstancedMesh.dispose frees the instance matrix buffers; geometry.dispose does not.
+      this.group.traverse(o => { if (o.isInstancedMesh) o.dispose(); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
     }
   }
 
@@ -1459,7 +1460,12 @@
       this.input = new Input(this);
       this.resize();
       window.addEventListener('resize', () => this.resize());
-      document.addEventListener('visibilitychange', () => { if (document.hidden && this.isRunning()) this.pause(true); this.last = performance.now(); });
+      document.addEventListener('visibilitychange', () => {
+        this.audio.setHidden(document.hidden);
+        if (document.hidden && this.isRunning()) this.pause(true);
+        this.last = performance.now();
+        this.drawnState = null;
+      });
       this.ui.showMenu('main');
       requestAnimationFrame(t => this.frame(t));
     }
@@ -1482,8 +1488,8 @@
       if (aspect < 1) fov = Math.min(90, 2 * Math.atan(Math.tan(37.5 * DEG) / aspect) / DEG);
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
-      this.post.bloomEnabled = true;
       this.post.setSize(Math.floor(w * q), Math.floor(h * q));
+      this.drawnState = null;
     }
     later(delay, fn) { this.timers.push({at: this.time + delay, fn}); }
     // ---------------- scene management
@@ -1660,7 +1666,11 @@
       this.last = now;
       if (this.frozen) dt = 0;
       if (this.state === 'playing') this.update(dt);
-      this.render();
+      // The menu and the pause screen are still pictures: draw them once, not every frame.
+      if (this.state === 'playing' || this.drawnState !== this.state) {
+        this.render();
+        this.drawnState = this.state === 'playing' ? null : this.state;
+      }
     }
     update(dt) {
       this.time += dt;
@@ -1800,7 +1810,7 @@
       sfx.value = s.sfx;
       music.addEventListener('input', () => { s.music = +music.value; game.audio.applyVolumes(); game.save.write(); });
       sfx.addEventListener('input', () => { s.sfx = +sfx.value; game.audio.applyVolumes(); game.save.write(); });
-      document.querySelectorAll('[data-grading]').forEach(b => b.addEventListener('click', () => { s.grading = b.dataset.grading; game.fx.grade = s.grading !== 'off'; game.save.write(); this.gradingButtons(); }));
+      document.querySelectorAll('[data-grading]').forEach(b => b.addEventListener('click', () => { s.grading = b.dataset.grading; game.fx.grade = s.grading !== 'off'; game.drawnState = null; game.save.write(); this.gradingButtons(); }));
       this.gradingButtons();
       document.addEventListener('pointerdown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
       document.addEventListener('keydown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
