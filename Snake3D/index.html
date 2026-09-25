@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="theme-color" content="#000000">
   <title>Snakes 3D</title>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <main id="app">
@@ -29,7 +29,6 @@
         <button data-go="start">Start Game</button>
         <button data-go="top">Top Score</button>
         <button data-go="options">Option</button>
-        <button data-go="help">Instructions</button>
       </div>
       <div class="panel hidden" data-panel="start">
         <h2>Start Game</h2>
@@ -68,22 +67,10 @@
         <div class="space"></div>
         <button data-back>Back</button>
       </div>
-      <div class="panel hidden" data-panel="help">
-        <h2>Instructions</h2>
-        <div class="help">
-          <p>Tap the left or right half of the screen, or press ← / →, to turn.</p>
-          <p>Hold two fingers, ↑ or Space to accelerate.</p>
-          <p>A cell with a spinning gem makes the snake longer. Cross a whole chain of pulsing blue cells without a break to raise the multiplier.</p>
-          <p>Crawl over an edge to reach the underside. A spike costs one segment, a wall costs four.</p>
-          <p>Clear every level as fast as you can: the best time is saved.</p>
-        </div>
-        <button data-back>Back</button>
-      </div>
       <div class="panel hidden" data-panel="pause">
         <h2>Pause</h2>
         <button id="resume">Continue</button>
         <button data-go="options">Options</button>
-        <button data-go="help">Instructions</button>
         <div class="space"></div>
         <button id="to-menu">Main Menu</button>
       </div>
@@ -94,6 +81,6 @@
   </main>
   <script src="vendor/three.min.js"></script>
   <script src="nsnakes-data.js?v=8"></script>
-  <script src="game.js?v=10"></script>
+  <script src="game.js?v=11"></script>
 </body>
 </html>

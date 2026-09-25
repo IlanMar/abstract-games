@@ -561,7 +561,8 @@
           float fog = 1.0 - clamp(distance(vWorld, uCam) / 18.0, 0.0, 1.0);
           gl_FragColor = vec4(vec3(line * fog), 1.0);
         }`,
-      extensions: {derivatives: true}
+      extensions: {derivatives: true},
+      side: T.DoubleSide
     });
   }
 
