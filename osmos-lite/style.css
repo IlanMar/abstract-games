@@ -170,6 +170,35 @@ canvas {
 .m-chips input:focus-visible + span { outline: 2px solid #6ebeff; outline-offset: 2px }
 .m-note { margin-top: 6px; font-size: 12px; line-height: 1.35; color: rgba(200, 225, 255, .55) }
 
+.m-players { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 13px }
+.m-players span { display: inline-flex; align-items: center; gap: 6px }
+.m-players i, #netbar i { display: inline-block; width: 10px; height: 10px; border-radius: 50% }
+#mp-code { color: #e6f0ff; letter-spacing: .06em }
+#menu input[type="range"]:disabled, .m-btns button:disabled { opacity: .35; cursor: default }
+.m-chips input:disabled + span { opacity: .35; cursor: default }
+
+#netbar {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(140, 190, 255, .14);
+  background: rgba(10, 16, 30, .7);
+  color: #cfe3ff;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+#netbar[hidden] { display: none }
+#netbar i.me { box-shadow: 0 0 0 2px rgba(230, 240, 255, .85) }
+#netbar span { margin-left: 3px; overflow: hidden; text-overflow: ellipsis }
+
 .m-switch { align-items: center }
 .m-switch input {
   -webkit-appearance: none;

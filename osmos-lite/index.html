@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Abstract Cell</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -17,6 +17,7 @@
 <div id="hint">Click anywhere — the cell spits a droplet there and drifts the other way</div>
 <div id="over"><span>Absorbed — click to restart</span></div>
 <pre id="debug"></pre>
+<div id="netbar" hidden></div>
 
 <button id="menuBtn" type="button" aria-label="Settings" aria-expanded="false" aria-controls="menu">
   <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
@@ -26,6 +27,18 @@
 
 <div id="menu" role="dialog" aria-label="Settings" hidden>
   <div class="m-title">Settings</div>
+
+  <div id="mp-solo">
+    <div class="m-btns"><button type="button" id="b-mp">Play with friends</button></div>
+    <div class="m-note">Makes a room link for up to 6 players. Whoever opens it first hosts the world</div>
+  </div>
+  <div id="mp-room" hidden>
+    <div class="m-row"><span>Room <b id="mp-code"></b></span><output id="mp-role"></output></div>
+    <div class="m-players" id="mp-players"></div>
+    <div class="m-btns"><button type="button" id="b-invite">Invite</button><button type="button" id="b-leave">Leave</button></div>
+    <div class="m-note" id="mp-note"></div>
+  </div>
+  <div class="m-sep"></div>
 
   <label class="m-row" for="s-eject"><span>Droplet mass</span><output id="o-eject"></output></label>
   <input type="range" id="s-eject" min="0.25" max="10" step="0.25">
@@ -47,7 +60,7 @@
   <label class="m-row m-switch" for="s-bact"><span>Bacteria</span><input type="checkbox" id="s-bact"></label>
   <div class="m-note">Dark hunters that grab smaller cells with tentacles — you too. Burst away to break free</div>
 
-  <div class="m-sep">New world</div>
+  <div class="m-sep" id="sep-world">New world</div>
 
   <label class="m-row" for="s-enemies"><span>Density</span><output id="o-enemies"></output></label>
   <input type="range" id="s-enemies" min="0" max="1000" step="1">
@@ -69,6 +82,7 @@
   <label class="m-row m-switch m-last" for="s-debug"><span>Show FPS</span><input type="checkbox" id="s-debug"></label>
 </div>
 
-<script src="game.js?v=20"></script>
+<script src="game.js?v=21"></script>
+<script src="net.js?v=21"></script>
 </body>
 </html>

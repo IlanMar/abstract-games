@@ -164,6 +164,9 @@ const RGB_PLAYER = [110, 190, 255];
 const RGB_FOOD   = [ 95, 225, 165];
 const RGB_EQUAL  = [175, 185, 205];
 const RGB_THREAT = [255, 118,  92];
+// Цвета игроков в сетевой игре: 0 — хост (и одиночная игра). Зелёного и красного нет —
+// это цвета добычи и угрозы
+const PLAYER_RGB = [RGB_PLAYER, [255, 125, 205], [180, 135, 255], [255, 215, 95], [255, 160, 80], [95, 230, 230]];
 
 let W = 0, H = 0, DPR = 1;
 const cam = { x: 0, y: 0, vx: 0, vy: 0, zoom: 1, fx: 0, fy: 0, fr: CONFIG.playerRadius };
@@ -171,6 +174,11 @@ const input = { down: false, x: 0, y: 0, held: 0, streamT: 0 };
 let cells = [], order = [], player = null, cellId = 0;
 let time = 0, dead = false, deadT = 0, spawnT = 0, bactT = 0, shots = 0;
 let firstRun = true, debug = false, fps = 60, last = performance.now();
+// Сетевая игра (net.js). role: null — одиночная; 'host' — этот телефон считает весь мир;
+// 'client' — шлёт хосту тапы и рисует его снимки. remotes — гости у хоста: соединение,
+// цвет, клетка; focus — за кем у гостя следит камера; localCfg — свои настройки мира
+// гостя, пока вместо них действуют хостовы (чтобы не сохранить чужие)
+const net = { role: null, myColor: 0, remotes: [], focus: null, localCfg: {} };
 
 // ============================================================================
 // Организмы
@@ -186,6 +194,7 @@ function makeCell(x, y, r, isPlayer) {
     steer: CONFIG.steerTime, parent: null, grace: 0, mote: false,   // для выброшенных капель
     tx: 0, ty: 0, think: Math.random() * 0.2,   // желаемая скорость по enemyAI и когда её пересчитать
     bact: false, arms: null, grabCd: 0,           // бактерия: щупальца и пауза между хватками
+    color: 0, owner: null,             // игрок: цвет и гость-хозяин (null — свой, на этом телефоне)
     // только для отрисовки
     svx: 0, svy: 0, st: 0, ang: 0,     // сглаженная скорость, растяжение, его угол
     pvx: 0, pvy: 0, ax: 0, ay: 0,      // скорость до кадра и сглаженное ускорение
@@ -218,15 +227,26 @@ function place(r, safe, farFromView, maxDist) {
     if (farFromView) {
       const view = Math.hypot(W, H) / 2 / cam.zoom;
       if (Math.hypot(x - cam.x, y - cam.y) < view + r * 2) continue;
+      if (!farFromGuests(x, y, r)) continue;
     }
     let free = true;
     const pad = 24 / Math.sqrt(Math.max(1, CONFIG.enemyDensity));   // в тесноте зазор меньше — иначе не влезут
     for (const o of cells) {
-      if (Math.hypot(x - o.x, y - o.y) < o.r + r + pad) { free = false; break; }
+      // от других игроков — как от своего: не ближе safe
+      if (Math.hypot(x - o.x, y - o.y) < o.r + r + (o.isPlayer ? Math.max(pad, safe) : pad)) { free = false; break; }
     }
     if (free) return { x, y };
   }
   return null;
+}
+
+// Вне экранов гостей: хост знает их размер в пикселях мира (гость присылает)
+function farFromGuests(x, y, r) {
+  for (const rp of net.remotes) {
+    const c = rp.cell || rp.eater;
+    if (c && Math.hypot(x - c.x, y - c.y) < rp.viewR + r * 2) return false;
+  }
+  return true;
 }
 
 function spawn(r, safe, farFromView, maxDist) {
@@ -300,6 +320,7 @@ function reset() {
   if (!firstRun) Sound.rebirth();
   cells = [];
   player = makeCell(0, 0, CONFIG.playerRadius, true);
+  player.color = net.myColor;
   cells.push(player);
   const r0 = CONFIG.playerRadius, maxE = CONFIG.maxEnemySize;
   const weights = CONFIG.population.map(groupWeight), total = enemyTotal();
@@ -336,6 +357,39 @@ function reset() {
     cam.zoom = targetZoom();
     firstRun = false;
   }
+  if (net.role === 'host') netWorldReset();   // гости — в новый мир тоже
+}
+
+// Сетевая игра: игрок (свой или гостя) появляется в уже живущем мире — в свободном
+// месте, где рядом нет никого крупнее
+function spawnPlayerCell(color, owner) {
+  const r = CONFIG.playerRadius;
+  let at = null;
+  for (let k = 0; k < 20 && !at; k++) {
+    const q = place(r, 0, false);
+    if (!q) continue;
+    let safe = true;
+    for (const o of cells) {
+      if (o.r > r && Math.hypot(q.x - o.x, q.y - o.y) < CONFIG.threatSafe * 0.7 + o.r) { safe = false; break; }
+    }
+    if (safe) at = q;
+  }
+  if (!at) at = place(r, 0, false) || { x: 0, y: 0 };
+  const c = makeCell(at.x, at.y, r, true);
+  c.color = color; c.owner = owner;
+  cells.push(c);
+  return c;
+}
+
+// Тап после гибели: в одиночной — новый мир, в сетевой мир общий — только новая клетка
+function restart() {
+  if (net.role === 'client') netRespawn();
+  else if (net.role === 'host') {
+    player = spawnPlayerCell(net.myColor, null);
+    dead = false; deadT = 0; input.down = false;
+    overEl.classList.remove('show');
+    Sound.rebirth();
+  } else reset();
 }
 
 // ============================================================================
@@ -526,7 +580,7 @@ cv.addEventListener('pointerdown', e => {
   Sound.unlock();
   if (menuOpen) { closeMenu(); return; }
   if (dead) {
-    if (deadT > 0.5) reset();           // тап-рестарт, но не тот же тап, что пришёлся на смерть
+    if (deadT > 0.5) restart();         // тап-рестарт, но не тот же тап, что пришёлся на смерть
     return;
   }
   activePointer = e.pointerId;
@@ -560,7 +614,7 @@ window.addEventListener('keydown', e => {
   Sound.unlock();
   if (e.code === 'Escape' && menuOpen) closeMenu();
   if (e.code === 'KeyD' && !menuOpen) setDebug(!debug);
-  if (dead && deadT > 0.5 && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR')) reset();
+  if (dead && deadT > 0.5 && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR')) restart();
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -574,12 +628,27 @@ document.addEventListener('visibilitychange', () => {
 // импульс сохраняется: (M − dm)·v' + dm·(v + u·n) = M·v  →  v' = v − n·u·dm / (M − dm)
 function eject(sx, sy) {
   const p = player;
-  if (dead || p.eatenBy || p.r < CONFIG.ejectMinRadius) return false;
+  if (dead || p.dead || p.eatenBy || p.r < CONFIG.ejectMinRadius) return false;
   const px = (p.x - cam.x) * cam.zoom + W / 2, py = (p.y - cam.y) * cam.zoom + H / 2;
   const dx = sx - px, dy = sy - py, d = Math.hypot(dx, dy);
   if (d <= p.r * cam.zoom + CONFIG.deadZone) return false;    // тап по самой клетке — мимо
   const nx = dx / d, ny = dy / d;
 
+  if (net.role === 'client') {
+    // Выстрелит хост, капля придёт со снимком; отклик пальцу — сразу
+    netTap(nx, ny);
+    const g = p.r + 2;
+    puff(p.x + nx * g, p.y + ny * g, nx, ny, p.vx, p.vy, p.r);
+  } else ejectCell(p, nx, ny);
+  ripple(sx, sy);
+  Sound.eject(p.r);
+  p.flash = Math.min(1, p.flash + 0.25);
+  shots++;
+  return true;
+}
+
+// Сама физика выстрела — для любого игрока, в том числе гостя на хосте
+function ejectCell(p, nx, ny) {
   const M = p.m, dm = M * CONFIG.ejectMassFraction, u = CONFIG.ejectSpeed;
   setMass(p, M - dm);
   const m = makeCell(0, 0, Math.sqrt(dm / CONFIG.density), false);
@@ -594,13 +663,8 @@ function eject(sx, sy) {
   m.cruise = CONFIG.driftSpeed[0] * 0.5;                        // растратив разгон, еле дрейфует
   cells.push(m);
 
-  puff(m.x, m.y, nx, ny, p.vx, p.vy);
-  ripple(sx, sy);
-  Sound.eject(p.r);
-  p.flash = Math.min(1, p.flash + 0.25);
-  shots++;
+  puff(m.x, m.y, nx, ny, p.vx, p.vy, p.r);
   trimMotes();
-  return true;
 }
 
 // Слишком много капель — убираем самые старые, которые никого не едят и не едомы.
@@ -633,8 +697,10 @@ function updateInput(dt) {
 // ============================================================================
 
 function stepPlayer(h) {
-  const p = player;
-  if (p.eatenBy) return;
+  for (const c of cells) if (c.isPlayer && !c.eatenBy) coast(c, h);
+}
+
+function coast(p, h) {
   // Двигатель — только выстрелы (eject), здесь клетка просто плывёт по инерции
   const relM = p.m / baseMass();
 
@@ -861,7 +927,8 @@ function grabScan(dt) {
     free.t = best;
     free.ext = Math.min(free.ext, 0.3);    // щупальце выстреливает заново, а не появляется целым
     b.grabCd = 0.25;                        // следующее — чуть погодя: хватают по одному
-    if (best.isPlayer) Sound.grab();
+    if (best === player) Sound.grab();
+    else if (best.owner) netSound(best.owner, 'grab');
   }
 }
 
@@ -893,8 +960,10 @@ function capture(big, small) {
   small.m0 = small.m;
   // мелочь растворяется быстро, жертва почти своего размера — дольше
   small.absorbT = CONFIG.absorptionTime * clamp(0.35 + 1.3 * Math.sqrt(small.m / big.m), 0.35, 1.6);
-  if (big.isPlayer) Sound.eat(small.r / big.r, small.parent === big);
-  else if (small.isPlayer) Sound.death();
+  if (big === player) Sound.eat(small.r / big.r, small.parent === big);
+  else if (small === player) Sound.death();
+  if (big.owner) netSound(big.owner, 'eat', small.r / big.r, small.parent === big);
+  if (small.owner) netSound(small.owner, 'death');
 }
 
 // Sort-and-sweep: клетки лежат в массиве по левому краю, пары проверяются, только пока
@@ -1002,7 +1071,8 @@ function absorb(h) {
 function stepCamera(h) {
   // Фокус: игрок, а после смерти — тот, кто его съел
   let fx = cam.fx, fy = cam.fy, vx = 0, vy = 0;
-  const focus = !player.dead ? player : (player.eatenBy && !player.eatenBy.dead ? player.eatenBy : null);
+  const focus = net.role === 'client' ? net.focus
+    : !player.dead ? player : (player.eatenBy && !player.eatenBy.dead ? player.eatenBy : null);
   if (focus) {
     fx = focus.x; fy = focus.y; vx = focus.vx; vy = focus.vy;
     cam.fr = focus.r;
@@ -1078,8 +1148,8 @@ let partNext = 0;
 function resetParticles() { for (const p of PARTS) p.life = 0; }
 
 // Брызги у рождения капли: веер вдоль выстрела
-function puff(x, y, nx, ny, vx, vy) {
-  const size = Math.sqrt(player.r / CONFIG.playerRadius);
+function puff(x, y, nx, ny, vx, vy, pr) {
+  const size = Math.sqrt(pr / CONFIG.playerRadius);
   for (let i = 0; i < CONFIG.puffCount; i++) {
     const p = PARTS[partNext]; partNext = (partNext + 1) % PARTS.length;
     const spread = (Math.random() - 0.5) * 1.1, kick = (120 + Math.random() * 260) * size;
@@ -1136,7 +1206,7 @@ function updateVisuals(dt) {
 
     c.flash *= Math.exp(-3 * dt);
     if (c.born < 1) c.born = Math.min(1, c.born + dt / 1.2);
-    if (!c.isPlayer) {
+    if (c !== player) {
       // знак — съедобна или опасна, модуль — насколько; даже чуть меньшая уже заметно зелёная
       const lq = Math.log(c.r / pr) / Math.log(CONFIG.tintRange);
       const q = lq === 0 ? 0 : Math.sign(lq) * Math.max(0.45, Math.min(1, Math.abs(lq)));
@@ -1308,11 +1378,13 @@ function sprite(size, stops) {
   return cnv;
 }
 function paletteOf(c) {
-  const key = c.isPlayer ? -1 : Math.round((clamp(c.tint, -1, 1) + 1) * 16);
+  return palette(c.isPlayer ? -1 - c.color : Math.round((clamp(c.tint, -1, 1) + 1) * 16));
+}
+function palette(key) {
   let p = PAL.get(key);
   if (!p) {
     const t = key / 16 - 1;
-    const col = key < 0 ? RGB_PLAYER : t < 0 ? mix(RGB_EQUAL, RGB_FOOD, -t) : mix(RGB_EQUAL, RGB_THREAT, t);
+    const col = key < 0 ? PLAYER_RGB[-1 - key] || RGB_PLAYER : t < 0 ? mix(RGB_EQUAL, RGB_FOOD, -t) : mix(RGB_EQUAL, RGB_THREAT, t);
     const lc = light(col), inner = key < 0 ? 0.5 / 2.4 : 0.5 / 1.9;
     // Цитоплазма — градиент единичного радиуса: клетка рисуется в масштабе sr, так что
     // один объект годится для любой клетки этого оттенка, прозрачность — через globalAlpha
@@ -1324,6 +1396,7 @@ function paletteOf(c) {
     p = {
       col, lc, body,
       rim: rgba(lc, key < 0 ? 0.6 : 0.45),
+      ring: rgba(lc, 0.75),
       dot: rgba(lc, 0.7),
       organelle: rgba(lc, 0.32),
       glow: sprite(128, [[0, rgba(col, 1)], [inner, rgba(col, 1)], [1, rgba(col, 0)]]),
@@ -1540,6 +1613,15 @@ function drawBact(c, pal, a) {
   ctx.globalAlpha = 1;
 }
 
+// Чужой игрок — своим цветом, а съедобен он или опасен — тонким кольцом вокруг
+function drawThreatRing(c) {
+  ctx.globalAlpha = alphaOf(c) * 0.7;
+  ctx.strokeStyle = palette(Math.round((clamp(c.tint, -1, 1) + 1) * 16)).ring;
+  ctx.lineWidth = Math.max(1.2, c.sr * 0.06);
+  ctx.beginPath(); ctx.arc(c.sx, c.sy, c.sr * 1.2 + 2, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 const byRadius = (a, b) => a.r - b.r;
 
 function drawCells() {
@@ -1566,10 +1648,11 @@ function drawCells() {
     if (!c.vis) continue;
     if (c.bact) drawBact(c, bactPaletteOf(c), alphaOf(c));
     else drawBody(c, paletteOf(c), alphaOf(c));
+    if (c.isPlayer && c !== player && c.sr > 2.5) drawThreatRing(c);
   }
 }
 
-const PART_COLOR = rgba(RGB_PLAYER, 0.45), RIPPLE_COLOR = rgba(RGB_PLAYER, 0.4);
+let PART_COLOR = rgba(RGB_PLAYER, 0.45), RIPPLE_COLOR = rgba(RGB_PLAYER, 0.4);   // у гостя — его цвет
 
 function drawParticles() {
   const z = cam.zoom;
@@ -1650,7 +1733,7 @@ function frame(now) {
   // процессора, последний кадр остаётся на экране. closeMenu запустит его снова.
   // Исключение — зум: переключили его в меню, и камера сразу плавно доезжает до нового
   // масштаба за меню, пока мир стоит. Доехала — цикл засыпает.
-  if (menuOpen) {
+  if (menuOpen && !net.role) {          // общий мир не ставится на паузу
     const dt = Math.min(Math.max((now - last) / 1000, 0), CONFIG.maxFrameDt);
     last = now;
     if (easeZoom(dt) < 0.002) { looping = false; return; }
@@ -1677,8 +1760,9 @@ function frame(now) {
 
   for (const c of cells) { c.pvx = c.vx; c.pvy = c.vy; }
   updateInput(dt);
-  if (dt > 0) think(dt);
-  if (dt > 0) {
+  if (net.role === 'client') netApply(dt);          // мир считает хост — здесь только его снимки
+  else if (dt > 0) {
+    think(dt);
     const n = Math.ceil(dt / CONFIG.maxStep), h = dt / n;
     for (let i = 0; i < n; i++) step(h);
   }
@@ -1689,7 +1773,8 @@ function frame(now) {
   updateParticles(dt);
   updateVisuals(dt);
   Sound.tick(dt);
-  repopulate(dt);
+  if (net.role !== 'client') repopulate(dt);
+  if (net.role) netTick(dt);
   checkFinite();
 
   if (shots >= 4) hintEl.classList.add('hide');
@@ -1713,7 +1798,8 @@ function frame(now) {
       `zoom   ${cam.zoom.toFixed(2)}\n` +
       `cells  ${cells.length}\n` +
       `dpr    ${DPR}  quality ${perf.q}\n` +
-      `js     ${perf.work.toFixed(2)} ms/frame`;
+      `js     ${perf.work.toFixed(2)} ms/frame` +
+      (net.role ? `\nnet    ${netDebug()}` : '');
   }
   requestAnimationFrame(frame);
 }
@@ -1723,7 +1809,7 @@ function frame(now) {
 // Настройки запоминаются в localStorage этого браузера.
 // ============================================================================
 
-const menuBtn = $('menuBtn'), menuEl = $('menu'), newBtn = $('b-new'), sepEl = menuEl.querySelector('.m-sep');
+const menuBtn = $('menuBtn'), menuEl = $('menu'), newBtn = $('b-new'), sepEl = $('sep-world');
 // v2: храним только отличия от умолчаний. В v1 лежали все значения разом, и новые
 // умолчания (например, баланс Normal) не доходили до тех, кто хоть раз тронул меню.
 const SAVE_KEY = 'abstract-cell-settings-v2';
@@ -1775,7 +1861,10 @@ function setDebug(on) {
 
 function saveSettings() {
   const data = { debug };
-  for (const k of SAVED_KEYS) if (CONFIG[k] !== DEFAULTS[k]) data[k] = CONFIG[k];
+  for (const k of SAVED_KEYS) {
+    const v = k in net.localCfg ? net.localCfg[k] : CONFIG[k];   // у гостя — свои, не хостовы
+    if (v !== DEFAULTS[k]) data[k] = v;
+  }
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
@@ -1876,6 +1965,7 @@ $('s-debug').addEventListener('change', e => { setDebug(e.target.checked); saveS
 $('b-defaults').addEventListener('click', () => {
   const hadBact = CONFIG.bacteria;
   Object.assign(CONFIG, DEFAULTS);
+  if (net.role === 'client') netAfterDefaults();
   if (CONFIG.bacteria !== hadBact) { setBacteria(CONFIG.bacteria); render(0); }
   syncMenu();
   saveSettings();
