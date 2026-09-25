@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#090c16">
+  <title>Snakes 3D</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <canvas id="game" aria-label="3D snake arena"></canvas>
+    <div class="vignette"></div>
+    <header id="hud" class="hidden">
+      <div class="hud-block"><small>LEVEL</small><strong id="hud-level">01</strong></div>
+      <div class="hud-mid"><div id="hud-name">THE GRID</div><div class="meter"><div id="progress"></div></div><small id="hud-progress">0 / 6</small></div>
+      <div class="hud-block right"><small>SCORE</small><strong id="hud-score">000000</strong></div>
+    </header>
+    <button id="pause-button" class="icon-button hidden" aria-label="Pause">Ⅱ</button>
+    <div id="speed-indicator" class="hidden"></div>
+    <div id="controls" class="hidden" aria-label="Direction controls">
+      <button data-action="left" aria-label="Turn left">◀</button>
+      <div><button data-action="up" aria-label="Accelerate">▲</button><button data-action="down" aria-label="Brake">▼</button></div>
+      <button data-action="right" aria-label="Turn right">▶</button>
+    </div>
+    <div id="toast" aria-live="polite"></div>
+    <section id="menu" class="screen">
+      <div class="menu-content">
+        <div class="eyebrow">A LOW-POLY ARCADE RECONSTRUCTION</div>
+        <h1>SNAKES <span>3D</span></h1>
+        <p class="subtitle">TRACE THE PATH · OWN THE GRID</p>
+        <div class="menu-actions"><button id="play" class="primary">PLAY <span>›</span></button><button id="levels">LEVEL SELECT</button><button id="settings">SETTINGS</button></div>
+        <div class="menu-footer">SWIPE LEFT / RIGHT TO TURN<br>SWIPE UP TO ACCELERATE · DOWN TO BRAKE</div>
+      </div>
+    </section>
+    <section id="level-screen" class="screen hidden"><div class="panel"><div class="panel-heading"><button class="back" data-back="menu">‹ BACK</button><h2>LEVEL SELECT</h2></div><div id="level-grid"></div></div></section>
+    <section id="settings-screen" class="screen hidden"><div class="panel"><div class="panel-heading"><button class="back" data-back="menu">‹ BACK</button><h2>SETTINGS</h2></div><div class="setting"><span>CONTROLS</span><button id="setting-controls"></button></div><div class="setting"><span>SOUND</span><button id="setting-sound"></button></div><div class="setting"><span>CAMERA</span><button id="setting-camera"></button></div><div class="setting"><span>GRAPHICS</span><button id="setting-graphics"></button></div></div></section>
+    <section id="overlay" class="screen hidden"><div class="result"><div id="overlay-kicker" class="eyebrow"></div><h2 id="overlay-title"></h2><p id="overlay-text"></p><div id="overlay-actions"></div></div></section>
+    <aside id="debug" class="hidden"><div id="debug-stats"></div><div class="debug-actions"><button data-debug="prev">Prev</button><button data-debug="next">Next</button><button data-debug="restart">Restart</button><button data-debug="unlock">Unlock all</button></div></aside>
+  </main>
+  <script src="vendor/three.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
