@@ -162,7 +162,6 @@ button { font: inherit; color: inherit; }
   color: #fff;
   text-shadow: 0 0 18px rgb(0 255 220 / 0.55), 0 0 4px rgb(0 255 220 / 0.9);
 }
-.logo small { display: block; font-size: 0.3em; letter-spacing: 0.9em; margin-top: 0.5em; color: rgb(125 255 238); }
 .level-card {
   display: flex;
   align-items: center;

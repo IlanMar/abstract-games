@@ -1,4 +1,4 @@
-/* Snakes Subsonic: a browser port of the N-Snakes Unity remake. Three.js r158 (MIT). */
+/* Snakes 3D: a browser port of the N-Snakes Unity remake. Three.js r158 (MIT). */
 (() => {
   'use strict';
   const T = THREE;
@@ -79,10 +79,11 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, quality: 'high', grading: 'on', topRecord: {}, bestScore: {}, lastLevel: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, grading: 'on', topRecord: {}, bestScore: {}, lastLevel: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.assign(defaults, stored || {});
+      delete this.data.quality;
     }
     write() { try { localStorage.setItem('nsnakes-save', JSON.stringify(this.data)); } catch (e) { /* storage unavailable */ } }
   }
@@ -1472,7 +1473,7 @@
     }
     resize() {
       const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
-      const q = this.save.data.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+      const q = Math.min(window.devicePixelRatio || 1, 2);
       this.renderer.setPixelRatio(q);
       this.renderer.setSize(w, h, false);
       const aspect = w / h;
@@ -1799,14 +1800,12 @@
       sfx.value = s.sfx;
       music.addEventListener('input', () => { s.music = +music.value; game.audio.applyVolumes(); game.save.write(); });
       sfx.addEventListener('input', () => { s.sfx = +sfx.value; game.audio.applyVolumes(); game.save.write(); });
-      document.querySelectorAll('[data-quality]').forEach(b => b.addEventListener('click', () => { s.quality = b.dataset.quality; game.save.write(); this.quality(); game.resize(); }));
-      document.querySelectorAll('[data-grading]').forEach(b => b.addEventListener('click', () => { s.grading = b.dataset.grading; game.fx.grade = s.grading !== 'off'; game.save.write(); this.quality(); }));
-      this.quality();
+      document.querySelectorAll('[data-grading]').forEach(b => b.addEventListener('click', () => { s.grading = b.dataset.grading; game.fx.grade = s.grading !== 'off'; game.save.write(); this.gradingButtons(); }));
+      this.gradingButtons();
       document.addEventListener('pointerdown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
       document.addEventListener('keydown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
     }
-    quality() {
-      document.querySelectorAll('[data-quality]').forEach(b => b.classList.toggle('selected', b.dataset.quality === this.game.save.data.quality));
+    gradingButtons() {
       document.querySelectorAll('[data-grading]').forEach(b => b.classList.toggle('selected', b.dataset.grading === (this.game.save.data.grading || 'on')));
     }
     showMenu(panel, overlay = false) {
