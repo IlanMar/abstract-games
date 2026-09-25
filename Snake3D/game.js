@@ -8,12 +8,13 @@
   const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
   const pad = n => String(n).padStart(2,'0');
   const debug = new URLSearchParams(location.search).get('debug') === '1';
+  const line = (x1,z1,x2,z2) => {const cells=[];const dx=Math.sign(x2-x1),dz=Math.sign(z2-z1);for(let x=x1,z=z1;;x+=dx,z+=dz){cells.push([x,z]);if(x===x2&&z===z2)break;}return cells;};
 
   // Each stage can be extended by changing data here; game rules stay shared.
   const LEVELS = [
-    {name:'THE GRID',w:11,h:15,target:6,step:.30,shape:'rect',theme:'violet',start:[5,10,0],hint:'SWIPE LEFT / RIGHT TO TURN'},
-    {name:'FIRST WALLS',w:13,h:17,target:8,step:.29,shape:'rect',theme:'blue',start:[6,12,0],walls:[[3,5],[4,5],[8,5],[9,5],[3,10],[4,10],[8,10],[9,10]]},
-    {name:'NARROW ROUTE',w:11,h:19,target:9,step:.28,shape:'rect',theme:'green',start:[5,14,0],walls:[[2,3],[2,4],[2,5],[2,6],[2,7],[8,10],[8,11],[8,12],[8,13],[8,14]],path:[[5,8],[5,7],[5,6],[5,5]],hint:'FOLLOW BLUE RINGS IN ORDER'},
+    {name:'THE GRID',w:23,h:31,target:12,step:.27,shape:'rect',theme:'green',start:[11,22,0],length:8,time:90,paths:[line(11,18,11,10),[...line(11,7,11,5),...line(10,5,3,5)]],hint:'FOLLOW THE DIAMONDS IN ORDER'},
+    {name:'FIRST WALLS',w:23,h:31,target:12,step:.26,shape:'rect',theme:'green',start:[11,22,0],length:8,time:85,walls:[...line(6,9,6,16),...line(16,9,16,16)],paths:[line(11,18,11,11),[...line(11,8,11,6),...line(12,6,17,6)]],hint:'FOLLOW THE PATH · AVOID THE WALLS'},
+    {name:'NARROW ROUTE',w:21,h:29,target:12,step:.25,shape:'rect',theme:'blue',start:[10,21,0],length:7,time:80,walls:[...line(5,7,5,16),...line(15,10,15,19)],paths:[line(10,18,10,10),[...line(10,7,10,5),...line(11,5,17,5)]],hint:'TURN EARLY TO STAY ON THE PATH'},
     {name:'BROKEN TILES',w:13,h:17,target:10,step:.28,shape:'islands',theme:'violet',start:[6,12,0],holes:[[4,5],[5,5],[8,5],[4,11],[8,11]],path:[[6,8],[6,7],[6,6],[6,5]]},
     {name:'CROSS CURRENT',w:15,h:19,target:11,step:.27,shape:'cross',theme:'ember',start:[7,14,0],walls:[[5,9],[9,9]],path:[[7,8],[7,7],[7,6],[7,5],[7,4]]},
     {name:'HEX FIELD',w:13,h:17,target:12,step:.27,shape:'rect',hex:true,theme:'blue',start:[6,12,0],walls:[[4,6],[8,6],[4,10],[8,10]],speed:[[6,7],[6,8]],path:[[6,5],[6,4],[6,3]],hint:'GREEN TILES MAKE YOU FASTER'},
@@ -63,7 +64,7 @@
     constructor(config,index){
       this.config=config;this.index=index;this.w=config.w;this.h=config.h;
       this.cells=new Set();this.walls=new Set();this.holes=new Set();
-      this.portals=[];this.hazards=[];this.path=[];this.pathIndex=0;this.pathDone=false;
+      this.portals=[];this.hazards=[];this.paths=[];this.path=[];this.pathStage=0;this.pathIndex=0;this.pathDone=false;this.pathVersion=0;
       this.speed=new Set((config.speed||[]).map(p=>key(...p)));
       this.slow=new Set((config.slow||[]).map(p=>key(...p)));
       const inset=config.inset||0;
@@ -79,7 +80,8 @@
       for(const [x,z] of config.walls||[])if(this.cells.has(key(x,z)))this.walls.add(key(x,z));
       for(const pair of config.portals||[])this.portals.push(pair);
       for(const hazard of config.hazards||[])this.hazards.push({route:hazard,at:0});
-      this.path=(config.path||[]).filter(([x,z])=>this.isFree(x,z));
+      this.paths=(config.paths||[config.path||[]]).map(path=>path.filter(([x,z])=>this.isFree(x,z)));
+      this.path=this.paths[0]||[];
     }
     isFree(x,z){return this.cells.has(key(x,z))&&!this.walls.has(key(x,z));}
     wrap(x,z){if(this.config.wrapX)x=(x+this.w)%this.w;if(this.config.wrapZ)z=(z+this.h)%this.h;return [x,z];}
@@ -92,7 +94,11 @@
   class Snake {
     constructor(level){
       const [x,z,d]=level.config.start;this.dir=d;this.turns=[];this.grow=0;
-      this.body=[];for(let i=0;i<4;i++)this.body.push([x-DIR[d][0]*i,z-DIR[d][1]*i]);
+      this.body=[];for(let i=0;i<(level.config.length||6);i++){
+        const bx=x-DIR[d][0]*i,bz=z-DIR[d][1]*i;
+        if(!level.isFree(bx,bz))break;
+        this.body.push([bx,bz]);
+      }
       this.prev=this.body.map(p=>p.slice());
     }
     turn(delta){if(this.turns.length<2)this.turns.push(delta);}
@@ -118,10 +124,9 @@
     reset(){this.ready=false;}
     update(head,dir,dt,level){
       const d=DIR[dir],high=this.save.data.settings.camera==='High';
-      this.desiredLook.set(head.x+d[0]*2.2,0,head.z+d[1]*2.2);
-      const extra=clamp((Math.max(level.w,level.h)-15)*.15,0,1.4);
-      const distance=(high?10.5:8.2)+extra,elevation=(high?12:7.5)+extra*.4;
-      this.desiredPosition.set(head.x-d[0]*distance+d[1]*1.6,elevation,head.z-d[1]*distance-d[0]*1.6);
+      this.desiredLook.set(head.x+d[0]*2.4,0,head.z+d[1]*2.4);
+      const distance=high?8.3:5.8,elevation=high?8:4.8;
+      this.desiredPosition.set(head.x-d[0]*distance+d[1]*.35,elevation,head.z-d[1]*distance-d[0]*.35);
       if(!this.ready){this.camera.position.copy(this.desiredPosition);this.look.copy(this.desiredLook);this.ready=true;}
       else {const k=1-Math.exp(-dt*3.6);this.camera.position.lerp(this.desiredPosition,k);this.look.lerp(this.desiredLook,k);}
       this.camera.lookAt(this.look);
@@ -133,22 +138,24 @@
       this.save=save;
       this.renderer=new T.WebGLRenderer({canvas,antialias:false,powerPreference:'high-performance',alpha:false});
       this.renderer.setClearColor(0x080b17);this.renderer.outputColorSpace=T.SRGBColorSpace;
-      this.scene=new T.Scene();this.scene.background=new T.Color(0x080b17);this.scene.fog=new T.Fog(0x080b17,18,42);
+      this.scene=new T.Scene();this.scene.background=new T.Color(0x050509);this.scene.fog=new T.Fog(0x050509,14,34);
       this.camera=new T.PerspectiveCamera(58,1,.1,80);
       this.cameraController=new CameraController(this.camera,save);
       this.scene.add(new T.AmbientLight(0xffffff,1.4));const light=new T.DirectionalLight(0xffffff,1.7);light.position.set(-4,9,6);this.scene.add(light);
       this.worldGroup=new T.Group();this.scene.add(this.worldGroup);
       this.dynamic=new T.Group();this.scene.add(this.dynamic);
-      this.tileGeom=new T.BoxGeometry(.94,.13,.94);
-      this.hexGeom=new T.CylinderGeometry(.52,.52,.13,6,1);
-      this.bodyGeom=new T.CylinderGeometry(.29,.29,.98,6,1);this.bodyGeom.rotateX(Math.PI/2);
-      this.seamGeom=new T.TorusGeometry(.295,.016,3,6);
-      this.jointGeom=new T.SphereGeometry(.28,6,4);
-      this.headGeom=new T.ConeGeometry(.39,.95,5,1);this.headGeom.rotateX(-Math.PI/2);
-      this.wallGeom=new T.BoxGeometry(.88,.68,.88);
+      this.tileGeom=new T.BoxGeometry(.79,.045,.79);
+      this.hexGeom=new T.CylinderGeometry(.53,.53,.045,6,1);
+      this.bodyGeom=new T.BoxGeometry(.64,.16,.95);
+      this.seamGeom=new T.BoxGeometry(.73,.13,1.02);
+      this.jointGeom=new T.BoxGeometry(.57,.13,.57);
+      const arrow=new T.Shape();arrow.moveTo(-.37,-.48);arrow.lineTo(.37,-.48);arrow.lineTo(.37,.03);arrow.lineTo(0,.58);arrow.lineTo(-.37,.03);arrow.closePath();
+      this.headGeom=new T.ShapeGeometry(arrow);this.headGeom.rotateX(-Math.PI/2);
+      this.wallGeom=new T.BoxGeometry(1.02,.72,1.02);
       this.foodGeom=new T.OctahedronGeometry(.31,0);
+      this.pathGeom=new T.OctahedronGeometry(.26,0);
       this.ringGeom=new T.TorusGeometry(.42,.07,4,8);
-      this.mat={floor:new T.MeshLambertMaterial({color:0xffffff}),wall:new T.MeshLambertMaterial({color:0x8999a2,flatShading:true}),body:new T.MeshLambertMaterial({color:0xd74332,flatShading:true}),joint:new T.MeshLambertMaterial({color:0xaa322a,flatShading:true}),seam:new T.MeshBasicMaterial({color:0xe8b09b}),head:new T.MeshLambertMaterial({color:0xed6343,flatShading:true}),food:new T.MeshLambertMaterial({color:0x77e2c1,flatShading:true}),rare:new T.MeshLambertMaterial({color:0xf8e888,flatShading:true}),multiplier:new T.MeshLambertMaterial({color:0xd393ec,flatShading:true}),speedFood:new T.MeshLambertMaterial({color:0x70f485,flatShading:true}),slowFood:new T.MeshLambertMaterial({color:0xed7865,flatShading:true}),chain:new T.MeshLambertMaterial({color:0x77d7ed,flatShading:true}),ring:new T.MeshBasicMaterial({color:0x7ddae1,side:T.DoubleSide}),speedTile:new T.MeshBasicMaterial({color:0x5af278,side:T.DoubleSide}),slowTile:new T.MeshBasicMaterial({color:0xf17958,side:T.DoubleSide}),hazard:new T.MeshLambertMaterial({color:0xf1b858,flatShading:true}),portal:new T.MeshBasicMaterial({color:0x67c7e4,wireframe:true})};
+      this.mat={floor:new T.MeshBasicMaterial({color:0xffffff}),wall:new T.MeshBasicMaterial({color:0xa316b3}),body:new T.MeshBasicMaterial({color:0xe41416}),joint:new T.MeshBasicMaterial({color:0xb01018}),seam:new T.MeshBasicMaterial({color:0xe4f0ed}),head:new T.MeshBasicMaterial({color:0xef171b,side:T.DoubleSide}),headBorder:new T.MeshBasicMaterial({color:0xe4f0ed,side:T.DoubleSide}),food:new T.MeshBasicMaterial({color:0x29ef4e}),rare:new T.MeshBasicMaterial({color:0xf8e888}),multiplier:new T.MeshBasicMaterial({color:0xd393ec}),speedFood:new T.MeshBasicMaterial({color:0x70f485}),slowFood:new T.MeshBasicMaterial({color:0xed7865}),chain:new T.MeshBasicMaterial({color:0x77d7ed}),ring:new T.MeshBasicMaterial({color:0xf1f2ff}),speedTile:new T.MeshBasicMaterial({color:0x5af278,side:T.DoubleSide}),slowTile:new T.MeshBasicMaterial({color:0xf17958,side:T.DoubleSide}),hazard:new T.MeshBasicMaterial({color:0xf1b858}),portal:new T.MeshBasicMaterial({color:0x67c7e4,wireframe:true})};
       this.matrix=new T.Matrix4();this.quat=new T.Quaternion();this.scale=new T.Vector3(1,1,1);this.vec=new T.Vector3();
       this.headPos=new T.Vector3();
       this.resize();window.addEventListener('resize',()=>this.resize(),{passive:true});
@@ -156,23 +163,41 @@
     quality(){const q=this.save.data.settings.graphics;return q==='High'?2:q==='Low'?1:Math.min(window.devicePixelRatio||1,1.5);}
     resize(){const w=innerWidth,h=innerHeight;this.renderer.setPixelRatio(this.quality());this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.fov=h>w?62:54;this.camera.updateProjectionMatrix();}
     clear(group){while(group.children.length){const obj=group.children[0];group.remove(obj);if(obj.isInstancedMesh&&obj.dispose)obj.dispose();}}
+    colorFloor(head,dir){
+      const level=this.level,stamp=`${head[0]},${head[1]},${dir},${level.pathVersion}`;
+      if(stamp===this.floorStamp)return;
+      this.floorStamp=stamp;
+      const d=DIR[dir],active=new Set(level.path.map(p=>key(...p)));
+      for(let i=0;i<this.floorCells.length;i++){
+        const [x,z]=this.floorCells[i],forward=(x-head[0])*d[0]+(z-head[1])*d[1];
+        const t=clamp((forward+7)/23,0,1);
+        this.floorColor.copy(this.floorNear).lerp(this.floorFar,t);
+        if(active.has(key(x,z)))this.floorColor.setHex(0x1649b9);
+        else if((Math.floor(x/7)+Math.floor(z/9))%11===6)this.floorColor.lerp(this.floorAccent,.28);
+        this.floor.setColorAt(i,this.floorColor);
+      }
+      this.floor.instanceColor.needsUpdate=true;
+    }
     build(level){
       this.level=level;this.clear(this.worldGroup);this.clear(this.dynamic);
-      const cells=Array.from(level.cells);const floor=new T.InstancedMesh(level.config.hex?this.hexGeom:this.tileGeom,this.mat.floor,cells.length);
-      floor.instanceMatrix.setUsage(T.StaticDrawUsage);const c=new T.Color();
-      const theme=level.config.theme||'violet';const palettes={violet:[0x261f65,0x342274,0x452888,0x1b435a,0x764f25],blue:[0x123a65,0x15517d,0x153377,0x265476,0x294e66],green:[0x1b544b,0x216b58,0x315d52,0x2c6072,0x565938],ember:[0x643328,0x843823,0x3f325c,0x714c27,0x47365f]};
-      const colors=palettes[theme]||palettes.violet;
-      cells.forEach((s,i)=>{const [x,z]=s.split(',').map(Number);level.world(x,z,this.vec);this.vec.y=-.12;this.matrix.makeTranslation(this.vec.x,this.vec.y,this.vec.z);floor.setMatrixAt(i,this.matrix);const stripe=(x*7+z*11+Math.floor(z/3))%colors.length;c.setHex(colors[stripe]);floor.setColorAt(i,c);});
-      floor.instanceMatrix.needsUpdate=true;floor.instanceColor.needsUpdate=true;this.worldGroup.add(floor);
+      const cells=Array.from(level.cells);this.floorCells=cells.map(s=>s.split(',').map(Number));
+      const floor=new T.InstancedMesh(level.config.hex?this.hexGeom:this.tileGeom,this.mat.floor,cells.length);
+      floor.instanceMatrix.setUsage(T.StaticDrawUsage);
+      const palette={green:[0x10bc29,0x152da7,0x9b28aa],blue:[0x11869e,0x181a97,0x8a269c],violet:[0x23a346,0x381886,0xa52b8a],ember:[0xc93317,0x27146e,0xeb701b]}[level.config.theme||'green'];
+      this.floorNear=new T.Color(palette[0]);this.floorFar=new T.Color(palette[1]);this.floorAccent=new T.Color(palette[2]);this.floorColor=new T.Color();
+      this.floorCells.forEach(([x,z],i)=>{level.world(x,z,this.vec);this.vec.y=-.025;this.matrix.makeTranslation(this.vec.x,this.vec.y,this.vec.z);floor.setMatrixAt(i,this.matrix);floor.setColorAt(i,this.floorNear);});
+      floor.instanceMatrix.needsUpdate=true;this.worldGroup.add(floor);this.floor=floor;this.floorStamp='';
       if(level.walls.size){const walls=new T.InstancedMesh(this.wallGeom,this.mat.wall,level.walls.size);let i=0;for(const s of level.walls){const [x,z]=s.split(',').map(Number);level.world(x,z,this.vec);this.matrix.makeTranslation(this.vec.x,.32,this.vec.z);walls.setMatrixAt(i++,this.matrix);}this.worldGroup.add(walls);}
       for(const [a,b] of level.portals)for(const p of [a,b]){const mesh=new T.Mesh(this.ringGeom,this.mat.portal);level.world(p[0],p[1],mesh.position);mesh.position.y=.12;mesh.rotation.x=-Math.PI/2;this.worldGroup.add(mesh);}
       this.maxBody=level.w*level.h;this.bodyMesh=new T.InstancedMesh(this.bodyGeom,this.mat.body,this.maxBody);this.joints=new T.InstancedMesh(this.jointGeom,this.mat.joint,this.maxBody);this.seams=new T.InstancedMesh(this.seamGeom,this.mat.seam,this.maxBody);this.bodyMesh.count=0;this.joints.count=0;this.seams.count=0;this.dynamic.add(this.bodyMesh,this.joints,this.seams);
-      this.head=new T.Mesh(this.headGeom,this.mat.head);this.dynamic.add(this.head);
+      this.headBorder=new T.Mesh(this.headGeom,this.mat.headBorder);this.headBorder.scale.set(1.14,1,1.14);this.head=new T.Mesh(this.headGeom,this.mat.head);this.dynamic.add(this.headBorder,this.head);
       this.food=new T.Mesh(this.foodGeom,this.mat.food);this.dynamic.add(this.food);
-      this.pathMeshes=[];for(const p of level.path){const m=new T.Mesh(this.ringGeom,this.mat.ring);level.world(p[0],p[1],m.position);m.position.y=.07;m.rotation.x=-Math.PI/2;this.dynamic.add(m);this.pathMeshes.push(m);}
+      this.maxPath=Math.max(1,...level.paths.map(p=>p.length));
+      this.pathMesh=new T.InstancedMesh(this.pathGeom,this.mat.ring,this.maxPath);this.pathMesh.count=0;this.dynamic.add(this.pathMesh);this.pathStamp=-1;
       for(const [tiles,material] of [[level.speed,this.mat.speedTile],[level.slow,this.mat.slowTile]])for(const s of tiles){const [x,z]=s.split(',').map(Number);const m=new T.Mesh(this.ringGeom,material);level.world(x,z,m.position);m.position.y=.075;m.rotation.x=-Math.PI/2;this.worldGroup.add(m);}
       this.hazardMeshes=[];for(const h of level.hazards){const m=new T.Mesh(this.wallGeom,this.mat.hazard);this.dynamic.add(m);this.hazardMeshes.push(m);}
       this.cameraController.reset();
+      this.colorFloor(level.config.start,level.config.start[2]);
     }
     draw(snake,food,alpha,dt,elapsed){
       const level=this.level;if(!level||!snake)return;
@@ -181,8 +206,8 @@
         const p=body[i],old=prev[i]||p;
         let x=old[0]+(p[0]-old[0])*alpha,z=old[1]+(p[1]-old[1])*alpha;
         if(Math.abs(p[0]-old[0])+Math.abs(p[1]-old[1])>2){x=p[0];z=p[1];}
-        level.world(x,z,this.vec);this.vec.y=.19;
-        if(i===0){this.headPos.copy(this.vec);this.head.position.copy(this.vec);const d=DIR[snake.dir];this.head.rotation.set(0,Math.atan2(-d[0],-d[1]),0);}
+        level.world(x,z,this.vec);this.vec.y=.15;
+        if(i===0){this.headPos.copy(this.vec);this.head.position.copy(this.vec);this.head.position.y=.235;this.headBorder.position.copy(this.head.position);this.headBorder.position.y=.22;const d=DIR[snake.dir],angle=Math.atan2(-d[0],-d[1]);this.head.rotation.set(0,angle,0);this.headBorder.rotation.set(0,angle,0);}
         else {
           const ahead=body[i-1],dx=ahead[0]-p[0],dz=ahead[1]-p[1];
           const ang=Math.atan2(dx,dz);this.quat.setFromAxisAngle(T.Object3D.DEFAULT_UP,ang);
@@ -193,7 +218,16 @@
       this.bodyMesh.count=Math.max(0,body.length-1);this.joints.count=this.bodyMesh.count;this.seams.count=this.bodyMesh.count;this.bodyMesh.instanceMatrix.needsUpdate=true;this.joints.instanceMatrix.needsUpdate=true;this.seams.instanceMatrix.needsUpdate=true;
       if(food){level.world(food.x,food.z,this.food.position);this.food.position.y=.35+Math.sin(elapsed*5)*.055;this.food.rotation.y=elapsed*1.6;this.food.visible=true;this.food.material=this.mat[food.type==='speed'?'speedFood':food.type==='slow'?'slowFood':food.type]||this.mat.food;}
       else this.food.visible=false;
-      this.pathMeshes.forEach((m,i)=>{m.visible=!level.pathDone&&i>=level.pathIndex;});
+      const pathStamp=`${level.pathVersion}:${level.pathIndex}:${level.pathDone}`;
+      if(pathStamp!==this.pathStamp){
+        this.pathStamp=pathStamp;let count=0;
+        if(!level.pathDone)for(let i=level.pathIndex;i<level.path.length;i++){
+          const p=level.path[i];level.world(p[0],p[1],this.vec);this.vec.y=.23;
+          this.matrix.makeTranslation(this.vec.x,this.vec.y,this.vec.z);this.pathMesh.setMatrixAt(count++,this.matrix);
+        }
+        this.pathMesh.count=count;this.pathMesh.instanceMatrix.needsUpdate=true;
+      }
+      this.colorFloor(body[0],snake.dir);
       level.hazards.forEach((h,i)=>{const p=h.route[h.at],m=this.hazardMeshes[i];level.world(p[0],p[1],m.position);m.position.y=.35;});
       this.cameraController.update(this.headPos,snake.dir,dt,level);this.renderer.render(this.scene,this.camera);
     }
@@ -219,11 +253,12 @@
       props.forEach(([name,values])=>{$(`setting-${name}`).onclick=()=>{const s=this.game.save.data.settings,i=values.indexOf(s[name]);s[name]=values[(i+1)%values.length];this.game.save.write();this.settings();this.game.renderer.resize();this.game.audio.play('select');};});
       document.querySelectorAll('[data-debug]').forEach(b=>b.onclick=()=>{const a=b.dataset.debug,g=this.game;if(a==='unlock'){g.save.data.unlocked=LEVELS.length;g.save.write();this.levels();}else if(a==='restart')g.start(g.levelIndex);else g.start(clamp(g.levelIndex+(a==='next'?1:-1),0,LEVELS.length-1));});
     }
-    show(id){for(const el of document.querySelectorAll('.screen'))el.classList.toggle('hidden',el.id!==id);$('hud').classList.toggle('hidden',id!==null);$('pause-button').classList.toggle('hidden',id!==null);this.controls();}
+    show(id){for(const el of document.querySelectorAll('.screen'))el.classList.toggle('hidden',el.id!==id);$('hud').classList.toggle('hidden',id!==null);$('timer-hud').classList.toggle('hidden',id!==null);$('pause-button').classList.toggle('hidden',id!==null);this.controls();}
     controls(){const s=this.game.save.data.settings;const playing=this.game.state==='playing';$('controls').classList.toggle('hidden',!playing||s.controls!=='Buttons');$('speed-indicator').classList.toggle('hidden',!playing||s.controls==='Buttons');}
     settings(){const s=this.game.save.data.settings;for(const k of ['controls','sound','camera','graphics'])$(`setting-${k}`).textContent=k==='sound'?(s[k]?'ON':'OFF'):s[k].toUpperCase();this.controls();}
     levels(){const grid=$('level-grid');grid.innerHTML='';LEVELS.forEach((l,i)=>{const b=document.createElement('button');b.className='level-card';b.disabled=i>=this.game.save.data.unlocked;b.innerHTML=`<strong>${pad(i+1)}</strong><small>${b.disabled?'LOCKED':l.name}</small>`;b.onclick=()=>this.game.start(i);grid.appendChild(b);});}
-    hud(){const g=this.game;$('hud-level').textContent=pad(g.levelIndex+1);$('hud-name').textContent=g.level.config.name;$('hud-score').textContent=String(g.score).padStart(6,'0');$('hud-progress').textContent=`${g.progress} / ${g.level.config.target}`;$('progress').style.width=`${Math.min(100,g.progress/g.level.config.target*100)}%`;}
+    hud(){const g=this.game;$('hud-level').textContent=pad(g.levelIndex+1);$('hud-name').textContent=g.level.config.name;$('hud-score').textContent=String(g.score).padStart(6,'0');$('hud-mult').textContent=`×${g.multiplier}`;$('hud-progress').textContent=`${Math.max(0,g.level.config.target-g.progress)}`;$('progress').style.width=`${Math.max(0,100-g.progress/g.level.config.target*100)}%`;}
+    clock(){const g=this.game;$('hud-time').textContent=Math.max(0,Math.ceil(g.timeLeft));$('timer-progress').style.width=`${clamp(g.timeLeft/(g.level.config.time||Math.max(55,90-g.levelIndex*3))*100,0,100)}%`;}
     overlay(kicker,title,text,buttons){$('overlay-kicker').textContent=kicker;$('overlay-title').textContent=title;$('overlay-text').textContent=text;const box=$('overlay-actions');box.innerHTML='';for(const [label,fn,primary] of buttons){const b=document.createElement('button');b.textContent=label;if(primary)b.className='primary';b.onclick=fn;box.appendChild(b);}this.show('overlay');}
     toast(text,duration=1150){const el=$('toast');el.textContent=text;clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>el.textContent='',duration);}
     debug(stats){if(!debug)return;$('debug').classList.remove('hidden');$('debug-stats').innerHTML=stats.join('<br>');}
@@ -233,13 +268,14 @@
     constructor(){this.save=new SaveManager();this.audio=new AudioManager(this.save);this.renderer=new GameRenderer($('game'),this.save);this.input=new InputController(this);this.ui=new UI(this);this.state='menu';this.levelIndex=0;this.score=0;this.progress=0;this.elapsed=0;this.acc=0;this.tickCount=0;this.boostUntil=0;this.slowUntil=0;this.last=performance.now();this.fps=60;this.frameMs=16.7;
       this.load(0);this.ui.show('menu');document.addEventListener('visibilitychange',()=>{if(document.hidden&&this.state==='playing')this.pause();this.last=performance.now();});requestAnimationFrame(t=>this.frame(t));
     }
-    load(index){this.levelIndex=index;this.level=new Level(LEVELS[index],index);this.snake=new Snake(this.level);this.renderer.build(this.level);this.progress=0;this.acc=0;this.tickCount=0;this.elapsed=0;this.boostUntil=0;this.slowUntil=0;this.multUntil=0;this.pickups=0;this.chainRemaining=0;this.chainDeadline=0;this.lastFood=null;this.spawnFood();this.ui.hud();}
-    start(index){this.load(index);this.state='playing';this.ui.show(null);this.ui.controls();this.audio.play('select');if(this.level.config.hint)this.ui.toast(this.level.config.hint,2500);}
+    load(index){this.levelIndex=index;this.level=new Level(LEVELS[index],index);this.snake=new Snake(this.level);this.renderer.build(this.level);this.progress=0;this.acc=0;this.tickCount=0;this.elapsed=0;this.timeLeft=this.level.config.time||Math.max(55,90-index*3);this.lastClock=-1;this.multiplier=1;this.boostUntil=0;this.slowUntil=0;this.multUntil=0;this.pickups=0;this.chainRemaining=0;this.chainDeadline=0;this.lastFood=null;this.spawnFood();this.ui.hud();this.ui.clock();}
+    start(index){this.score=0;this.load(index);this.state='playing';this.ui.show(null);this.ui.controls();this.audio.play('select');if(this.level.config.hint)this.ui.toast(this.level.config.hint,2500);}
     menu(){this.state='menu';this.ui.levels();this.ui.show('menu');this.audio.play('select');}
     pause(){if(this.state==='playing'){this.state='paused';this.ui.overlay('GAME PAUSED','PAUSED','Take your time. The grid will wait.',[['RESUME',()=>{this.state='playing';this.ui.show(null);this.last=performance.now();},true],['RESTART',()=>this.start(this.levelIndex)],['MAIN MENU',()=>this.menu()]]);}else if(this.state==='paused'){this.state='playing';this.ui.show(null);this.last=performance.now();}}
     action(a){if(this.state!=='playing'){if(a==='pause'&&this.state==='paused')this.pause();return;}if(a==='left'||a==='right'){this.snake.turn(a==='left'?-1:1);this.audio.play('turn');}else if(a==='up'){this.boostUntil=this.elapsed+1.2;this.ui.toast('ACCELERATE');}else if(a==='down'){this.slowUntil=this.elapsed+1.2;this.ui.toast('BRAKE');}else this.pause();}
     spawnFood(){
-      const free=[];for(const s of this.level.cells){const [x,z]=s.split(',').map(Number);if(!this.level.isFree(x,z)||this.level.hazardAt(x,z)||this.snake.body.some(p=>p[0]===x&&p[1]===z)||this.level.path.some(p=>p[0]===x&&p[1]===z))continue;free.push([x,z]);}
+      const reserved=new Set(this.level.paths.flat().map(p=>key(...p)));
+      const free=[];for(const s of this.level.cells){const [x,z]=s.split(',').map(Number);if(!this.level.isFree(x,z)||this.level.hazardAt(x,z)||this.snake.body.some(p=>p[0]===x&&p[1]===z)||reserved.has(s))continue;free.push([x,z]);}
       if(!free.length){this.food=null;return;}
       const special=this.level.config.special||[];
       if(!this.chainRemaining&&special.includes('chain')&&this.pickups>0&&this.pickups%5===0)this.chainRemaining=3;
@@ -269,7 +305,7 @@
       snake.advance([x,z],growing);if(snake.grow>0)snake.grow--;
       if(eating){
         this.pickups++;const base=foodType==='rare'?500:foodType==='chain'?125:100;
-        this.score+=base*(this.elapsed<this.multUntil?2:1);this.progress+=foodType==='rare'?2:1;
+        this.score+=base*this.multiplier*(this.elapsed<this.multUntil?2:1);this.progress+=foodType==='rare'?2:1;
         if(foodType==='multiplier'){this.multUntil=this.elapsed+12;this.ui.toast('SCORE ×2');}
         if(foodType==='speed'){this.boostUntil=this.elapsed+5;this.ui.toast('SPEED UP');}
         if(foodType==='slow'){this.slowUntil=this.elapsed+5;this.ui.toast('SLOW DOWN');}
@@ -279,8 +315,18 @@
       }
       if(!level.pathDone&&level.path.length){
         const p=level.path[level.pathIndex];
-        if(p&&p[0]===x&&p[1]===z){level.pathIndex++;this.audio.play('collect');if(level.pathIndex===level.path.length){level.pathDone=true;this.progress+=Math.min(4,level.path.length);this.score+=400;this.ui.toast('ENERGY PATH +400');this.audio.play('bonus');this.ui.hud();}else this.ui.toast(`PATH ${level.pathIndex}/${level.path.length}`);}
-        else if(level.pathIndex>0){level.pathIndex=0;this.ui.toast('PATH BROKEN');}
+        if(p&&p[0]===x&&p[1]===z){
+          level.pathIndex++;this.audio.play('collect');
+          if(level.pathIndex===level.path.length){
+            this.progress+=Math.min(6,level.path.length);this.score+=400*this.multiplier;this.multiplier=Math.min(8,this.multiplier*2);
+            this.ui.toast(`POWER PATH · ×${this.multiplier}`);this.audio.play('bonus');
+            level.pathStage++;
+            if(level.pathStage<level.paths.length){level.path=level.paths[level.pathStage];level.pathIndex=0;level.pathVersion++;}
+            else level.pathDone=true;
+            this.ui.hud();
+          }
+        }
+        else if(level.pathIndex>0){level.pathIndex=0;this.multiplier=1;this.ui.toast('PATH BROKEN');this.ui.hud();}
       }
       const spot=key(x,z);if(level.speed.has(spot)){this.boostUntil=this.elapsed+2;this.ui.toast('SPEED TILE');}else if(level.slow.has(spot)){this.slowUntil=this.elapsed+2;this.ui.toast('SLOW TILE');}
       level.moveHazards(this.tickCount,snake.body);
@@ -288,7 +334,7 @@
     }
     dead(reason){this.state='dead';this.save.score(this.levelIndex,this.score);this.audio.play('dead');this.ui.overlay('SIGNAL LOST','GAME OVER',`${reason} · SCORE ${this.score}`, [['TRY AGAIN',()=>this.start(this.levelIndex),true],['MAIN MENU',()=>this.menu()]]);}
     complete(){this.state='complete';this.save.finish(this.levelIndex,this.score);this.audio.play('complete');this.ui.levels();this.ui.overlay('STAGE CLEARED','LEVEL COMPLETE',`SCORE ${this.score} · BEST ${this.save.data.best[this.levelIndex]}`, [[this.levelIndex+1<LEVELS.length?'NEXT LEVEL':'PLAY AGAIN',()=>this.start(Math.min(this.levelIndex+1,LEVELS.length-1)),true],['LEVEL SELECT',()=>this.ui.show('level-screen')],['MAIN MENU',()=>this.menu()]]);}
-    frame(now){const dt=Math.min(.05,(now-this.last)/1000||0);this.last=now;if(this.state==='playing')this.elapsed+=dt;this.frameMs=this.frameMs*.9+dt*1000*.1;this.fps=this.fps*.9+(dt?1/dt:60)*.1;
+    frame(now){const dt=Math.min(.05,(now-this.last)/1000||0);this.last=now;if(this.state==='playing'){this.elapsed+=dt;this.timeLeft-=dt;if(Math.ceil(this.timeLeft)!==this.lastClock){this.lastClock=Math.ceil(this.timeLeft);this.ui.clock();}if(this.timeLeft<=0)this.dead('OUT OF TIME');}this.frameMs=this.frameMs*.9+dt*1000*.1;this.fps=this.fps*.9+(dt?1/dt:60)*.1;
       if(this.state==='playing'){
         if(this.chainRemaining&&this.elapsed>this.chainDeadline){this.chainRemaining=0;this.pickups++;this.ui.toast('CHAIN EXPIRED');this.spawnFood();}
         const pace=this.level.config.step*(this.elapsed<this.boostUntil ? .68 : this.elapsed<this.slowUntil ? 1.42 : 1);

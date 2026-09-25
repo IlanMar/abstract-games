@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#090c16">
   <title>Snakes 3D</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="arcade.css">
 </head>
 <body>
   <main id="app">
@@ -13,9 +14,10 @@
     <div class="vignette"></div>
     <header id="hud" class="hidden">
       <div class="hud-block"><small>LEVEL</small><strong id="hud-level">01</strong></div>
-      <div class="hud-mid"><div id="hud-name">THE GRID</div><div class="meter"><div id="progress"></div></div><small id="hud-progress">0 / 6</small></div>
-      <div class="hud-block right"><small>SCORE</small><strong id="hud-score">000000</strong></div>
+      <div class="hud-mid"><div id="hud-name">THE GRID</div><div class="score-line"><strong id="hud-score">000000</strong><span id="hud-mult">×1</span></div><div class="meter"><div id="progress"></div></div></div>
+      <div class="hud-block right"><small>PATH</small><strong id="hud-progress">0 / 12</strong></div>
     </header>
+    <div id="timer-hud" class="hidden"><span id="hud-time">90</span><div class="timer-meter"><div id="timer-progress"></div></div></div>
     <button id="pause-button" class="icon-button hidden" aria-label="Pause">Ⅱ</button>
     <div id="speed-indicator" class="hidden"></div>
     <div id="controls" class="hidden" aria-label="Direction controls">
