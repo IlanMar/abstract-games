@@ -122,6 +122,33 @@ class Grid {
         : kind === 'gems' ? ['gems', side, ix.map(route.at)] : ['chain', side, route.along(ix[0], ix[1])]));
     });
   }
+  // Cells round (c, r) whose centres pass inside(x, y), for drawing pictures: x east and y north of the
+  // centre of (c, r), in cells, as the floor looks to a snake heading north (in a hex world odd columns
+  // sit half a cell lower). The search goes R cells out and wraps round the world's edges.
+  shape(c, r, R, inside) {
+    const odd = k => (this.hex ? ((k % 2) + 2) % 2 : 0), out = [];
+    for (let dc = -R; dc <= R; dc++) for (let dr = -R - 1; dr <= R + 1; dr++)
+      if (inside(dc, -(dr + (odd(c + dc) - odd(c)) / 2))) out.push([(((c + dc) % this.w) + this.w) % this.w, (((r + dr) % this.h) + this.h) % this.h]);
+    return out;
+  }
+  // Colour layers for a face painted cell by cell: colorOf(c, r) gives the colour of every cell. The
+  // commonest colour becomes one layer over the whole face, the other cells go in runs down the columns,
+  // and a run that repeats in the next column joins it in one rectangle.
+  layers(colorOf) {
+    const count = new Map();
+    for (let c = 0; c < this.w; c++) for (let r = 0; r < this.h; r++) count.set(colorOf(c, r), (count.get(colorOf(c, r)) || 0) + 1);
+    const base = [...count].sort((a, b) => b[1] - a[1])[0][0];
+    const runs = [];
+    for (let c = 0; c < this.w; c++) for (let r = 0; r < this.h; r++) {
+      const col = colorOf(c, r);
+      if (col === base || (r > 0 && colorOf(c, r - 1) === col)) continue;
+      let r1 = r;
+      while (r1 + 1 < this.h && colorOf(c, r1 + 1) === col) r1++;
+      const left = runs.find(u => u.col === col && u.r0 === r && u.r1 === r1 && u.c1 === c - 1);
+      if (left) left.c1 = c; else runs.push({col, r0: r, r1, c0: c, c1: c});
+    }
+    return [[base, base, 'y'], ...runs.map(u => [u.col, u.col, 'y', [u.c0, u.r0, u.c1, u.r1]])];
+  }
   // Hex helpers. A hex world repeats, so these wrap around its edges.
   step(c, r, m) {
     const [nc, nr] = hexStep(c, r, m, this.h);
