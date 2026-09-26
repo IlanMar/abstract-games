@@ -955,6 +955,7 @@
       this.nextTargetInvoke = false;
       this.sizeBegin = PLAYER.sizeBegin;
       this.adding = false;
+      this.halfGrown = false;
       this.removing = false;
       this.removingCount = 1;
       this.tailTouched = false;
@@ -1029,8 +1030,10 @@
       if (!touchedBefore) trail = [this.target.clone(), ...this.trail];
       else trail = [this.trail[0], this.trail[1], this.trail[1].clone(), ...this.trail.slice(2)];
       const n = this.sizeBegin;
-      while (trail.length < n + 1) trail.push(trail[trail.length - 1].clone());
-      trail.length = n + 1;
+      // A half-grown snake keeps one more point, for the half cell drawn at its tail.
+      const keep = n + 1 + (this.halfGrown || this.adding ? 1 : 0);
+      while (trail.length < keep) trail.push(trail[trail.length - 1].clone());
+      trail.length = keep;
       if (!touchedBefore) {
         const head = trail[1];
         for (let k = 3; k <= n - 1; k++) {
@@ -1164,7 +1167,15 @@
         if (this.removingCount > 0) this.removing = true; else this.removingCount = 1;
       } else { this.destroy(); this.removingCount = 1; }
     }
-    addPartOfSnake() { if (this.onGame) this.adding = true; }
+    // Not in the original, where a crystal adds a whole cell, two rhombi of the body: here it adds half a
+    // cell, one rhombus. Every second crystal makes the snake a cell longer; the half in between is only
+    // drawn, at the tail, and does not bite.
+    addPartOfSnake() {
+      if (!this.onGame) return;
+      if (this.halfGrown) { this.halfGrown = false; this.adding = true; } else this.halfGrown = true;
+    }
+    // Length of the body as drawn, in cells: a cell being added shows at once.
+    get bodyLength() { return this.sizeBegin + (this.halfGrown ? 0.5 : 0) + (this.adding ? 1 : 0); }
     destroy() {
       if (this.isDead) return;
       this.isDead = true;
@@ -1509,7 +1520,7 @@
       m.begin();
       if (!player.visible) { m.end(); return null; }
       this.prepare(player, map);
-      const n = player.trail.length - 1;
+      const n = player.bodyLength;
       const th = player.tailTouched ? 1 : t;
       const uHead = 1.5 - th, uTail = Math.max(uHead, n - 0.5 - t);
       const us = [uHead];

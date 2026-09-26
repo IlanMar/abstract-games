@@ -1,9 +1,9 @@
-// Level 6 "Blocks": the easy square world, packed with obstacles. An endless plane (the 36 x 36 tile
-// repeats) with no holes, so the snake never leaves the top face. It is a town of 3 x 3 blocks of walls
-// and spikes between 3-wide streets. The route runs down the middle of some streets, two cells from
-// every obstacle; the other streets are alleys whose middle lane stays open, so a missed turn runs on
-// down an alley and hits nothing. Chains lead the snake round every corner, and each stage lies a cell
-// or two past the end of the previous one.
+// Level 6 "Blocks": the easy square world, packed with obstacles, in the bright colours of Hexagone.
+// An endless plane (the 36 x 36 tile repeats) with no holes, so the snake never leaves the top face. It
+// is a town of 3 x 3 blocks of walls and spikes between 3-wide streets. The route runs down the middle
+// of some streets, two cells from every obstacle; the other streets are alleys whose middle lane stays
+// open, so a missed turn runs on down an alley and hits nothing. Chains lead the snake round every
+// corner, and each stage lies a cell or two past the end of the previous one.
 const {Grid} = require('../grid');
 const W = 36, H = 36, P = 6;   // a block and the street beside it: streets on columns and lines 0-2 mod 6
 const g = new Grid(W, H);
@@ -73,9 +73,28 @@ g.routeStages(route, T, [
   [['gems', L + 5, L + 7, L + 9]]                // 27 on the run-up, just before stage 1
 ]);
 
-// Bright violet streets that turn pink towards the rim of the tile, under teal walls and spikes. A radial
-// layer repeats without a seam; the underside is never seen but has to be drawn.
-const floor = [['#c828ff', '#ff28c8', 'r']];
-const colors = {top: floor, bottom: floor};
+// Bright bands as on Hexagone: red at the north and south rims of the tile, through orange to yellow in
+// the middle (the colour grading turns yellow into vivid green, orange into olive and red into salmon),
+// and the route painted red across them like Hexagone's red trails, so the road through the town shows.
+// Both repeat without a seam. The underside is never seen but has to be drawn.
+const band = r => { const d = Math.abs(r - (H - 1) / 2); return d < 4 ? '#ffff00' : d < 7 ? '#ffcc00' : d < 10 ? '#ff9900' : d < 13 ? '#ff5511' : '#ff1111'; };
+const bands = [];
+for (let r = 0; r < H; r++) {
+  const last = bands[bands.length - 1];
+  if (last && last[0] === band(r)) last[3][3] = r; else bands.push([band(r), band(r), 'y', [0, r, W - 1, r]]);
+}
+// The road in as few rectangles as possible: runs down the columns, then what is left along the lines.
+const road = [], single = new Set();
+for (let c = 0; c < W; c++) for (let r = 0; r < H; r++) {
+  if (!route.has(c, r) || (r > 0 && route.has(c, r - 1))) continue;
+  let r1 = r; while (r1 + 1 < H && route.has(c, r1 + 1)) r1++;
+  if (r1 > r) road.push(['#ff1111', '#ff1111', 'y', [c, r, c, r1]]); else single.add(`${c},${r}`);
+}
+for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+  if (!single.has(`${c},${r}`) || single.has(`${c - 1},${r}`)) continue;
+  let c1 = c; while (single.has(`${c1 + 1},${r}`)) c1++;
+  road.push(['#ff1111', '#ff1111', 'x', [c, r, c1, r]]);
+}
+const colors = {top: [...bands, ...road], bottom: bands};
 module.exports = {key: 'blocks', name: 'Level 6', kind: 'Blocks', start: [1, 31, 'N'], colors, grid: g};
 if (require.main === module) console.log(g.print());
