@@ -81,6 +81,47 @@ class Grid {
     }
     this.stages.push(s);
   }
+  // One move from (c, r) that wraps round the world's edges, in either kind of world.
+  move(c, r, m) {
+    if (this.hex) return this.step(c, r, m);
+    return [(c + MOVES[m][0] + this.w) % this.w, (r + MOVES[m][1] + this.h) % this.h];
+  }
+  // A route for a world laid out along one path: runs of moves from a start cell, such as 'N13 NE6 N6'
+  // or 'N18 E12'. It must come back to its start cell. at(i), along(i, j) and heading(i) look it up by
+  // index (0 is the start, heading(i) is the move that reaches cell i); indices past the end go round again.
+  route(start, runs) {
+    const cells = [start.slice()], moves = [null];
+    for (const run of runs.split(' ')) {
+      const [, m, n] = run.match(/^([A-Z]+)(\d+)$/);
+      for (let i = 0; i < +n; i++) { cells.push(this.move(...cells[cells.length - 1], m)); moves.push(m); }
+    }
+    const length = cells.length - 1;
+    if (String(cells[length]) !== String(start)) throw new Error(`the route ends at ${cells[length]}, not at its start`);
+    moves[0] = moves[length];
+    const on = new Set(), cell = i => cells[((i % length) + length) % length];
+    for (let i = 0; i < length; i++) {
+      if (on.has(String(cells[i]))) throw new Error(`the route crosses itself at ${cells[i]}`);
+      on.add(String(cells[i]));
+    }
+    return {length, cells: cells.slice(0, length), has: (c, r) => on.has(`${c},${r}`), at: cell,
+      along: (from, to) => Array.from({length: to - from + 1}, (_, k) => cell(from + k)),
+      heading: i => moves[((i % length) + length) % length]};
+  }
+  // Adds the stages of a route world. Each stage is a list of groups by route index: ['gem', i],
+  // ['gems', i, j, ...] or ['chain', i, j] (the cells from i to j). Checks that every stage begins within
+  // three cells of where the previous one ended, and that the snake gets there without turning: a player
+  // needs three cells to react, so it only turns where an item of the stage in play shows the way.
+  routeStages(route, side, stages) {
+    const first = s => s[0][1], last = s => Math.max(...s.map(([, ...ix]) => ix[ix.length - 1]));
+    stages.forEach((s, k) => {
+      const e = last(s), f = k + 1 < stages.length ? first(stages[k + 1]) : first(stages[0]) + route.length;
+      const n = (k + 1) % stages.length + 1;
+      if (f - e > 3) throw new Error(`stage ${n} begins ${f - e} cells after stage ${k + 1}`);
+      for (let i = e + 1; i <= f; i++) if (route.heading(i) !== route.heading(e)) throw new Error(`stage ${n} starts round a bend`);
+      this.stage(...s.map(([kind, ...ix]) => kind === 'gem' ? ['gem', side, ...route.at(ix[0])]
+        : kind === 'gems' ? ['gems', side, ix.map(route.at)] : ['chain', side, route.along(ix[0], ix[1])]));
+    });
+  }
   // Hex helpers. A hex world repeats, so these wrap around its edges.
   step(c, r, m) {
     const [nc, nr] = hexStep(c, r, m, this.h);
