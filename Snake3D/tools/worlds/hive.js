@@ -29,10 +29,10 @@ for (const [c, r] of [[8, 11], [8, 12], [8, 13], [26, 30], [26, 31], [26, 32]]) 
 // ---- stages. Each one can be seen from where the previous one ends. A dive is always led in by a
 // chain that runs straight into a well, and the item on the other face waits where the snake comes out.
 g.stage(['gem', T, 17, 24]);                                    // 1
-g.stage(['chain', T, 17, 22, 'N N N N N N N']);                 // 2  up the lane between the wells
-g.stage(['gem', T, 19, 12]);                                    // 3
-g.stage(['chain', T, g.arc([21, 16], 6, 6).reverse()]);         // 4  half an orbit round the well
-g.stage(['chain', T, 21, 19, 'S S S S S']);                     // 5  straight on to the next well...
+g.stage(['chain', T, 17, 22, 'N N N']);                         // 2  up the lane between the wells
+g.stage(['gem', T, 19, 15]);                                    // 3  after a bend to the north-east...
+g.stage(['chain', T, [...g.arc([21, 16], 11, 8), [21, 19]]]);   // 4  ...on round the well by its north side, clockwise
+g.stage(['chain', T, 21, 21, 'S S S']);                         // 5  straight on to the next well...
 g.stage(['gem', B, 21, 25]);                                    // 6  ...dive, and the crystal waits underneath
 g.stage(['chain', B, 21, 24, 'NW NW NW NW NW NW NW NW NW']);   // 7  a long diagonal past the next well
 g.stage(['chain', B, 12, 19, 'N N N N N N']);                   // 8  up the column into the well...

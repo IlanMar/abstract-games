@@ -1,8 +1,9 @@
 /* Autopilot for testing levels in the real engine. Load it on the game page from the console:
      document.head.append(Object.assign(document.createElement('script'), {src: 'tools/autopilot.js'}))
    then autopilot.check(2) plays map 2 (Level 2) round its whole loop and every stage on its own,
-   starting from the stage selector's spawn, and autopilot.route(2) reports stages whose items the
-   player cannot see in time. Maps: 0 Initial, 1 Hexagone, 2.. the worlds of levels.js.
+   starting from the stage selector's spawn, and lists the turnarounds on its loop: places where the
+   ideal path doubles back or turns harder than a player can steer. autopilot.route(2) reports stages
+   whose items the player cannot see in time. Maps: 0 Initial, 1 Hexagone, 2.. the worlds of levels.js.
    Before each step it writes the snake's turn queue, following a breadth-first plan over the movement
    rules that avoids walls, spikes and its own body. A stage it cannot finish is a stage to redesign. */
 window.autopilot = (() => {
@@ -140,23 +141,71 @@ window.autopilot = (() => {
     g.frozen = false;
     g.startMap(mapIndex, stage);
     g.beginSelectedStage();
-    const p = g.player, errors = drive(g), log = [];
+    // One entry per step: the turn in notches (+1 right, as the player sees it) and the item it took.
+    const p = g.player, trace = [], pickUp = g.pickUp;
+    g.pickUp = function (it, player) {
+      if (trace.length) trace[trace.length - 1].item = {x: player.target.x, z: player.target.z, side: player.side};
+      return pickUp.apply(this, arguments);
+    };
+    const errors = drive(g, turn => trace.push({turn: turn * -p.dirIndex, flip: p.beenRev, stage: g.levels.index + 1, x: p.pos.x, z: p.pos.z, side: p.side})), log = [];
     let t = 0, stageTime = 0, last = g.levels.index, finished = false;
-    while (t < seconds) {
-      g.update(1 / 60); t += 1 / 60; stageTime += 1 / 60;
-      if (p.isDead || p.tailTouched) { log.push({stage: g.levels.index + 1, result: p.tailTouched ? 'bit its tail' : 'died'}); break; }
-      if (g.levels.index !== last) {
-        log.push({stage: last + 1, time: +stageTime.toFixed(1), length: p.sizeBegin});
-        const wrapped = g.levels.index < last;
-        last = g.levels.index;
-        stageTime = 0;
-        if (wrapped || single) { finished = true; break; }
+    try {
+      while (t < seconds) {
+        g.update(1 / 60); t += 1 / 60; stageTime += 1 / 60;
+        if (p.isDead || p.tailTouched) { log.push({stage: g.levels.index + 1, result: p.tailTouched ? 'bit its tail' : 'died'}); break; }
+        if (g.levels.index !== last) {
+          log.push({stage: last + 1, time: +stageTime.toFixed(1), length: p.sizeBegin});
+          const wrapped = g.levels.index < last;
+          last = g.levels.index;
+          stageTime = 0;
+          if (wrapped || single) { finished = true; break; }
+        }
+        if (stageTime > stageLimit) { log.push({stage: g.levels.index + 1, result: 'stuck'}); break; }
       }
-      if (stageTime > stageLimit) { log.push({stage: g.levels.index + 1, result: 'stuck'}); break; }
+      // Past the wrap, on to the first item of stage 1, so the hop from the last stage is judged too.
+      const wrap = trace.length;
+      if (finished && !single) for (let k = 0; k < 1800 && !trace.slice(wrap).some(e => e.item) && !p.isDead && !p.tailTouched; k++) g.update(1 / 60);
+    } finally {
+      delete g.pickUp;   // back to the Game method
     }
     let spikes = 0;
     for (let s = 0; s < 2; s++) for (let i = 0; i < g.map.env[s].length; i++) if (g.map.env[s][i] !== g.map.pristine[s][i]) spikes++;
-    return {finished, time: +t.toFixed(1), stages: log.filter(e => e.time !== undefined).length, spikes, log, errors: [...errors]};
+    return {finished, time: +t.toFixed(1), stages: log.filter(e => e.time !== undefined).length, spikes, log, errors: [...errors],
+      turnarounds: turnarounds(g.map, trace)};
+  }
+
+  // The ideal path must be one the snake can really steer: it turns one notch per cell (90°, 60° in a
+  // hex), so an item beside or behind it can only be reached by doubling back or circling. Reports every
+  // hop between two items taken one after the other that turns 180° or more in total, or takes 3 or
+  // more cells longer than the distance between them, and every place where the path turns the same way
+  // on two cells in a row (a U-turn in a square world, 120° in a hex one): a player needs room for that.
+  // Hops through the other face are not judged.
+  function turnarounds(map, trace) {
+    const out = [], angle = map.hex ? 60 : 90;
+    trace.forEach((e, i) => {
+      const prev = trace[i - 1];
+      if (prev && e.turn && e.turn === prev.turn && !e.flip && !prev.flip)
+        out.push(`stage ${e.stage}: ${2 * angle}° in two cells at ${cellName(map, prev)}`);
+    });
+    let from = null, turn = 0, steps = 0, flipped = false;
+    for (const e of trace) {
+      if (from) { turn += e.turn; steps++; flipped = flipped || e.flip; }
+      if (!e.item) continue;
+      if (from && !flipped && e.item.side === from.side) {
+        const dx = Math.abs(e.item.x - from.x), dz = Math.abs(e.item.z - from.z);
+        const distance = map.hex ? dx + Math.max(0, dz - dx / 2) : dx + dz;
+        if (Math.abs(turn) * angle >= 180 || steps - distance >= 3)
+          out.push(`stage ${e.stage}: ${cellName(map, from)} to ${cellName(map, e.item)}, ${steps} cells for ${distance}, turned ${turn * angle}°`);
+      }
+      from = e.item; turn = 0; steps = 0; flipped = false;
+    }
+    return out;
+  }
+
+  // A cell as the world scripts write it: column, picture line, face.
+  function cellName(map, {x, z, side}) {
+    const i = map.index(x, z), lines = map.hex ? map.h - 1 : map.h;
+    return `${Math.floor(i / map.h)},${lines - 1 - (i % map.h)}${side ? 'B' : 'T'}`;
   }
 
   // Can a player find the way? Plays the loop, wrap to stage 1 included, like a person who does not
@@ -217,9 +266,7 @@ window.autopilot = (() => {
       };
       const stages = [];
       let cur = null, seen = false, turns = [], planned = '';
-      // Cells as the world scripts write them: column, picture line, face.
-      const lines = map.hex ? map.h - 1 : map.h;
-      const cell = () => { const i = map.index(p.pos.x, p.pos.z); return `${Math.floor(i / map.h)},${lines - 1 - (i % map.h)}${p.side ? 'B' : 'T'}`; };
+      const cell = () => cellName(map, {x: p.pos.x, z: p.pos.z, side: p.side});
       const begin = label => { cur = {stage: label, steps: 0, seen: -1, guesses: 0, lost: false, path: []}; stages.push(cur); };
       const step = p.step.bind(p);
       p.step = () => {
@@ -283,7 +330,8 @@ window.autopilot = (() => {
     const slow = loop.log.filter(e => e.time > 12).map(e => `stage ${e.stage}: ${e.time} s`);
     window.nsnakes.toMenu();
     return {
-      loop: {finished: loop.finished, stages: `${loop.stages}/${total}`, time: loop.time, spikes: loop.spikes, errors: loop.errors, end: loop.log[loop.log.length - 1], slow},
+      loop: {finished: loop.finished, stages: `${loop.stages}/${total}`, time: loop.time, spikes: loop.spikes, errors: loop.errors, end: loop.log[loop.log.length - 1], slow,
+        turnarounds: loop.turnarounds},
       single: {failed, slowest}
     };
   }

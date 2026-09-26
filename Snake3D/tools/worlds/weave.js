@@ -62,7 +62,7 @@ g.stage(['gem', T, 7, 32]);                                  // 5  corner: turn 
 g.stage(['chain', T, 14, 33, 'EEEEE']);                      // 6  towards the porthole, top
 g.stage(['chain', B, 19, 33, 'WWWWW']);                      // 7  same cells underneath, after the dive
 g.stage(['gem', B, 2, 33]);                                  // 8  straight on to the west edge...
-g.stage(['gems', T, [[4, 32], [13, 32], [22, 32]]], ['chain', T, 29, 31, 'NNNNN']);   // 9  ...over it, back along the lane, up the south link
+g.stage(['gems', T, [[2, 33], [13, 32], [22, 32]]], ['chain', T, 29, 31, 'NNNNN']);   // 9  ...over it, back along the lane, up the south link
 g.stage(['gem', T, 32, 24]);                                 // 10 room hem
 g.stage(['chain', T, 34, 23, 'NNNNNNNNNNN']);                // 11 a vertical lane between spike stripes
 g.stage(['gem', B, 34, 10]);                                 // 12 dive off the north edge

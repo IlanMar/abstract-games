@@ -76,8 +76,8 @@ g.stage(['gems', T, [[31, 13], [31, 21]]]);                   // 23 round the co
 g.stage(['chain', T, 27, 31, 'WWWWWWWWWW']);                  // 24 spiked channel
 g.stage(['gem', T, 12, 27]);                                  // 25
 g.stage(['chain', T, 12, 20, 'NNNEEEE']);                     // 26 onto the arena bridge
-g.stage(['gems', T, [[18, 19], [25, 19], [25, 24], [18, 24]]]);   // 27 arena
-g.stage(['chain', T, 23, 21, 'EEEE']);                        // 28 a lead-in that runs off the arena's east edge
+g.stage(['gems', T, [[19, 17], [22, 17], [24, 19]]]);         // 27 across the arena and round to the south
+g.stage(['chain', T, 24, 20, 'SEEE']);                        // 28 a lead-in that turns east and runs off the arena's edge
 // ---- and out on the underside
 g.stage(['gem', B, 27, 21]);                                  // 29 waits just past the edge
 g.stage(['chain', B, 24, 17, 'WWWWWWWWWW']);                  // 30 back over the bridge
