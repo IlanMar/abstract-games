@@ -1686,10 +1686,10 @@
       this.ui.startPrompt(false);
       return true;
     }
-    // Pause > Restart Level and Game Over > Restart Level: the current stage from its start.
+    // Pause > Restart Level and Game Over > Restart Level: replay the whole map from stage 1.
     restartLevel() {
       if ((this.state !== 'paused' && !this.lost) || !this.levels) return;
-      this.startMap(this.mapIndex, this.levels.index);
+      this.startMap(this.mapIndex, 0);
     }
     toMenu() {
       this.state = 'menu';
