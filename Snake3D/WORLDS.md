@@ -21,6 +21,7 @@
 | 6 | Level 6 · Blocks | [`tools/worlds/blocks.js`](tools/worlds/blocks.js) | квадрат 36×36 | квартал блоков, переулки, покраска дороги |
 | 7 | Level 7 · Candy | [`tools/worlds/candy.js`](tools/worlds/candy.js) | гекс 40×44 | рисунки из плиток (`shape`), покраска по клеткам (`layers`) |
 | 8 | Level 8 · Carnival | [`tools/worlds/carnival.js`](tools/worlds/carnival.js) | квадрат 40×40 | узор на каждую прямую в координатах дороги, этапы раскладываются автоматически |
+| 9 | Level 9 · Sunburst | [`tools/worlds/sunburst.js`](tools/worlds/sunburst.js) | квадрат 44×44 | яркие сады препятствий у разных участков маршрута, безопасная обочина и повороты по цепочкам |
 
 Карты 0 (Initial) и 1 (Hexagone) — оригинальные, из `nsnakes-data.js`. Движок, который читает миры, лежит в [`game.js`](game.js) (см. [«Где это в игре»](#где-это-в-игре)).
 
@@ -38,7 +39,7 @@ node tools/build-levels.js          # проверить и записать lev
 
 ```js
 document.head.append(Object.assign(document.createElement('script'), {src: 'tools/autopilot.js'}))
-autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, дальше новые миры по порядку WORLDS
+autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst
 autopilot.route(2)   // найдёт ли дорогу игрок, который не знает карту
 ```
 

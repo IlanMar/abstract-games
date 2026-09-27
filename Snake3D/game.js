@@ -1773,8 +1773,6 @@
       const key = MAPS[this.mapIndex].key;
       if (index >= this.map.levels.length) {
         index = 0;
-        this.ui.loading(true);
-        setTimeout(() => this.ui.loading(false), 350);
       }
       this.save.data.lastLevel[key] = index;
       this.save.write();
@@ -2085,7 +2083,6 @@
       el.style.transitionDuration = `${duration}s`;
       el.style.opacity = to;
     }
-    loading(on) { $('loading').classList.toggle('hidden', !on); }
   }
 
   try {

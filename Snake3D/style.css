@@ -212,13 +212,3 @@ button { font: inherit; color: inherit; }
 #level-kind { color: rgb(125 255 238); margin-top: 0.3em; }
 
 #fade { position: absolute; inset: 0; background: #000; opacity: 1; pointer-events: none; transition: opacity 1s linear; }
-#loading {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 0.29);
-  font-size: max(22px, calc(36 * var(--u)));
-  pointer-events: none;
-}
