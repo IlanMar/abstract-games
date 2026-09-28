@@ -70,23 +70,33 @@ function convert(L, number) {
     return best;
   }
 
-  // ---- the level script, played out in waves.
-  const items = new Map(L.script.map(([id, feat, state, target, kind, param]) =>
-    [id, {id, feat, state, kind, param, count: 0,
-      targets: target === 'x' || target[0] === '~' ? [] : target.replace('&', '').split(':').map(Number)}]));
+  // ---- the level script, played out in waves. A row's targets are switched on when it is taken; '&a:b'
+  // and '|a:b' both name several (the original picks one of a '|' pair at random: here both play), and
+  // several rows may share an id. A pick-up that nothing refers to is in play from the start.
+  const rows = L.script.map(([id, feat, state, target, kind, param]) =>
+    ({id, feat, state, kind, param, count: 0,
+      targets: target === 'x' || target[0] === '~' ? [] : target.replace(/[&|]/g, '').split(':').map(Number)}));
+  const byId = new Map();
+  for (const it of rows) { if (!byId.has(it.id)) byId.set(it.id, []); byId.get(it.id).push(it); }
+  const referred = new Set(rows.flatMap(it => it.targets));
+  const isPickup = it => {
+    if (it.feat === null) return false;
+    const [x, layer, z] = L.feat[it.feat], [c, r] = at(x, z);
+    return markAt(side(layer), c, r).has(15);
+  };
   const waves = [];
   const visited = new Set();
-  let active = [...items.values()].filter(it => it.state === 1);
+  let active = rows.filter(it => it.state === 1 || (it.state === 0 && !referred.has(it.id) && isPickup(it)));
   while (active.length) {
-    const wave = active.filter(it => !visited.has(it.id));
+    const wave = active.filter(it => !visited.has(it));
     if (!wave.length) break;
-    wave.forEach(it => visited.add(it.id));
+    wave.forEach(it => visited.add(it));
     const next = [];
     const fire = id => {
-      const it = items.get(id);
-      if (!it) return;
-      if (it.kind === 'a') { if (++it.count === it.param) it.targets.forEach(fire); }
-      else next.push(it);
+      for (const it of byId.get(id) || []) {
+        if (it.kind === 'a') { if (++it.count === it.param) it.targets.forEach(fire); }
+        else next.push(it);
+      }
     };
     wave.forEach(it => it.targets.forEach(fire));
     waves.push(wave);
