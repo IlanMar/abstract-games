@@ -21,6 +21,8 @@
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
+  const FOG = 18;            // distance from the camera where the floor has faded to black
+  const VIEW_MAX = 1.2;      // Options > View distance: up to 20% further than the original
   const DATA_OFFSET = 12;    // world cell x maps to data column x + RenderingRange / 2
   const SCORE_POWER = 10, SCORE_ENERGY = 5;
   const CONTROL = [[1, 0], [0, -1], [-1, 0], [0, 1]];
@@ -191,7 +193,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, grading: 'on', popups: 'on', boostButton: 'off', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, view: 1, grading: 'on', popups: 'on', boostButton: 'off', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -532,11 +534,12 @@
   // an item enters the view at zero brightness. Without the edge fade the glowing cells, whose
   // colours go past 1 and feed the bloom, popped in bright at the far edge.
   const FADE = `
-    uniform vec3 uCam; uniform vec3 uHead;
-    float camFog(vec3 p){ return 1.0 - clamp(distance(p, uCam) / 18.0, 0.0, 1.0); }
-    float edgeFade(vec3 p){ vec2 d = abs(p.xz - uHead.xz); return clamp((${RANGE - 1}.0 - max(d.x, d.y)) / 3.0, 0.0, 1.0); }
+    uniform vec3 uCam; uniform vec3 uHead; uniform float uFog, uEdge;
+    float camFog(vec3 p){ return 1.0 - clamp(distance(p, uCam) / uFog, 0.0, 1.0); }
+    float edgeFade(vec3 p){ vec2 d = abs(p.xz - uHead.xz); return clamp((uEdge - max(d.x, d.y)) / 3.0, 0.0, 1.0); }
     float fade(vec3 p){ return camFog(p) * edgeFade(p); }
   `;
+  const fadeUniforms = () => ({uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}, uFog: {value: FOG}, uEdge: {value: RANGE - 1}});
   const SHAPES = `
     float rectMask(vec2 uv, float s){ vec2 d = abs(uv * 2.0 - 1.0) - vec2(s); d = 1.0 - d / max(fwidth(d), vec2(1e-5)); return clamp(min(d.x, d.y), 0.0, 1.0); }
     float polyMask(vec2 uv, float s){
@@ -559,7 +562,7 @@
   function tileMaterial(hex) {
     return new T.ShaderMaterial({
       defines: hex ? {HEX: 1} : {},
-      uniforms: {uRev: {value: 0}, uSpectro: {value: 1}, uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}},
+      uniforms: {uRev: {value: 0}, uSpectro: {value: 1}, ...fadeUniforms()},
       vertexShader: `
         attribute vec3 iPos; attribute vec3 iTop; attribute vec3 iRev; attribute vec2 iFx;
         uniform float uRev;
@@ -597,7 +600,7 @@
     return new T.ShaderMaterial({
       defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}),
       uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0},
-        uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}},
+        ...fadeUniforms()},
       vertexShader: FADE + `
         #ifdef INSTANCED
           attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx;
@@ -640,7 +643,7 @@
   // Obj_Shad: obstacles and spikes, lit only by the ambient probe and sky reflection, with fog.
   function propMaterial(color) {
     return new T.ShaderMaterial({
-      uniforms: {uColor: {value: new T.Vector3(color, color, color)}, uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}},
+      uniforms: {uColor: {value: new T.Vector3(color, color, color)}, ...fadeUniforms()},
       vertexShader: `
         varying vec3 vN; varying vec3 vWorld;
         void main(){
@@ -669,20 +672,20 @@
   // Obj_Shad 1 with the "Skin" texture: black faces with white outlines.
   function snakeMaterial() {
     return new T.ShaderMaterial({
-      uniforms: {uCam: {value: new T.Vector3()}, uWidth: {value: 0.026}},
+      uniforms: {uCam: {value: new T.Vector3()}, uWidth: {value: 0.026}, uFog: {value: FOG}},
       vertexShader: `
         attribute vec4 aEdge; attribute float aEdge2;
         varying vec4 vEdge; varying float vEdge2; varying vec3 vWorld;
         void main(){ vEdge = aEdge; vEdge2 = aEdge2; vWorld = position; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `
-        uniform vec3 uCam; uniform float uWidth;
+        uniform vec3 uCam; uniform float uWidth, uFog;
         varying vec4 vEdge; varying float vEdge2; varying vec3 vWorld;
         void main(){
           float d = min(min(min(vEdge.x, vEdge.y), min(vEdge.z, vEdge.w)), vEdge2);
           float aa = max(fwidth(d), 1e-5);
           float w = max(uWidth, aa * 0.9);
           float line = 1.0 - smoothstep(w, w + aa, d);
-          float fog = 1.0 - clamp(distance(vWorld, uCam) / 18.0, 0.0, 1.0);
+          float fog = 1.0 - clamp(distance(vWorld, uCam) / uFog, 0.0, 1.0);
           gl_FragColor = vec4(vec3(line * fog), 1.0);
         }`,
       extensions: {derivatives: true},
@@ -1312,7 +1315,7 @@
       this.group = new T.Group();
       scene.add(this.group);
       const hex = map.hex;
-      this.maxCells = 800;
+      this.maxCells = 1000;      // (2 * 14 + 1)^2 cells at the longest view distance
       const tileGeo = hex ? hexTileGeometry() : unitQuad();
       this.tileMat = tileMaterial(hex);
       this.tiles = this.instanced(tileGeo, this.tileMat, {iPos: 3, iTop: 3, iRev: 3, iFx: 2});
@@ -1324,7 +1327,7 @@
       this.obstacles = [0, 1].map(side => this.props(obstacleGeometry(hex, side === BOTTOM), this.propMats[0]));
       this.spikes = [0, 1].map(side => this.props(spikeGeometry(hex, side === BOTTOM), this.propMats[1]));
       this.gemMat = new T.ShaderMaterial({
-        uniforms: {uCam: {value: V()}, uHead: {value: V()}},
+        uniforms: fadeUniforms(),
         vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = fade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
         fragmentShader: `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
@@ -1369,7 +1372,7 @@
       return {mesh, geometry: g, arrays, list: Object.values(arrays)};
     }
     props(geometry, material) {
-      const mesh = new T.InstancedMesh(geometry, material, 300);
+      const mesh = new T.InstancedMesh(geometry, material, 500);
       mesh.frustumCulled = false;
       mesh.count = 0;
       this.group.add(mesh);
@@ -1379,15 +1382,16 @@
       const map = this.map, hex = map.hex;
       const head = game.player.pos;
       const hx = Math.round(head.x), hz = head.z;
+      const range = game.viewRange;
       const tiles = this.tiles.arrays, items = this.itemTiles.arrays;
       let n = 0, ni = 0;
       const counts = this.counts;   // obstacles of the top and the bottom, then spikes
       counts.fill(0);
       const glowing = game.glowItems;
-      for (let x = hx - RANGE; x <= hx + RANGE; x++) {
+      for (let x = hx - range; x <= hx + range; x++) {
         const odd = hex && (map.dataX(x) & 1);
         const zBase = Math.round(hz);
-        for (let k = zBase - RANGE; k <= zBase + RANGE; k++) {
+        for (let k = zBase - range; k <= zBase + range; k++) {
           const z = odd ? k - 0.5 : k;
           const idx = map.index(x, z);
           const top = map.env[TOP][idx];
@@ -1434,7 +1438,7 @@
       this.q.setFromAxisAngle(this.axis, spin);
       for (const it of game.levels.items.values()) {
         map.worldOf(it.dx, it.dy, head.x, head.z, this.w);
-        const inView = Math.abs(this.w.x - hx) <= RANGE && Math.abs(this.w.z - hz) <= RANGE + 0.5;
+        const inView = Math.abs(this.w.x - hx) <= range && Math.abs(this.w.z - hz) <= range + 0.5;
         if (inView && !it.inView) { it.bornAt = time; }
         it.inView = inView;
         it.wx = this.w.x; it.wz = this.w.z;
@@ -1446,10 +1450,10 @@
         const fx = game.highlightOf(it.idx, time);
         for (let ix = -1; ix <= 1; ix++) {
           const x = this.w.x + ix * map.w;
-          if (Math.abs(x - hx) > RANGE) continue;
+          if (Math.abs(x - hx) > range) continue;
           for (let iz = -1; iz <= 1; iz++) {
             const z = this.w.z + iz * map.zPeriod;
-            if (Math.abs(z - hz) > RANGE + 0.5 || ni >= this.maxCells) continue;
+            if (Math.abs(z - hz) > range + 0.5 || ni >= this.maxCells) continue;
             items.iPos.setXYZ(ni, x, 0.005 * sgn, -z);
             setColors(items, ni, c);
             items.iFx.setXY(ni, fx, c.hli);
@@ -1481,10 +1485,13 @@
       this.quadMat.uniforms.uTime.value = time;
     }
     // Camera and drawn head position for the fog and the edge fade of every floor material.
-    setView(cam, head) {
+    setView(cam, head, fog, range) {
       for (const m of this.fadeMats) {
-        m.uniforms.uCam.value.copy(cam);
-        m.uniforms.uHead.value.copy(head);
+        const u = m.uniforms;
+        u.uCam.value.copy(cam);
+        u.uHead.value.copy(head);
+        u.uFog.value = fog;
+        u.uEdge.value = range - 1;
       }
     }
     dispose() {
@@ -1672,6 +1679,7 @@
       this.fx = {bloom: CAMERA.bloom, chromatic: 0, grade: this.save.data.grading !== 'off'};
       this.highlights = new Map();
       this.clearColor = new T.Color();
+      this.setView(this.save.data.view);
       this.followAt = V();
       this.glowItems = [];
       this.timers = [];
@@ -1689,6 +1697,13 @@
       requestAnimationFrame(t => this.frame(t));
     }
     isRunning() { return this.state === 'playing'; }
+    // View distance: the window of generated cells and the fog grow together, 100% to 120%.
+    setView(scale) {
+      scale = Math.min(VIEW_MAX, Math.max(1, +scale || 1));
+      this.viewRange = Math.round(RANGE * scale);
+      this.viewFog = FOG * scale;
+      this.drawnState = null;
+    }
     // Debug helper: advance the simulation by a number of seconds at 60 fps.
     simulate(seconds) { for (let i = 0; i < seconds * 60 && this.state === 'playing'; i++) { this.update(1 / 60); this.render(); } }
     mapData(index) {
@@ -1981,7 +1996,8 @@
         this.world.tileMat.uniforms.uSpectro.value = this.spectro;
         this.world.tileMat.uniforms.uRev.value = this.rev;
         this.world.update(this, this.time);
-        this.world.setView(this.camera.position, follow);
+        this.world.setView(this.camera.position, follow, this.viewFog, this.viewRange);
+        this.snakeMat.uniforms.uFog.value = this.viewFog;
         this.snakeMat.uniforms.uCam.value.copy(this.camera.position);
         this.fx.bloom = this.cameraRig.bloom;
         this.fx.chromatic = this.cameraRig.chromatic;
@@ -2088,6 +2104,11 @@
       sfx.value = s.sfx;
       music.addEventListener('input', () => { s.music = +music.value; game.audio.applyVolumes(); game.save.write(); });
       sfx.addEventListener('input', () => { s.sfx = +sfx.value; game.audio.applyVolumes(); game.save.write(); });
+      const view = $('view-distance'), viewLabel = $('view-value');
+      const showView = () => { viewLabel.textContent = `${Math.round(s.view * 100)}%`; };
+      view.value = s.view;
+      showView();
+      view.addEventListener('input', () => { s.view = +view.value; game.setView(s.view); showView(); game.save.write(); });
       // The On/Off rows in Options: a row names its save key, each button a value.
       const apply = {
         grading: () => { game.fx.grade = s.grading !== 'off'; game.drawnState = null; },
