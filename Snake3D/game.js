@@ -194,7 +194,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', scoreShown: 'on', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -2336,7 +2336,8 @@
         popups: () => { if (s.popups === 'off') while (this.popups.length) this.popups.shift().remove(); },
         boostButton: () => this.boostButton(),
         frameRate: () => game.setFrameRate(s.frameRate),
-        fpsCounter: () => game.showFps(s.fpsCounter === 'on')
+        fpsCounter: () => game.showFps(s.fpsCounter === 'on'),
+        scoreShown: () => this.scoreShown()
       };
       document.querySelectorAll('[data-setting] button').forEach(b => b.addEventListener('click', () => {
         const key = b.parentElement.dataset.setting;
@@ -2348,6 +2349,7 @@
       this.settingButtons();
       this.boostButton();
       game.showFps(s.fpsCounter === 'on');
+      this.scoreShown();
       document.addEventListener('pointerdown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
       document.addEventListener('keydown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
     }
@@ -2356,6 +2358,8 @@
         for (const b of row.querySelectorAll('button')) b.classList.toggle('selected', b.dataset.value === this.game.save.data[row.dataset.setting]);
       });
     }
+    // Options > Score: Off hides the score, its bar and the multiplier at the top; the layout stays.
+    scoreShown() { $('hud').classList.toggle('no-score', this.game.save.data.scoreShown === 'off'); }
     boostButton() { $('boost-button').classList.toggle('hidden', this.game.save.data.boostButton !== 'on'); }
     showMenu(panel, overlay = false) {
       this.stopCountdown();
