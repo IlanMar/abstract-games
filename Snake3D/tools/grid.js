@@ -5,6 +5,11 @@
 // Square moves: N (up the picture), S, E, W. Hex moves: N, S, NE, SE, NW, SW; odd hex columns sit
 // half a cell lower than even ones.
 const MOVES = {N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0]};
+// Item characters: crystals, then chains. Past the 26 letters come digits and signs for crystals and
+// accented and Greek small letters for chains (they sort after 'a', which makes them chains).
+const GEMS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@$%&*+?!;:';
+const CHAINS = 'abcdefghijklmnopqrstuvwxyzàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþαβγδεζηθικλμνξοπρστυφχψω';
+const isItem = ch => ch !== undefined && (GEMS.includes(ch) || CHAINS.includes(ch));
 
 // One hex step in picture coordinates (h: number of lines). Works through data rows, which grow upwards.
 function hexStep(c, r, m, h) {
@@ -55,11 +60,14 @@ class Grid {
     }
     return out;
   }
-  // Crystals take A..Z and chains a..z, each in order of appearance.
+  // Crystals take A..Z and chains a..z, each in order of appearance. A big world (the classic levels)
+  // goes on with EXTRA: any character that is not a tile is an item for the engine, a crystal below 'a'
+  // and a chain from 'a' up.
   letter(kind) {
     const k = this.used[kind]++;
-    if (k >= 26) throw new Error('out of letters for ' + kind);
-    return String.fromCharCode((kind === 'gem' ? 65 : 97) + k);
+    const list = kind === 'gem' ? GEMS : CHAINS;
+    if (k >= list.length) throw new Error('out of letters for ' + kind);
+    return list[k];
   }
   // Adds the next stage. Each group is ['gem', side, c, r], ['gems', side, [[c, r], ...]] (a trail of
   // crystals under one letter), ['chain', side, c, r, moves] or ['chain', side, [[c, r], ...]] with the
@@ -72,9 +80,6 @@ class Grid {
       for (const [x, y] of cells) {
         const cur = this.get(side, x, y);
         if (cur !== '.') throw new Error(`stage ${this.stages.length + 1} ${ch}: cell ${x},${y} on ${side} is '${cur}'`);
-        // The engine places an item only where the top of the cell is plain floor, whichever side it is on.
-        const top = this.get('top', x, y);
-        if (side === 'bottom' && top !== '.' && !/[a-z]/i.test(top)) throw new Error(`stage ${this.stages.length + 1} ${ch}: top of ${x},${y} is '${top}'`);
         this.set(side, x, y, ch);
       }
       s += ch;
@@ -176,4 +181,4 @@ class Grid {
   }
 }
 
-module.exports = {Grid, MOVES, hexStep};
+module.exports = {Grid, MOVES, hexStep, isItem};

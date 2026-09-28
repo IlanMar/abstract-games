@@ -4,24 +4,24 @@
 // The worlds appear in the menu after the two original maps, in the order of WORLDS.
 const fs = require('fs');
 const path = require('path');
-const {hexStep, MOVES} = require('./grid');
+const {hexStep, MOVES, isItem} = require('./grid');
+const floorOrItem = ch => ch === '.' || isItem(ch);
 
-const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade'];
+const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'classic'];
 
 function check(world) {
   const {grid: g, start} = world;
   const errors = [];
-  const at = (side, c, r) => g.get(side, ((c % g.w) + g.w) % g.w, ((r % g.h) + g.h) % g.h);
   // Holes go through the whole slab, so both faces must agree on them.
   for (let r = 0; r < g.h; r++) for (let c = 0; c < g.w; c++)
     if ((g.top[r][c] === ' ') !== (g.bottom[r][c] === ' ')) errors.push(`hole at ${c},${r} on one face only`);
   const [sc, sr] = start;
-  if (!/[.a-zA-Z]/.test(g.top[sr][sc])) errors.push(`start ${sc},${sr} is not plain floor`);
+  if (!floorOrItem(g.top[sr][sc])) errors.push(`start ${sc},${sr} is not plain floor`);
   // Letters: where they are and whether a stage uses them.
   const cells = new Map();
   for (const side of ['top', 'bottom']) for (let r = 0; r < g.h; r++) for (let c = 0; c < g.w; c++) {
     const ch = g[side][r][c];
-    if (!/[a-zA-Z]/.test(ch)) continue;
+    if (!isItem(ch)) continue;
     if (!cells.has(ch)) cells.set(ch, {side, list: []});
     const e = cells.get(ch);
     if (e.side !== side) errors.push(`letter ${ch} is on both faces`);
@@ -38,7 +38,6 @@ function check(world) {
     for (const ch of stage) {
       const e = cells.get(ch);
       if (!e) { errors.push(`stage ${i + 1}: letter ${ch} is not on the map`); continue; }
-      for (const [c, r] of e.list) if (e.side === 'bottom' && !/[.a-zA-Z]/.test(at('top', c, r))) errors.push(`stage ${i + 1}: ${ch} at ${c},${r} lies under a top tile`);
       if (ch < 'a') continue;   // every cell of an upper-case letter is a crystal of its own
       // A chain must be one path: every cell has two chain neighbours except the two ends.
       const set = new Set(e.list.map(wrap));
@@ -71,7 +70,8 @@ ${rows('bottom')}
   }`;
 }
 
-const worlds = WORLDS.map(name => require(`./worlds/${name}`));
+// A script exports one world, or a list of them (classic.js holds all the classic levels).
+const worlds = WORLDS.flatMap(name => [].concat(require(`./worlds/${name}`)));
 let failed = false;
 for (const w of worlds) {
   const errors = check(w);

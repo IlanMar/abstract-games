@@ -912,7 +912,7 @@
         for (let i = 0; i < ch.cells.length; i += 3) {
           const dx = ch.cells[i], dy = ch.cells[i + 1], v = ch.cells[i + 2];
           const idx = dx * this.map.h + dy;
-          if (this.map.env[TOP][idx] !== 0) continue;
+          if (this.map.env[group.side][idx] !== 0) continue;   // plain floor on the item's own face
           const k = this.key(idx, group.side);
           if (this.items.has(k)) continue;
           const item = {group, type: v === 3 ? 'energy' : 'power', dx, dy, idx, side: group.side, hiddenUntil: 0, inView: false, bornAt: -10};
