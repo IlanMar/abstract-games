@@ -765,20 +765,24 @@
         uInner: {value: 0.8}, ...fadeUniforms()},
       vertexShader: FADE + `
         #ifdef INSTANCED
-          attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx;
+          attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec3 iFx;
+        #elif defined(USE_INSTANCING)
+          attribute float iLerp;
         #endif
         uniform vec3 uCol1, uCol2, uHL; uniform float uHLI, uThick;
-        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
+        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec3 vFx; varying float vFade;
         void main(){
           vUv = uv;
           #ifdef INSTANCED
             vCol1 = iCol1; vCol2 = iCol2; vHL = iHL; vFx = iFx;
             vec4 w = vec4(position + iPos, 1.0);
           #else
-            vCol1 = uCol1; vCol2 = uCol2; vHL = uHL; vFx = vec2(uThick, uHLI);
+            vCol1 = uCol1; vCol2 = uCol2; vHL = uHL;
             #ifdef USE_INSTANCING
+              vFx = vec3(uThick, uHLI, iLerp);
               vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
             #else
+              vFx = vec3(uThick, uHLI, -1.0);
               vec4 w = modelMatrix * vec4(position, 1.0);
             #endif
           #endif
@@ -787,14 +791,16 @@
         }`,
       fragmentShader: SHAPES + `
         uniform float uTime, uInner;
-        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
+        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec3 vFx; varying float vFade;
         void main(){
           vec2 uv = tileUv(vUv);
           float thick = vFx.x;
           float border = 1.0 - SHAPE(uv, 1.13 - 0.38 * thick);
           float inner = SHAPE(uv * 1.06 - 0.03, uInner);
           vec3 c2 = mix(vCol2, vHL, thick);
-          vec3 col = mix(vCol1, c2, abs(cos(uTime * 4.0))) * (1.0 + thick * (vFx.y - 1.0));
+          // Energy and boost cells pulse all together; power chains take the wave of chainWave.
+          float k = vFx.z < 0.0 ? abs(cos(uTime * 4.0)) : vFx.z;
+          vec3 col = mix(vCol1, c2, k) * (1.0 + thick * (vFx.y - 1.0));
           gl_FragColor = vec4((col * inner + border * vHL) * vFade, 1.0);
         }`,
       side: T.DoubleSide,
@@ -1113,7 +1119,7 @@
           if (this.map.env[group.side][idx] !== 0) continue;   // plain floor on the item's own face
           const k = this.key(idx, group.side);
           if (this.items.has(k)) continue;
-          const item = {group, type: v === 3 ? 'energy' : 'power', dx, dy, idx, side: group.side, hiddenUntil: 0, inView: false, bornAt: -10};
+          const item = {group, k: group.items.length, type: v === 3 ? 'energy' : 'power', dx, dy, idx, side: group.side, hiddenUntil: 0, inView: false, bornAt: -10};
           group.items.push(item);
           this.items.set(k, item);
         }
@@ -1474,6 +1480,19 @@
   };
 
   const SIDES = [TOP, BOTTOM];
+  // FlashingShadGroup.CoroutineUpdate of the remake, the wave its videos show: a round hooks the
+  // cells of a chain one by one, every ~0.03 s, to the end and back, then waits ~0.6 s. A hooked
+  // cell's _lerp falls as cos(3 t) from 1 (the light colour) to 0 (the chain blue) in half a second,
+  // so a chain rests blue and a light wave sweeps it. Returns that lerp.
+  function chainWave(it, time) {
+    const n = it.group.items.length, k = it.k, id = Math.abs(it.group.id | 0);
+    const tick = 0.03 + ((id * 7919) % 11 - 5) * 0.001;      // delayPerFS, ±0.005 per group
+    const pause = 0.6 + ((id * 104729) % 21 - 10) * 0.01;     // delay, ±0.1 per group
+    const round = (2 * n - 1) * tick + pause, t = time % round;
+    const fwd = k <= n - 2 ? k * tick : -1, back = (2 * n - 2 - k) * tick;
+    const last = back <= t ? back : fwd >= 0 && fwd <= t ? fwd : back - round;
+    return Math.max(0, Math.cos(3 * (t - last)));
+  }
   function setColors(items, i, c) {
     items.iCol1.setXYZ(i, c.c1[0], c.c1[1], c.c1[2]);
     items.iCol2.setXYZ(i, c.c2[0], c.c2[1], c.c2[2]);
@@ -1492,7 +1511,7 @@
       this.tiles.mesh.renderOrder = 2;
       this.itemMat = flashMaterial(hex, true);
       const itemGeo = hexOrQuad(hex);
-      this.itemTiles = this.instanced(itemGeo, this.itemMat, {iPos: 3, iCol1: 3, iCol2: 3, iHL: 3, iFx: 2});
+      this.itemTiles = this.instanced(itemGeo, this.itemMat, {iPos: 3, iCol1: 3, iCol2: 3, iHL: 3, iFx: 3});
       this.propMats = [propMaterial(0.953), propMaterial(0.502)];
       this.obstacles = [0, 1].map(side => this.props(obstacleGeometry(hex, side === BOTTOM), this.propMats[0]));
       this.spikes = [0, 1].map(side => this.props(spikeGeometry(hex, side === BOTTOM), this.propMats[1]));
@@ -1516,6 +1535,8 @@
       this.quadMat.uniforms.uHL.value.set(...c.hl);
       this.quadMat.uniforms.uHLI.value = c.hli;
       this.quads = new T.InstancedMesh(new T.BoxGeometry(0.4, 0.4, 0.03), this.quadMat, 512);
+      this.quadLerp = new T.InstancedBufferAttribute(new Float32Array(512), 1).setUsage(T.DynamicDrawUsage);
+      this.quads.geometry.setAttribute('iLerp', this.quadLerp);
       this.quads.frustumCulled = false;
       this.group.add(this.gems, this.quads);
       this.m = new T.Matrix4();
@@ -1598,7 +1619,7 @@
               const c = v === 5 ? COLORS.boostUp : COLORS.boostDown;
               items.iPos.setXYZ(ni, x, side === TOP ? 0.006 : -0.006, tz);
               setColors(items, ni, c);
-              items.iFx.setXY(ni, thick, c.hli);
+              items.iFx.setXYZ(ni, thick, c.hli, -1);
               ni++;
             }
           }
@@ -1622,6 +1643,7 @@
         const c = COLORS[it.type];
         const sgn = it.side === TOP ? 1 : -1;
         const fx = game.highlightOf(it.idx, time);
+        const wave = it.type === 'power' ? chainWave(it, time) : -1;
         for (let ix = -1; ix <= 1; ix++) {
           const x = this.w.x + ix * map.w;
           if (Math.abs(x - hx) > range) continue;
@@ -1630,7 +1652,7 @@
             if (Math.abs(z - hz) > range + 0.5 || ni >= this.maxCells) continue;
             items.iPos.setXYZ(ni, x, 0.005 * sgn, -z);
             setColors(items, ni, c);
-            items.iFx.setXY(ni, fx, c.hli);
+            items.iFx.setXYZ(ni, fx, c.hli, wave);
             ni++;
             this.v.set(x, 0.5 * sgn, -z);
             if (it.type === 'energy' && ng < 256) {
@@ -1639,6 +1661,7 @@
             } else if (it.type === 'power' && nq < 512 && time >= it.hiddenUntil) {
               this.v.y = 0.46 * sgn;
               this.m.compose(this.v, this.q2.setFromAxisAngle(this.axis, spin + 1.3), this.one);
+              this.quadLerp.setX(nq, 1 - wave);   // FlashingShad: the cube takes 1 - lerp
               this.quads.setMatrixAt(nq++, this.m);
             }
           }
@@ -1650,6 +1673,7 @@
       uploadUsed(this.gems.instanceMatrix, ng);
       this.quads.count = nq;
       uploadUsed(this.quads.instanceMatrix, nq);
+      uploadUsed(this.quadLerp, nq);
       for (const side of SIDES) {
         this.obstacles[side].count = counts[side];
         this.spikes[side].count = counts[2 + side];
