@@ -2067,8 +2067,9 @@
       }
       this.levels.load(index);
     }
-    // Level Complete, as in the original: the snake stops, the results show, and Continue (or the
-    // countdown) goes on to the next map. After the last map comes the first one.
+    // Level Complete, as in the original: the snake stops, the results show, and Next Level (or the
+    // countdown) goes on to the next map. After the last map comes the first one. Stay on This Level
+    // keeps the run going on the same map, Replay Level starts it over.
     complete() {
       const def = MAPS[this.mapIndex];
       this.state = 'complete';
@@ -2081,7 +2082,15 @@
       $('complete-time').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
       $('complete-score').textContent = String(Math.max(0, this.score | 0)).padStart(6, '0');
       this.ui.showMenu('complete', true);
-      this.ui.countdown($('next-map'), 'Continue', COMPLETE_COUNTDOWN, () => this.nextMap());
+      this.ui.countdown($('next-map'), 'Next Level', COMPLETE_COUNTDOWN, () => this.nextMap());
+    }
+    // The route begins again from its first stage; the snake, its length and the score carry on.
+    stayOnMap() {
+      if (this.state !== 'complete') return;
+      this.levels.load(0);
+      this.state = 'playing';
+      this.ui.hideMenu();
+      this.last = performance.now();
     }
     nextMap() { this.startMap((this.mapIndex + 1) % MAPS.length); }
     spikeBurst(target, side) {
@@ -2309,6 +2318,7 @@
       $('continue').addEventListener('click', () => game.startMap(Math.max(0, MAPS.findIndex(m => m.key === game.save.data.lastMap))));
       $('select-level').addEventListener('click', () => game.startMap(this.selected));
       $('next-map').addEventListener('click', () => game.nextMap());
+      $('stay-map').addEventListener('click', () => game.stayOnMap());
       $('replay-map').addEventListener('click', () => game.startMap(game.mapIndex));
       $('complete-to-menu').addEventListener('click', () => game.toMenu());
       // Select Level: a drop-down of every map (the phone shows its own scrolling picker); it opens on
