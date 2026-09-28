@@ -555,6 +555,7 @@
           uniform vec4 threshold;
           void main(){
             vec4 c = min(vec4(65472.0), box13(vUv));
+            c.rgb *= clamp(c.a, 0.0, 1.0);   // the classic items write alpha 0: they never bloom
             float br = max(c.r, max(c.g, c.b));
             float rq = clamp(br - threshold.y, 0.0, threshold.z);
             rq = threshold.w * rq * rq;
@@ -603,12 +604,17 @@
               vec3 a = texture2D(tMain, vUv).rgb, b = texture2D(tMain, vUv + delta).rgb, c = texture2D(tMain, vUv + delta * 2.0).rgb;
               color = vec4(a.r, b.g, c.b, 1.0);
             } else color = texture2D(tMain, vUv);
+            // The classic items (alpha 0) keep their own flat colours: no grading and no tone curve.
+            float classic = 1.0 - clamp(texture2D(tMain, vUv).a, 0.0, 1.0);
             vec3 col = toLinear(color.rgb);
-            col += tent(tBloom, vUv, bloomTexel, scale).rgb * bloomIntensity;
+            vec3 glow = tent(tBloom, vUv, bloomTexel, scale).rgb * bloomIntensity;
+            col += glow;
             vec2 d = abs(vUv - 0.5) * 1.779;
             d = pow(clamp(d, 0.0, 1.0), vec2(3.95));
-            col *= pow(clamp(1.0 - dot(d, d), 0.0, 1.0), 1.405);
+            float vignette = pow(clamp(1.0 - dot(d, d), 0.0, 1.0), 1.405);
+            col *= vignette;
             col = clamp(col, 0.0, 59.0);
+            vec3 plain = toSRGB(clamp((toLinear(color.rgb) + glow) * vignette, 0.0, 1.0));
             if (grade > 0.5) {
               col = LMS_2_LIN * ((LIN_2_LMS * col) * balance);
               col *= gain;
@@ -616,7 +622,7 @@
               col = max(col, 0.0);
             }
             col = vec3(tone(col.r), tone(col.g), tone(col.b));
-            gl_FragColor = vec4(toSRGB(col), 1.0);
+            gl_FragColor = vec4(mix(toSRGB(col), plain, classic), 1.0);
           }`,
         depthTest: false, depthWrite: false
       });
@@ -757,35 +763,19 @@
     });
   }
 
-  // GR_Graph_Shad_Flashing_Continous: energy, power and boost cells pulse with |cos(4t)|.
-  function flashMaterial(hex, instanced) {
+  // GR_Graph_Shad_Flashing_Continous for the item cells: boost cells pulse with |cos(4t)|; a
+  // third iFx component of 0..1 holds the colour still (the dark spot under a pickup).
+  function flashMaterial(hex) {
     return new T.ShaderMaterial({
-      defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}),
-      uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0},
-        uInner: {value: 0.8}, ...fadeUniforms()},
+      defines: hex ? {HEX: 1} : {},
+      uniforms: {uTime: {value: 0}, uInner: {value: 0.8}, ...fadeUniforms()},
       vertexShader: FADE + `
-        #ifdef INSTANCED
-          attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec3 iFx;
-        #elif defined(USE_INSTANCING)
-          attribute float iLerp;
-        #endif
-        uniform vec3 uCol1, uCol2, uHL; uniform float uHLI, uThick;
+        attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec3 iFx;
         varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec3 vFx; varying float vFade;
         void main(){
           vUv = uv;
-          #ifdef INSTANCED
-            vCol1 = iCol1; vCol2 = iCol2; vHL = iHL; vFx = iFx;
-            vec4 w = vec4(position + iPos, 1.0);
-          #else
-            vCol1 = uCol1; vCol2 = uCol2; vHL = uHL;
-            #ifdef USE_INSTANCING
-              vFx = vec3(uThick, uHLI, iLerp);
-              vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
-            #else
-              vFx = vec3(uThick, uHLI, -1.0);
-              vec4 w = modelMatrix * vec4(position, 1.0);
-            #endif
-          #endif
+          vCol1 = iCol1; vCol2 = iCol2; vHL = iHL; vFx = iFx;
+          vec4 w = vec4(position + iPos, 1.0);
           vFade = edgeFade(w.xyz);   // glowing cells keep their full brightness: no distance fog
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
@@ -798,10 +788,9 @@
           float border = 1.0 - SHAPE(uv, 1.13 - 0.38 * thick);
           float inner = SHAPE(uv * 1.06 - 0.03, uInner);
           vec3 c2 = mix(vCol2, vHL, thick);
-          // Energy and boost cells pulse all together; power chains take the wave of chainWave.
           float k = vFx.z < 0.0 ? abs(cos(uTime * 4.0)) : vFx.z;
           vec3 col = mix(vCol1, c2, k) * (1.0 + thick * (vFx.y - 1.0));
-          gl_FragColor = vec4((col * inner + border * vHL) * vFade, 1.0);
+          gl_FragColor = vec4((col * inner + border * vHL) * vFade, vFx.z < 0.0 ? 1.0 : 0.0);   // a still cell is a classic one
         }`,
       side: T.DoubleSide,
       extensions: {derivatives: true}
@@ -928,14 +917,6 @@
     }
     g.computeVertexNormals();
     if (down) g.scale(1, -1, 1);
-    return g;
-  }
-
-  // Energy gem: the hexagonal prism "Cylinder" (radius 0.55, depth 0.19) at half scale.
-  function gemGeometry() {
-    const g = hexPrism(0.275, 0.275, 0.096, false);
-    g.translate(0, -0.048, 0);
-    g.rotateX(Math.PI / 2);
     return g;
   }
 
@@ -1119,7 +1100,7 @@
           if (this.map.env[group.side][idx] !== 0) continue;   // plain floor on the item's own face
           const k = this.key(idx, group.side);
           if (this.items.has(k)) continue;
-          const item = {group, k: group.items.length, type: v === 3 ? 'energy' : 'power', dx, dy, idx, side: group.side, hiddenUntil: 0, inView: false, bornAt: -10};
+          const item = {group, k: group.items.length, type: v === 3 ? 'energy' : 'power', dx, dy, idx, side: group.side, inView: false, bornAt: -10};
           group.items.push(item);
           this.items.set(k, item);
         }
@@ -1474,24 +1455,45 @@
   // ---------------------------------------------------------------- world renderer
   const COLORS = {
     energy: {c1: [0.651, 0.638, 0.138], c2: [0.832, 0.832, 0.832], hl: [1, 1, 1], hli: 1.7},
+    pickupMark: {c1: [0.05, 0.3, 0.08], c2: [0.05, 0.3, 0.08], hl: [0, 0, 0], hli: 1},   // the dark green spot under a pickup
     power: {c1: [0, 0.014, 1], c2: [0.948, 0.953, 1], hl: [0, 2.119, 2.019], hli: 3},
     boostUp: {c1: [0, 1, 0], c2: [0.481, 0.991, 0.481], hl: [0, 2.996, 0], hli: 1.7},
     boostDown: {c1: [1, 0.009, 0], c2: [1, 0.481, 0.476], hl: [16, 0, 0], hli: 1.7}
   };
 
   const SIDES = [TOP, BOTTOM];
-  // FlashingShadGroup.CoroutineUpdate of the remake, the wave its videos show: a round hooks the
-  // cells of a chain one by one, every ~0.03 s, to the end and back, then waits ~0.6 s. A hooked
-  // cell's _lerp falls as cos(3 t) from 1 (the light colour) to 0 (the chain blue) in half a second,
-  // so a chain rests blue and a light wave sweeps it. Returns that lerp.
-  function chainWave(it, time) {
-    const n = it.group.items.length, k = it.k, id = Math.abs(it.group.id | 0);
-    const tick = 0.03 + ((id * 7919) % 11 - 5) * 0.001;      // delayPerFS, ±0.005 per group
-    const pause = 0.6 + ((id * 104729) % 21 - 10) * 0.01;     // delay, ±0.1 per group
-    const round = (2 * n - 1) * tick + pause, t = time % round;
-    const fwd = k <= n - 2 ? k * tick : -1, back = (2 * n - 2 - k) * tick;
-    const last = back <= t ? back : fwd >= 0 && fwd <= t ? fwd : back - round;
-    return Math.max(0, Math.cos(3 * (t - last)));
+  // Items in the look of the 2005 original: flat colours lit by one light, no glow. The pixels
+  // write alpha 0, which the bloom prefilter reads as "do not bloom".
+  const CLASSIC_LIGHT = `vec3(0.321, 0.766, 0.557)`;
+  function classicMaterial(top, side) {
+    return new T.ShaderMaterial({
+      uniforms: {uTop: {value: V(...top)}, uSide: {value: V(...side)}, ...fadeUniforms()},
+      vertexShader: FADE + `varying vec3 vN; varying float vUp, vFade;
+        void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal); vUp = abs(normal.y);
+          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform vec3 uTop, uSide; varying vec3 vN; varying float vUp, vFade;
+        void main(){ vec3 n = normalize(vN); vec3 base = vUp > 0.5 ? uTop : uSide;
+          float light = 0.45 + 0.55 * abs(dot(n, ${CLASSIC_LIGHT}));
+          gl_FragColor = vec4(base * light * vFade, 0.0); }`,
+      side: T.DoubleSide
+    });
+  }
+  // pickup.bix: a hexagonal disc (radius 0.58, 0.29 thick), shown upright and spinning.
+  function pickupGeometry() {
+    const g = new T.CylinderGeometry(0.582, 0.582, 0.286, 6).toNonIndexed();
+    g.computeVertexNormals();
+    return g;
+  }
+  // The axis a chain slab tilts about: across the chain, from the next (or previous) cell of its group.
+  function slabAxis(it, map) {
+    if (it.axis) return it.axis;
+    const cells = it.group.items, o = cells[it.k + 1] || cells[it.k - 1];
+    let dx = o ? o.dx - it.dx : 1, dz = o ? o.dy - it.dy : 0;
+    if (Math.abs(dx) > 1) dx = -Math.sign(dx);   // across the edge of a repeating map
+    if (Math.abs(dz) > 1) dz = -Math.sign(dz);
+    it.axis = V(dz, 0, dx).normalize();          // three.js z is the negated map z
+    if (!(it.axis.lengthSq() > 0)) it.axis.set(1, 0, 0);
+    return it.axis;
   }
   function setColors(items, i, c) {
     items.iCol1.setXYZ(i, c.c1[0], c.c1[1], c.c1[2]);
@@ -1509,40 +1511,28 @@
       this.tileMat = tileMaterial(hex);
       this.tiles = this.instanced(tileGeo, this.tileMat, {iPos: 3, iTop: 3, iRev: 3, iFx: 2});
       this.tiles.mesh.renderOrder = 2;
-      this.itemMat = flashMaterial(hex, true);
+      this.itemMat = flashMaterial(hex);
       const itemGeo = hexOrQuad(hex);
       this.itemTiles = this.instanced(itemGeo, this.itemMat, {iPos: 3, iCol1: 3, iCol2: 3, iHL: 3, iFx: 3});
       this.propMats = [propMaterial(0.953), propMaterial(0.502)];
       this.obstacles = [0, 1].map(side => this.props(obstacleGeometry(hex, side === BOTTOM), this.propMats[0]));
       this.spikes = [0, 1].map(side => this.props(spikeGeometry(hex, side === BOTTOM), this.propMats[1]));
-      this.gemMat = new T.ShaderMaterial({
-        uniforms: fadeUniforms(),
-        vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
-          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
-        // Energy_Mat is LWRP Simple Lit (no specular): ambient probe plus the scene's directional light
-        // (colour 1, 0.967, 0.873, intensity 1, no shadows), then emission.
-        fragmentShader: `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
-          vec3 sun = vec3(1.0, 0.967, 0.873) * max(dot(n, vec3(0.321, 0.766, 0.557)), 0.0);
-          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * (amb + sun) + vec3(0.493, 0.484, 0.104)) * vFade, 1.0); }`
-      });
-      this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
+      // The 2005 original's pickup (a green disc) and power path slab (trigger_pickup.bix, 0.7 x 0.1 x
+      // 0.7, pale on top and blue at the sides), in place of the remake's glowing gem and silver cube.
+      this.gemMat = classicMaterial([0.52, 1.26, 0.3], [0.15, 0.74, 0.12]);   // shown about 0.35/0.85/0.2 and 0.1/0.5/0.08
+      this.gems = new T.InstancedMesh(pickupGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
-      this.quadMat = flashMaterial(false, false);
-      this.quadMat.uniforms.uInner.value = 1;   // FlashingShad.Start sets _bCutOut 0 on the cube: silver on the whole face
-      const c = COLORS.power;
-      this.quadMat.uniforms.uCol1.value.set(...c.c1);
-      this.quadMat.uniforms.uCol2.value.set(...c.c2);
-      this.quadMat.uniforms.uHL.value.set(...c.hl);
-      this.quadMat.uniforms.uHLI.value = c.hli;
-      this.quads = new T.InstancedMesh(new T.BoxGeometry(0.4, 0.4, 0.03), this.quadMat, 512);
-      this.quadLerp = new T.InstancedBufferAttribute(new Float32Array(512), 1).setUsage(T.DynamicDrawUsage);
-      this.quads.geometry.setAttribute('iLerp', this.quadLerp);
+      this.quadMat = classicMaterial([0.94, 0.94, 1.13], [0.36, 0.51, 1.3]);   // shown about 0.82/0.82/0.98 and 0.25/0.35/0.9
+      this.quads = new T.InstancedMesh(new T.BoxGeometry(0.7, 0.097, 0.7), this.quadMat, 512);
       this.quads.frustumCulled = false;
       this.group.add(this.gems, this.quads);
       this.m = new T.Matrix4();
       this.q = new T.Quaternion();
       this.q2 = new T.Quaternion();
       this.axis = V(1, 0, 1).normalize();
+      this.up = V(0, 1, 0);
+      this.q3 = new T.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.PI / 2);   // the disc stands on its edge
+      this.pickupScale = V(0.55, 0.55, 0.55);
       this.one = V(1, 1, 1);
       this.v = V();
       this.w = {x: 0, z: 0};
@@ -1640,28 +1630,32 @@
         if (!inView) continue;
         // A small map repeats inside the window, and so do its items: the floor of every copy is
         // drawn, so an item that only showed on the nearest copy jumped between copies.
-        const c = COLORS[it.type];
         const sgn = it.side === TOP ? 1 : -1;
         const fx = game.highlightOf(it.idx, time);
-        const wave = it.type === 'power' ? chainWave(it, time) : -1;
+        // A slab disappears while its cell is part of the chain being driven; a broken chain puts it back.
+        const taken = it.type === 'power' && game.player && game.player.combos.includes(it);
         for (let ix = -1; ix <= 1; ix++) {
           const x = this.w.x + ix * map.w;
           if (Math.abs(x - hx) > range) continue;
           for (let iz = -1; iz <= 1; iz++) {
             const z = this.w.z + iz * map.zPeriod;
             if (Math.abs(z - hz) > range + 0.5 || ni >= this.maxCells) continue;
-            items.iPos.setXYZ(ni, x, 0.005 * sgn, -z);
-            setColors(items, ni, c);
-            items.iFx.setXYZ(ni, fx, c.hli, wave);
-            ni++;
-            this.v.set(x, 0.5 * sgn, -z);
-            if (it.type === 'energy' && ng < 256) {
-              this.m.compose(this.v, this.q, this.one);
-              this.gems.setMatrixAt(ng++, this.m);
-            } else if (it.type === 'power' && nq < 512 && time >= it.hiddenUntil) {
-              this.v.y = 0.46 * sgn;
-              this.m.compose(this.v, this.q2.setFromAxisAngle(this.axis, spin + 1.3), this.one);
-              this.quadLerp.setX(nq, 1 - wave);   // FlashingShad: the cube takes 1 - lerp
+            if (it.type === 'energy') {
+              items.iPos.setXYZ(ni, x, 0.005 * sgn, -z);
+              setColors(items, ni, COLORS.pickupMark);
+              items.iFx.setXYZ(ni, fx, 1, 0);
+              ni++;
+              if (ng < 256) {
+                this.v.set(x, 0.5 * sgn, -z);
+                this.q2.setFromAxisAngle(this.up, spin * 0.35).multiply(this.q3);
+                this.m.compose(this.v, this.q2, this.pickupScale);
+                this.gems.setMatrixAt(ng++, this.m);
+              }
+            } else if (it.type === 'power' && !taken && nq < 512) {
+              // The slabs of a chain tilt one after another, a wave running along it.
+              this.v.set(x, 0.3 * sgn, -z);
+              this.q2.setFromAxisAngle(slabAxis(it, map), 0.55 * Math.sin(time * 5 - it.k * 0.9));
+              this.m.compose(this.v, this.q2, this.one);
               this.quads.setMatrixAt(nq++, this.m);
             }
           }
@@ -1673,7 +1667,6 @@
       uploadUsed(this.gems.instanceMatrix, ng);
       this.quads.count = nq;
       uploadUsed(this.quads.instanceMatrix, nq);
-      uploadUsed(this.quadLerp, nq);
       for (const side of SIDES) {
         this.obstacles[side].count = counts[side];
         this.spikes[side].count = counts[2 + side];
@@ -1681,7 +1674,6 @@
         uploadUsed(this.spikes[side].instanceMatrix, counts[2 + side]);
       }
       this.itemMat.uniforms.uTime.value = time;
-      this.quadMat.uniforms.uTime.value = time;
     }
     // Camera and drawn head position for the fog and the edge fade of every floor material.
     setView(cam, head, fog, range) {
@@ -2062,13 +2054,13 @@
       const at = V(item.wx, 0.5 * sgn, -item.wz);
       const toward = V(player.oldpos.x, player.oldpos.y, -player.oldpos.z).sub(at);
       if (item.type === 'power') {
-        item.hiddenUntil = this.time + 0.6;
+        this.highlight(player.target);   // the original lights the cells of a driven path
         // The last cell of a chain has already been removed with it and gets the chime instead.
         if (this.levels.items.get(this.levels.key(item.idx, item.side)) === item) this.audio.play('pathCell', true);
-        this.particles.burst({at, dir: toward, count: 15, speed: 6, spread: 55 * DEG, life: 1, size: [0.3, 0.5], colorA: [0.21, 0.223, 0.991], colorB: [1, 1, 1]});
+        this.particles.burst({at, dir: toward, count: 15, speed: 6, spread: 55 * DEG, life: 1, size: [0.3, 0.5], colorA: [0.55, 0.55, 0.65], colorB: [0.9, 0.9, 1]});
         this.addScore(SCORE_POWER);
       } else {
-        this.particles.burst({at, dir: toward, count: 5, speed: 6, spread: 55 * DEG, life: 1, size: [0.3, 0.5], colorA: [0.924, 0.992, 0.212], colorB: [0.701, 0.726, 0.236]});
+        this.particles.burst({at, dir: toward, count: 5, speed: 6, spread: 55 * DEG, life: 1, size: [0.3, 0.5], colorA: [0.2, 0.75, 0.15], colorB: [0.45, 0.95, 0.35]});
         player.addPartOfSnake();
         if (this.levels.items.get(this.levels.key(item.idx, item.side)) === item) {
           if (this.levels.removeGroup(item.group)) this.nextLevel();
