@@ -793,9 +793,13 @@
           float thick = vFx.x;
           float border = 1.0 - SHAPE(uv, 1.13 - 0.38 * thick);
           float inner = SHAPE(uv * 1.06 - 0.03, 0.8);
-          vec3 c2 = mix(vCol2, vHL, thick);
-          vec3 col = mix(vCol1, c2, abs(cos(uTime * 4.0))) * (1.0 + thick * (vFx.y - 1.0));
-          gl_FragColor = vec4((col * inner + border * vHL) * vFade * uGlow, 1.0);
+          // Item glow softens the highlight of a cell the snake has entered too: at 100% its colour
+          // goes to the HDR highlight colour times the intensity (3 on chains), as in the remake;
+          // lower settings scale that flash down with the glow, so a driven chain stops dazzling.
+          vec3 hl = vHL * uGlow;
+          vec3 c2 = mix(vCol2, hl, thick);
+          vec3 col = mix(vCol1, c2, abs(cos(uTime * 4.0))) * (1.0 + thick * (vFx.y - 1.0) * uGlow);
+          gl_FragColor = vec4((col * inner + border * hl) * vFade * uGlow, 1.0);
         }`,
       side: T.DoubleSide,
       extensions: {derivatives: true}
@@ -2324,7 +2328,7 @@
       view.value = s.viewDistance;
       showView();
       view.addEventListener('input', () => { s.viewDistance = +view.value; game.setView(s.viewDistance); showView(); game.save.write(); });
-      // Item glow: 40% to 100% of the remake's brightness; the default 75% keeps the glow from dazzling.
+      // Item glow: 20% to 100% of the remake's brightness; the default 75% keeps the glow from dazzling.
       const glow = $('item-glow'), glowLabel = $('glow-value');
       const showGlow = () => { glowLabel.textContent = `${Math.round(s.itemGlow * 100)}%`; };
       glow.value = s.itemGlow;
