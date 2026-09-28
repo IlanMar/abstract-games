@@ -164,17 +164,6 @@ button { font: inherit; color: inherit; }
 .panel button:active { background: rgb(200 200 200); color: var(--button); }
 .panel button:disabled { color: rgb(255 255 255 / 0.4); cursor: default; background: var(--button); }
 .panel button.selected { background: var(--button-hover); color: var(--button); }
-.panel select {
-  width: 100%;
-  height: max(36px, calc(30 * var(--u)));
-  border: 0;
-  padding: 0 0.5em;
-  background: var(--button);
-  color: #fff;
-  font: inherit;
-  cursor: pointer;
-}
-.panel select:focus-visible { outline: 2px solid var(--button-hover); outline-offset: 2px; }
 .panel .space { height: max(14px, calc(20 * var(--u))); }
 .panel .row { display: flex; gap: max(10px, calc(20 * var(--u))); }
 .panel .row button { flex: 1 1 0; }
@@ -210,5 +199,17 @@ button { font: inherit; color: inherit; }
 }
 #level-preview { width: max(96px, calc(150 * var(--u))); height: max(96px, calc(150 * var(--u))); image-rendering: pixelated; background: #000; }
 #level-kind { color: rgb(125 255 238); margin-top: 0.3em; }
+#level-count { font-size: max(14px, calc(18 * var(--u))); color: rgb(255 255 255 / 0.6); margin: 0 0 max(6px, calc(8 * var(--u))); }
+#level-count .done { color: rgb(125 255 238); }
+#complete-level { color: rgb(125 255 238); }
+/* Level Complete: the results, a name on the left and its value on the right. */
+.panel .results {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: max(6px, calc(8 * var(--u)));
+  margin: max(8px, calc(12 * var(--u))) 0 max(14px, calc(20 * var(--u)));
+  font-size: max(17px, calc(24 * var(--u)));
+}
+.panel .results > span:nth-child(even) { font-family: "Tomorrow", var(--menu-font); text-align: right; }
 
 #fade { position: absolute; inset: 0; background: #000; opacity: 1; pointer-events: none; transition: opacity 1s linear; }

@@ -14,6 +14,7 @@
   // Values come from the serialized scene components of the Unity build.
   const FIXED_DT = 0.02;
   const MAX_FPS = 60;        // frame cap on any screen: a steady 60 looks smoother than 60…120 and saves battery
+  const COMPLETE_COUNTDOWN = 10;   // Level Complete: seconds before Continue goes on to the next map by itself
   const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5,
     dash: 1.3};              // the on-screen boost button (not in the original): 30% faster while held
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
@@ -189,7 +190,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, grading: 'on', popups: 'on', boostButton: 'off', lastLevel: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, grading: 'on', popups: 'on', boostButton: 'off', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -1633,9 +1634,10 @@
       const def = MAPS[index];
       if (this.world) this.world.dispose();
       this.map = this.mapData(index);
+      // A map is always played from its first stage; a later stage is only for the autopilot.
       level = Number.isInteger(level) && level >= 0 && level < this.map.levels.length ? level : 0;
       this.save.data.lastMap = def.key;
-      this.save.data.lastLevel[def.key] = level;
+      this.save.data.played = true;
       this.save.write();
       this.map.reset();
       this.levels = new Levels(this.map);
@@ -1770,15 +1772,32 @@
     }
     nextLevel() {
       let index = this.levels.index + 1;
-      const key = MAPS[this.mapIndex].key;
       if (index >= this.map.levels.length) {
+        // The whole route is done: Level Complete. The autopilot plays the map round instead.
+        if (!this.loopStages) { this.complete(); return; }
         index = 0;
       }
-      this.save.data.lastLevel[key] = index;
-      this.save.write();
       this.levels.load(index);
       this.ui.updateStage(index, this.map.levels.length);
     }
+    // Level Complete, as in the original: the snake stops, the results show, and Continue (or the
+    // countdown) goes on to the next map. After the last map comes the first one.
+    complete() {
+      const def = MAPS[this.mapIndex];
+      this.state = 'complete';
+      this.save.data.cleared[def.key] = true;
+      this.save.write();
+      this.audio.stopEffects();
+      this.audio.killLoop();
+      this.audio.play('group');
+      const t = Math.max(0, Math.round(this.time - 1));
+      $('complete-level').textContent = `${def.name} · ${def.kind}`;
+      $('complete-time').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+      $('complete-score').textContent = String(Math.max(0, this.score | 0)).padStart(6, '0');
+      this.ui.showMenu('complete', true);
+      this.ui.countdown($('next-map'), 'Continue', COMPLETE_COUNTDOWN, () => this.nextMap());
+    }
+    nextMap() { this.startMap((this.mapIndex + 1) % MAPS.length); }
     spikeBurst(target, side) {
       const sgn = side === TOP ? 1 : -1;
       this.particles.burst({at: V(target.x, 0.25 * sgn, -target.z), dir: V(0, sgn, 0), count: 12, speed: [4, 4.47], spread: 38 * DEG, life: 2, size: [0.6, 1],
@@ -1809,7 +1828,8 @@
       if (this.lost) return;
       this.lost = true;
       this.later(1, () => {
-        $('lost-stage').textContent = `Stage ${this.levels.index + 1} / ${this.map.levels.length}`;
+        const def = MAPS[this.mapIndex];
+        $('lost-stage').textContent = `${def.name} · ${def.kind}`;
         this.ui.showMenu('lost', true);
       });
     }
@@ -1967,12 +1987,11 @@
       this.popups = [];
       document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => this.go(b.dataset.go)));
       document.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', () => this.back()));
-      $('continue').addEventListener('click', () => {
-        const key = game.save.data.lastMap;
-        const index = Math.max(0, MAPS.findIndex(m => m.key === key));
-        game.startMap(index, game.save.data.lastLevel[key] || 0);
-      });
-      $('select-level').addEventListener('click', () => game.startMap(this.selected, Number($('stage-select').value)));
+      $('continue').addEventListener('click', () => game.startMap(Math.max(0, MAPS.findIndex(m => m.key === game.save.data.lastMap))));
+      $('select-level').addEventListener('click', () => game.startMap(this.selected));
+      $('next-map').addEventListener('click', () => game.nextMap());
+      $('replay-map').addEventListener('click', () => game.startMap(game.mapIndex));
+      $('complete-to-menu').addEventListener('click', () => game.toMenu());
       $('next-level').addEventListener('click', () => { this.selected = Math.min(MAPS.length - 1, this.selected + 1); this.levelCard(); });
       $('prev-level').addEventListener('click', () => { this.selected = Math.max(0, this.selected - 1); this.levelCard(); });
       $('resume').addEventListener('click', () => game.pause(false));
@@ -2012,13 +2031,32 @@
     }
     boostButton() { $('boost-button').classList.toggle('hidden', this.game.save.data.boostButton !== 'on'); }
     showMenu(panel, overlay = false) {
+      this.stopCountdown();
       const menu = $('menu');
       menu.classList.remove('hidden');
       menu.classList.toggle('overlay', overlay);
       this.stack = [panel];
       this.render();
     }
-    hideMenu() { $('menu').classList.add('hidden'); this.stack = []; }
+    hideMenu() { this.stopCountdown(); $('menu').classList.add('hidden'); this.stack = []; }
+    // A button that counts down in its label and presses itself at zero.
+    countdown(button, label, seconds, done) {
+      this.stopCountdown();
+      let left = seconds;
+      button.textContent = `${label} (${left})`;
+      this.timer = setInterval(() => {
+        left--;
+        if (left > 0) { button.textContent = `${label} (${left})`; return; }
+        this.stopCountdown();
+        done();
+      }, 1000);
+      this.timerButton = [button, label];
+    }
+    stopCountdown() {
+      clearInterval(this.timer);
+      this.timer = null;
+      if (this.timerButton) { this.timerButton[0].textContent = this.timerButton[1]; this.timerButton = null; }
+    }
     go(panel) { this.stack.push(panel); this.render(); }
     back() { if (this.stack.length > 1) this.stack.pop(); this.render(); }
     render() {
@@ -2026,7 +2064,7 @@
       document.querySelectorAll('#menu .panel').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== panel));
       if (panel === 'start') {
         const s = this.game.save.data;
-        $('continue').disabled = !(s.lastLevel[s.lastMap] > 0);
+        $('continue').disabled = !s.played;
       }
       if (panel === 'new') this.levelCard();
       const first =document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
@@ -2039,11 +2077,9 @@
       $('prev-level').disabled = this.selected === 0;
       $('next-level').disabled = this.selected === MAPS.length - 1;
       const map = this.game.mapData(this.selected);
-      const stages = $('stage-select');
-      if (stages.dataset.map !== def.key) {
-        stages.replaceChildren(...map.levels.map((_, index) => new Option(`Stage ${index + 1}`, index)));
-        stages.dataset.map = def.key;
-      }
+      const count = $('level-count');
+      count.textContent = `${this.selected + 1} / ${MAPS.length}`;
+      if (this.game.save.data.cleared[def.key]) count.insertAdjacentHTML('beforeend', ' · <span class="done">Completed</span>');
       // The preview is square: a wide or tall map is centred on black.
       const cv = $('level-preview'), ctx = cv.getContext('2d');
       const size = Math.max(map.w, map.h), ox = (size - map.w) >> 1, oy = (size - map.h) >> 1;

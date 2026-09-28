@@ -1,11 +1,13 @@
 /* Autopilot for testing levels in the real engine. Load it on the game page from the console:
      document.head.append(Object.assign(document.createElement('script'), {src: 'tools/autopilot.js'}))
    then autopilot.check(2) plays map 2 (Level 2) round its whole loop and every stage on its own,
-   starting from the stage selector's spawn, and lists the turnarounds on its loop: places where the
+   starting from a spawn beside the stage (stageSpawn), and lists the turnarounds on its loop: places where the
    ideal path doubles back or turns harder than a player can steer. autopilot.route(2) reports stages
    whose items the player cannot see in time. Maps: 0 Initial, 1 Hexagone, 2.. the worlds of levels.js.
    Before each step it writes the snake's turn queue, following a breadth-first plan over the movement
    rules that avoids walls, spikes and its own body. A stage it cannot finish is a stage to redesign. */
+// The game shows Level Complete after the last stage; the autopilot plays a map round instead.
+if (window.nsnakes) window.nsnakes.loopStages = true;
 window.autopilot = (() => {
   const CONTROL = [[1, 0], [0, -1], [-1, 0], [0, 1]];
   const HEX = [[0, 1], [1, 2], [1, -2], [0, -1], [-1, -2], [-1, 2]];
