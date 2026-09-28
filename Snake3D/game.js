@@ -466,13 +466,16 @@
         if (el) { el.loop = true; el.volume = clamp01(0.514 * this.save.data.sfx); el.play().catch(() => {}); this.loop = {stop: () => { el.pause(); el.loop = false; }}; }
       }
     }
+    // Like Unity's Invoke: the first call after the chain sets the stop and later calls leave it.
+    // The player calls this on every step off a chain; a step (0.25 s) is shorter than the delay,
+    // so moving the stop each time kept the buzz going long after the chain.
     stopLoop(delay = 0.4) {
-      if (!this.loop) return;
-      clearTimeout(this.loopStopTimer);
+      if (!this.loop || this.loopStopTimer) return;
       this.loopStopTimer = setTimeout(() => this.killLoop(), delay * 1000);
     }
     killLoop() {
       clearTimeout(this.loopStopTimer);
+      this.loopStopTimer = 0;
       if (this.loop) { try { this.loop.stop(); } catch (e) { /* already stopped */ } }
       this.loop = null;
     }
