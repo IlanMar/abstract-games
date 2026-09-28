@@ -1755,7 +1755,6 @@
       this.ui.hideMenu();
       this.ui.hud(true);
       this.ui.updateScore(0, 1);
-      this.ui.updateStage(level, this.map.levels.length);
       this.ui.startPrompt(this.awaitingStart);
       this.audio.restartMusic(this.audio.gameMusic);
       this.ui.fade(1, 0);
@@ -1862,7 +1861,6 @@
         index = 0;
       }
       this.levels.load(index);
-      this.ui.updateStage(index, this.map.levels.length);
     }
     // Level Complete, as in the original: the snake stops, the results show, and Continue (or the
     // countdown) goes on to the next map. After the last map comes the first one.
@@ -2179,7 +2177,6 @@
       ctx.putImageData(img, 0, 0);
     }
     hud(on) { $('hud').classList.toggle('hidden', !on); }
-    updateStage(index, total) { $('stage-indicator').textContent = `Stage ${index + 1} / ${total}`; }
     startPrompt(on) { $('start-prompt').classList.toggle('hidden', !on); }
     // Text is only written when it changes: every write makes the page lay out the HUD again.
     updateScore(score, mult) {
