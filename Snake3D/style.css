@@ -86,7 +86,7 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
 }
 #pause-button span { font-size: max(10px, calc(12 * var(--u))); }
-/* Options > Boost button: held down, the snake runs 30% faster. */
+/* Options > Boost button: held down, the snake runs 1.5 times faster. */
 #boost-button {
   position: absolute;
   left: 50%;

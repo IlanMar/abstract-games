@@ -385,7 +385,6 @@
       this.pauseMusic = 'menu';
       this.endMusic = 'end';
       this.level = 1;
-      this.music = null;
       this.unlocked = false;
     }
     musicFile(name) {
@@ -403,7 +402,6 @@
         this.musicGain.connect(this.ctx.destination);
         this.groove = new GrooveMusic(this.ctx, this.musicGain);
         this.groove.onReady = () => { if (this.wantMusic) this.restartMusic(this.wantMusic); };
-        this.applyVolumes();
         for (const [id, file] of Object.entries(this.files)) {
           fetch(`audio/${file}`).then(r => r.arrayBuffer()).then(b => this.ctx.decodeAudioData(b)).then(buf => { this.buffers[id] = buf; })
             .catch(() => { this.fallback[id] = new Audio(`audio/${file}`); });
@@ -435,8 +433,7 @@
       this.wantMusic = name;
       if (!this.groove) return;
       if (this.ctx.state !== 'running' && !this.hidden) this.ctx.resume();
-      this.music = this.musicFile(name);
-      this.groove.play(this.music);
+      this.groove.play(this.musicFile(name));
     }
     // A hidden page stays silent: the audio clock stops, so the music goes on where it was.
     setHidden(hidden) {
@@ -446,12 +443,11 @@
       else this.ctx.resume();
     }
     stopMusic() { this.playMusic(null); }
-    source(id, volume, loop) {
+    source(id, volume) {
       if (!this.ctx || !this.buffers[id]) return null;
       if (this.ctx.state === 'suspended') this.ctx.resume();
       const src = this.ctx.createBufferSource(), gain = this.ctx.createGain();
       src.buffer = this.buffers[id];
-      src.loop = loop;
       gain.gain.value = volume;
       src.connect(gain);
       gain.connect(this.sfxGain);
@@ -461,9 +457,9 @@
     // over: play on top of the current effect instead of cutting it (the chain clicks).
     play(id, over = false) {
       if (!this.unlocked) return;
-      if (over) { this.source(id, 0.49, false); return; }
-      if (this.current) { try { this.current.stop(); } catch (e) { /* already stopped */ } this.current = null; }
-      const src = this.source(id, 0.49, false);
+      if (over) { this.source(id, 0.49); return; }
+      this.stopEffects();
+      const src = this.source(id, 0.49);
       if (src) { this.current = src; return; }
       const el = this.fallback[id];
       if (el) { el.volume = clamp01(0.49 * this.save.data.sfx); el.currentTime = 0; el.play().catch(() => {}); }
@@ -937,9 +933,8 @@
     return g;
   }
 
-  // ---------------------------------------------------------------- snake mesh
-  // The snake is baked from a head arrow, rhombic body segments (two per cell) and a tail spike.
-  // Every face is black with a white outline, like the "Skin" texture of the original.
+  function hexOrQuad(hex) { return hex ? hexTileGeometry() : unitQuad(); }
+
   // Marks the first count entries of a dynamic buffer for upload. needsUpdate alone sends the whole
   // buffer, sized for the worst case: about 0.5 MB a frame for the world, mostly unused.
   function uploadUsed(attr, count) {
@@ -948,8 +943,12 @@
     attr.updateRange.count = count * attr.itemSize;
     attr.needsUpdate = true;
   }
+
+  // ---------------------------------------------------------------- snake mesh
+  // The snake is baked from a head arrow, rhombic body segments (two per cell) and a tail spike.
+  // Every face is black with a white outline, like the "Skin" texture of the original.
   const TRIS3 = [0, 1, 2], TRIS4 = [0, 1, 2, 0, 2, 3], TRIS5 = [0, 1, 2, 0, 2, 4, 4, 2, 3];
-  const SNAKE_ATTRS = [['position', 3], ['aEdge', 4], ['aEdge2', 1]];
+  const SNAKE_ATTRS = ['position', 'aEdge', 'aEdge2'];
   class SnakeMesh {
     constructor(material) {
       this.max = 16384;          // vertices: about 340 cells of snake; the rest of a longer tail is not drawn
@@ -998,12 +997,7 @@
     end() {
       this.geometry.setDrawRange(0, this.count);
       // Upload only the part of the buffers the snake uses, not all 16384 vertices.
-      for (const [name, size] of SNAKE_ATTRS) {
-        const a = this.geometry.attributes[name];
-        a.updateRange.offset = 0;
-        a.updateRange.count = Math.max(1, this.count) * size;
-        a.needsUpdate = true;
-      }
+      for (const name of SNAKE_ATTRS) uploadUsed(this.geometry.attributes[name], this.count);
     }
   }
 
@@ -1490,13 +1484,11 @@
       scene.add(this.group);
       const hex = map.hex;
       this.maxCells = 1400;      // (2 * 18 + 1)^2 cells at the longest view distance
-      const tileGeo = hex ? hexTileGeometry() : unitQuad();
       this.tileMat = tileMaterial(hex);
-      this.tiles = this.instanced(tileGeo, this.tileMat, {iPos: 3, iTop: 3, iRev: 3, iFx: 2});
+      this.tiles = this.instanced(hexOrQuad(hex), this.tileMat, {iPos: 3, iTop: 3, iRev: 3, iFx: 2});
       this.tiles.mesh.renderOrder = 2;
       this.itemMat = flashMaterial(hex, true);
-      const itemGeo = hexOrQuad(hex);
-      this.itemTiles = this.instanced(itemGeo, this.itemMat, {iPos: 3, iCol1: 3, iCol2: 3, iHL: 3, iFx: 2});
+      this.itemTiles = this.instanced(hexOrQuad(hex), this.itemMat, {iPos: 3, iCol1: 3, iCol2: 3, iHL: 3, iFx: 2});
       this.propMats = [propMaterial(0.953), propMaterial(0.502)];
       this.obstacles = [0, 1].map(side => this.props(obstacleGeometry(hex, side === BOTTOM), this.propMats[0]));
       this.spikes = [0, 1].map(side => this.props(spikeGeometry(hex, side === BOTTOM), this.propMats[1]));
@@ -1562,9 +1554,9 @@
       const counts = this.counts;   // obstacles of the top and the bottom, then spikes
       counts.fill(0);
       const glowing = game.glowItems;
+      const ct = map.color[TOP], cr = map.color[BOTTOM], zBase = Math.round(hz);
       for (let x = hx - range; x <= hx + range; x++) {
         const odd = hex && (map.dataX(x) & 1);
-        const zBase = Math.round(hz);
         for (let k = zBase - range; k <= zBase + range; k++) {
           const z = odd ? k - 0.5 : k;
           const idx = map.index(x, z);
@@ -1572,7 +1564,6 @@
           if (top === -1 || n >= this.maxCells) continue;
           const tz = -z;
           tiles.iPos.setXYZ(n, x, 0, tz);
-          const ct = map.color[TOP], cr = map.color[BOTTOM];
           tiles.iTop.setXYZ(n, ct[idx * 3] / 255, ct[idx * 3 + 1] / 255, ct[idx * 3 + 2] / 255);
           tiles.iRev.setXYZ(n, cr[idx * 3] / 255, cr[idx * 3 + 1] / 255, cr[idx * 3 + 2] / 255);
           const thick = game.highlightOf(idx, time);
@@ -1677,8 +1668,6 @@
       this.group.traverse(o => { if (o.isInstancedMesh) o.dispose(); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
     }
   }
-
-  function hexOrQuad(hex) { return hex ? hexTileGeometry() : unitQuad(); }
 
   // ---------------------------------------------------------------- snake builder
   // Body rings sit on the grid (two per cell) and only jump when the snake steps; the head
@@ -2312,10 +2301,10 @@
       $('next-level').addEventListener('click', () => { this.selected = Math.min(MAPS.length - 1, this.selected + 1); this.levelCard(); });
       $('prev-level').addEventListener('click', () => { this.selected = Math.max(0, this.selected - 1); this.levelCard(); });
       $('resume').addEventListener('click', () => game.pause(false));
-      $('to-menu').addEventListener('click', () => { game.state = 'menu'; game.toMenu(); });
+      $('to-menu').addEventListener('click', () => game.toMenu());
       $('restart-level').addEventListener('click', () => game.restartLevel());
       $('retry-level').addEventListener('click', () => game.restartLevel());
-      $('lost-to-menu').addEventListener('click', () => { game.state = 'menu'; game.toMenu(); });
+      $('lost-to-menu').addEventListener('click', () => game.toMenu());
       $('pause-button').addEventListener('click', e => { e.stopPropagation(); game.pause(true); });
       const s = game.save.data;
       const music = $('music-volume'), sfx = $('sfx-volume');
@@ -2402,7 +2391,7 @@
         $('continue').disabled = !s.played;
       }
       if (panel === 'new') this.levelCard();
-      const first =document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
+      const first = document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
       if (first && matchMedia('(hover: hover)').matches) first.focus({preventScroll: true});
     }
     levelCard() {
