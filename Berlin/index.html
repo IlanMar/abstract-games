@@ -1,0 +1,2479 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Берлин по дням</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #fdfaf1;
+    --ink: #1e2318;
+    --muted: #636a55;
+    --line: #b7cb9c;
+    --accent: #4f7c2e;
+    --free: #98a183;
+    --opt: #2f6b8f;
+    --cut: #a2612b;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font:
+      400 16px/1.45 -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap {
+    max-width: 36rem;
+    margin: 0 auto;
+    padding: 1.75rem 1.15rem 4rem;
+  }
+
+  header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding-bottom: 1.15rem;
+    border-bottom: 2px solid var(--accent);
+    margin-bottom: 0.1rem;
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+  }
+  .dates {
+    font:
+      500 0.75rem/1 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.55rem;
+    font:
+      500 0.71rem/1.4 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    color: var(--muted);
+  }
+  .legend span {
+    display: block;
+  }
+  .legend i {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    margin-right: 0.4rem;
+    vertical-align: 0.04em;
+    background: currentColor;
+  }
+  .legend .l-opt {
+    color: var(--opt);
+  }
+  .legend .l-cut {
+    color: var(--cut);
+  }
+  .legend .l-free {
+    color: var(--free);
+  }
+
+  .day + .day {
+    border-top: 1px solid var(--line);
+  }
+  .day:last-of-type {
+    border-bottom: 1px solid var(--line);
+  }
+  .day > summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 1.6rem 1fr auto;
+    align-items: baseline;
+    gap: 0.7rem;
+    padding: 0.95rem 0.1rem;
+  }
+  .day > summary::-webkit-details-marker {
+    display: none;
+  }
+  .n {
+    font:
+      600 0.8rem/1 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .t {
+    font-weight: 550;
+    letter-spacing: -0.01em;
+  }
+  .wd {
+    font:
+      500 0.72rem/1.5 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .day[open] > summary .n {
+    color: var(--ink);
+  }
+  .day[open] > summary {
+    padding-bottom: 0.5rem;
+  }
+
+  .note {
+    margin: 0 0 0.85rem;
+    padding-left: 2.3rem;
+    font-size: 0.83rem;
+    color: var(--muted);
+  }
+  .zone {
+    margin: -0.6rem 0 0.95rem;
+    padding-left: 2.3rem;
+    font:
+      500 0.73rem/1.4 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    color: var(--accent);
+  }
+  .zone b {
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  .items {
+    padding: 0 0 0.9rem 2.3rem;
+    border-left: 2px solid var(--accent);
+    margin-left: 0.55rem;
+  }
+  .item {
+    border-top: 1px solid var(--line);
+  }
+  .item:first-child {
+    border-top: none;
+  }
+  .item > summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.15rem 0.8rem;
+    padding: 0.6rem 0;
+  }
+  .item > summary::-webkit-details-marker {
+    display: none;
+  }
+  .time {
+    grid-column: 1;
+    font:
+      500 0.74rem/1.6 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .name {
+    grid-column: 2;
+    font-size: 0.94rem;
+    line-height: 1.35;
+  }
+  .item[open] .name {
+    font-weight: 600;
+  }
+  .free .name,
+  .free .time {
+    color: var(--free);
+  }
+
+  /* ── бонус: рядом, если есть запас ── */
+  .opt > summary .name,
+  .opt > summary .time {
+    color: var(--opt);
+  }
+  .opt .addr {
+    color: var(--opt);
+  }
+
+  /* ── чип: что снимается первым ── */
+  .tag {
+    display: inline-block;
+    margin-left: 0.4rem;
+    vertical-align: 0.06em;
+    font:
+      600 0.61rem/1 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    padding: 0.22rem 0.3rem;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+  }
+  .tag.cut {
+    color: var(--cut);
+  }
+  .tag.opt {
+    color: var(--opt);
+  }
+  .item[open] .tag {
+    font-weight: 600;
+  }
+
+  /* ── расстояние по прямой от текущего местоположения ── */
+  .dist {
+    margin-left: 0.42rem;
+    white-space: nowrap;
+    font:
+      500 0.72rem/1 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .addr .dist {
+    margin-left: 0.15rem;
+  }
+  .free .dist {
+    color: var(--free);
+  }
+  .opt .dist {
+    color: var(--opt);
+  }
+  .dist.near {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .body {
+    padding: 0 0 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .addr {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.1rem 0.35rem;
+    font:
+      500 0.78rem/1.4 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    color: var(--ink);
+  }
+  .body p {
+    margin: 0;
+    font-size: 0.87rem;
+    color: var(--muted);
+  }
+  .warn {
+    color: var(--ink);
+    font-weight: 550;
+  }
+
+  .lines {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+  }
+  .ln {
+    font:
+      600 0.68rem/1 ui-monospace,
+      SFMono-Regular,
+      "SF Mono",
+      Menlo,
+      Consolas,
+      monospace;
+    letter-spacing: 0.03em;
+    color: #fff;
+    background: var(--c, #6b6e70);
+    padding: 0.24rem 0.38rem;
+    border-radius: 2px;
+  }
+  .stop {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .map {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 3px;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .map svg {
+    width: 15px;
+    height: 15px;
+    display: block;
+    fill: currentColor;
+  }
+  .item > summary .map {
+    grid-column: 3;
+    align-self: center;
+    justify-self: end;
+    margin: -0.32rem 0;
+  }
+  .addr .map {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+  .addr .map svg {
+    width: 13px;
+    height: 13px;
+  }
+  .map:hover,
+  .map:focus-visible {
+    color: var(--ink);
+    background: var(--line);
+  }
+  .map:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :root {
+      interpolate-size: allow-keywords;
+    }
+    .day::details-content,
+    .item::details-content {
+      block-size: 0;
+      overflow: clip;
+      transition:
+        block-size 0.22s ease,
+        content-visibility 0.22s;
+      transition-behavior: allow-discrete;
+    }
+    .day[open]::details-content,
+    .item[open]::details-content {
+      block-size: auto;
+    }
+
+    /* Safari и Firefox не знают interpolate-size, а без него высота до auto
+       не интерполируется и раскрытие идёт рывком. Там — проявление со
+       сдвигом: не то же самое, но и не голый скачок. */
+    @supports not (interpolate-size: allow-keywords) {
+      .day::details-content,
+      .item::details-content {
+        block-size: auto;
+        opacity: 0;
+        translate: 0 -0.4rem;
+        transition:
+          opacity 0.22s ease,
+          translate 0.22s ease,
+          content-visibility 0.22s;
+        transition-behavior: allow-discrete;
+      }
+      .day[open]::details-content,
+      .item[open]::details-content {
+        opacity: 1;
+        translate: 0;
+      }
+    }
+  }
+
+</style>
+
+<svg
+  width="0"
+  height="0"
+  style="position: absolute"
+  aria-hidden="true"
+  focusable="false"
+>
+  <symbol id="pin" viewBox="0 0 24 24">
+    <path
+      d="M12 2.2c-3.7 0-6.7 3-6.7 6.7 0 4.9 6 12.4 6.3 12.7a.5.5 0 0 0 .8 0c.3-.3 6.3-7.8 6.3-12.7 0-3.7-3-6.7-6.7-6.7zm0 9.4a2.7 2.7 0 1 1 0-5.4 2.7 2.7 0 0 1 0 5.4z"
+    />
+  </symbol>
+</svg>
+
+<div class="wrap">
+  <header>
+    <h1>Берлин по дням</h1>
+    <div class="dates">29.09 — 03.10.2026 · Nollendorfplatz · соло</div>
+    <div class="legend">
+      <span class="l-opt"
+        ><i></i>синим — необязательный пункт, если есть время</span
+      >
+      <span class="l-cut"
+        ><i></i>чип «режем N-м» — порядок снятия, если отстаёшь</span
+      >
+      <span class="l-free"><i></i>серым — свободный блок без таймингов</span>
+    </div>
+  </header>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">01</span><span class="t">Ось Unter den Linden</span
+      ><span class="wd">вт 29.09</span>
+    </summary>
+    <p class="note">Вылет из Бен-Гуриона в 06:20, прилёт в 09:35. Рейхстаг, прогулка по центру, вечерняя съёмка на Монбижу.</p>
+    <p class="zone">
+      Билет на день: 24-Stunden-Karte <b>ABC</b>, €12,90 — в зоне C аэропорт BER.
+    </p>
+    <div class="items">
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">03:20 – 06:20</span
+          ><span class="name" data-ll="32.0010,34.8710">Бен-Гурион, вылет</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Ben+Gurion+Airport+Terminal+3"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Бен-Гурион на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">LY2371 · терминал 3 · вылет 06:20</div>
+          <p class="warn">Время израильское; в Берлине на час меньше. Выезд из дома 02:00–02:30, в аэропорту к 03:20.</p>
+          <p class="warn">Контроль за три часа до вылета: 29.09 — холь ха-моэд Суккот, аэропорт загружен сильнее обычного.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">09:35 – 11:00</span
+          ><span class="name" data-ll="52.3648,13.5095">BER, прилёт</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Flughafen+Berlin+Brandenburg+BER"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="BER на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">LY2371 · терминал 1</div>
+          <p>Паспортный контроль. Багажа нет, всё в салоне.</p>
+          <p class="warn">
+            EES: на границе снимают отпечатки и фото. Первая регистрация
+            удлиняет очередь.
+          </p>
+          <p class="warn">При задержке рейса пропустить Паллассеум; при необходимости ехать из аэропорта сразу к Hauptbahnhof.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">11:00 – 12:00</span
+          ><span class="name">Трансфер в отель</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Hotel+Sachsenhof,+Motzstra%C3%9Fe+7,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Отель на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr" data-ll="52.4987,13.3514">
+            Hotel Sachsenhof · Motzstr. 7
+          </div>
+          <div class="lines">
+            <span class="ln" style="--c: #ec0016">FEX</span
+            ><span class="stop">до Potsdamer Platz 19 мин</span
+            ><span class="ln" style="--c: #da421e">U2</span
+            ><span class="stop">до Nollendorfplatz, 4 остановки</span>
+          </div>
+          <p class="warn">FEX: BER → Südkreuz → Potsdamer Platz. На Potsdamer Platz пересесть на U2 до Nollendorfplatz.</p>
+          <p class="warn">Если выход из терминала позже 11:15 — вместо отеля FEX до Hauptbahnhof, багаж в камеру хранения, обед на вокзале. До Рейхстага около 15 минут пешком. Флиску взять с собой.</p>
+          <p class="warn">Крупную ручную кладь оставить в отеле или камере хранения до посещения Бундестага.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">12:00 – 12:45</span
+          ><span class="name">Отель, обед</span>
+        </summary>
+        <div class="body">
+          <div class="addr" data-ll="52.4987,13.3514">
+            Motzstr. 7 · +49 30 2162074
+          </div>
+          <p>Заселение с 15:00. До заселения оставить багаж на ресепшене; отель предупреждён о приезде в 12:00–13:00.</p>
+          <p class="warn">Взять флиску для вечерней съёмки у воды.</p>
+          <p>Обед на Гольцштрассе или Винтерфельдтплац, 5 минут от отеля.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">12:45 – 13:05</span
+          ><span class="name" data-ll="52.4934,13.3564">Pallasseum (жилой комплекс)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Pallasseum,+Pallasstra%C3%9Fe+3,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Pallasseum на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Pallasstraße 3, 10781 Berlin · 1,0 км от отеля</div>
+          <p>
+            Юрген Заваде, 1977: жилая плита переброшена через Паласштрассе и
+            поставлена поверх бомбоубежища 1943 года у Шпортпаласта. Бункер
+            снести не смогли — застроили.
+          </p>
+          <p>Hochbunker — наземное бомбоубежище. Осмотр снаружи, бесплатно.</p>
+          <p class="warn">До U2 Bülowstraße около 400 м.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">13:05 – 13:45</span
+          ><span class="name">Дорога к Рейхстагу</span>
+        </summary>
+        <div class="body">
+          <div class="lines">
+            <span class="ln" style="--c: #da421e">U2</span
+            ><span class="stop"
+              >Bülowstraße → Potsdamer Platz, 3 остановки</span
+            ><span class="ln" style="--c: #dd6ba6">S1</span
+            ><span class="stop">одну остановку до Brandenburger Tor</span>
+          </div>
+          <p>
+            На месте к 13:45: досмотр занимает четверть часа. Вход не со
+            стороны Platz der Republik, а с Scheidemannstraße — павильон
+            Besucherzentrum у западного портала.
+          </p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">14:00 – 15:30</span
+          ><span class="name" data-ll="52.5181,13.3747">Рейхстаг, крыша</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=52.5181324%2C13.374726&amp;query_place_id=ChIJM2qJEABRqEcR8Luv0JfXcco"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Рейхстаг на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">
+            Вход — Besucherzentrum, Scheidemannstraße, у западного портала.
+            Само здание — Platz der Republik 1
+          </div>
+          <div class="lines">
+            <span class="ln" style="--c: #dd6ba6">S1</span
+            ><span class="ln" style="--c: #7e5330">U5</span
+            ><span class="stop">Brandenburger Tor</span>
+          </div>
+          <p class="warn">Бронь SYS-20260907-212019: 14:00–15:30. На досмотре к 13:45, с оригиналом паспорта.</p>
+          <p class="warn">28.09–02.10 купол закрыт на чистку. По брони доступна терраса.</p>
+          <p class="warn">Бутылки, ножи, инструменты, газовые баллончики и лазерные указки через досмотр не допускаются.</p>
+          <p class="warn">Около 13:00 проверить почту: Бундестаг может отменить посещение в день визита.</p>
+          <p>С террасы — вид вниз на правительственный квартал.</p>
+          <p class="warn">При отмене — Band des Bundes и набережная Шпрее, около 10 минут пешком. По брони: kuppelbesuch@bundestag.de, +49 30 227-32083.</p>
+        </div>
+      </details>
+
+      <details class="item free" name="d1">
+        <summary>
+          <span class="time">15:30 – 17:55</span
+          ><span class="name">Прогулка по Unter den Linden</span>
+        </summary>
+        <div class="body">
+          <p>Прогулка от Бранденбургских ворот к Музейному острову и Sophienstraße.</p>
+          <p class="warn">
+            3,8 км от Бранденбургских ворот до Sophienstraße. Порядок: Бебельплац
+            → Rausch и Ritter Sport → Hackesche Höfe → Erzgebirgskunst. На Rausch и Ritter Sport — примерно по 10 минут. При отставании первым
+            режется Ritter Sport, вторым Бебельплац.
+          </p>
+          <div class="addr" data-ll="52.5161,13.3944">
+            Bebelplatz (площадь)<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Bebelplatz,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Bebelplatz на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            «Пустая библиотека» Ульмана: утопленные под стекло белые полки прямо
+            в мостовой — памятник сожжению книг 1933 года на этой площади.
+          </p>
+          <div class="addr" data-ll="52.5121,13.3913">
+            Rausch (магазин шоколада) · Charlottenstraße 60<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Rausch+Schokoladenhaus,+Charlottenstra%C3%9Fe+60,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Rausch на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="addr" data-ll="52.5146,13.3905">
+            Ritter Sport (магазин шоколада) · Friedrichstraße 83<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Ritter+Sport+Bunte+SchokoWelt,+Friedrichstra%C3%9Fe+83,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Ritter Sport на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="addr" data-ll="52.5245,13.4021">
+            Hackesche Höfe (комплекс дворов) · Rosenthaler Str. 40<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Hackesche+H%C3%B6fe,+Rosenthaler+Stra%C3%9Fe+40,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Hackesche Höfe на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            Восемь сцепленных дворов 1906 года, Курт Берндт и Август Энделль:
+            первый двор облицован глазурованным кирпичом в цвет, дальше
+            проходы сужаются и выводят один в другой до Sophienstraße.
+          </p>
+          <div class="addr" data-ll="52.5250,13.4023">
+            Erzgebirgskunst (деревянные сувениры) · Sophienstraße 9<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Erzgebirgskunst+Original,+Sophienstra%C3%9Fe+9,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Erzgebirgskunst на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            Rausch — шоколадный дом с макетами Бранденбургских ворот и
+            Рейхстага, отлитыми из шоколада; Ritter Sport — фирменный магазин с
+            плиткой на развес. Erzgebirgskunst — рудногорская деревянная
+            игрушка: щелкунчики, курительные человечки, пирамиды и шахтёрские
+            фигурки токарной работы.
+          </p>
+          <p class="warn">Erzgebirgskunst: пн–пт 11:00–19:00. Ritter Sport: пн–сб 10:00–18:30. Rausch: пн–сб 10:00–20:00.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d1">
+        <summary>
+          <span class="time">запас</span
+          ><span class="name">Рядом, если есть время</span>
+        </summary>
+        <div class="body">
+
+          <div class="addr" data-ll="52.5205,13.3966">
+            James-Simon-Galerie (музейный павильон) · Bodestraße<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=James-Simon-Galerie,+Bodestra%C3%9Fe,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="James-Simon-Galerie на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Чипперфилд: белая колоннада и широкая лестница у воды. Снаружи, бесплатно.</p>
+          <div class="addr" data-ll="52.5250,13.3694">
+            Hauptbahnhof (центральный вокзал) · gmp<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Berlin+Hauptbahnhof"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Hauptbahnhof на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Дополнительно около 40 минут. Hauptbahnhof: стекло, сталь, пять уровней. От Рейхстага 15 минут пешком вдоль Шпрее.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">17:55 – 18:35</span
+          ><span class="name">Пауза, кофе</span>
+        </summary>
+        <div class="body">
+          <p>Кафе у Sophienstraße; до моста около 5 минут пешком.</p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">18:40 – 19:25</span
+          ><span class="name" data-ll="52.5223,13.3957"
+            >Музейный остров, Monbijoubrücke (мост)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Monbijoubr%C3%BCcke,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Am Kupfergraben</div>
+          <p class="warn">Закат около 18:48, конец гражданских сумерек около 19:22. Съёмка 18:55–19:20.</p>
+          <p>
+            Классика — Боде-музей с моста на запад, против света. Фасады с воды.
+          </p>
+          <p class="warn">Телефон на парапет, ночной режим, таймер на 3 секунды. Протереть объектив; использовать основную камеру.</p>
+          <p>Запасной вечер — четверг: от Hauptbahnhof две остановки S-Bahn до Hackescher Markt, затем пешком к мосту.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d1">
+        <summary>
+          <span class="time">19:25+</span
+          ><span class="name">Возвращение в отель, ужин</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Hotel+Sachsenhof,+Motzstra%C3%9Fe+7,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Отель на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr" data-ll="52.4987,13.3514">
+            Hotel Sachsenhof · Motzstr. 7
+          </div>
+          <div class="lines">
+            <span class="ln" style="--c: #dd6ba6">S1</span
+            ><span class="stop">до Potsdamer Platz</span
+            ><span class="ln" style="--c: #da421e">U2</span
+            ><span class="stop">до Nollendorfplatz</span>
+          </div>
+          <p>От моста пешком до Friedrichstraße, S1/S2 до Potsdamer Platz, U2 до Nollendorfplatz. Всего около 35–40 минут.</p>
+          <p>Ужин у Nollendorfplatz.</p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">02</span><span class="t">Инженерия и брутализм</span
+      ><span class="wd">ср 30.09</span>
+    </summary>
+    <p class="note">
+      Три музея, короткая вечерняя прогулка; около 19:30 — возвращение в отель.
+    </p>
+    <p class="zone">
+      Билет на день: 24-Stunden-Karte <b>AB</b>, €11,20 — весь день внутри города.
+    </p>
+    <div class="items">
+      <details class="item" name="d2">
+        <summary>
+          <span class="time">08:00 – 08:30</span
+          ><span class="name" data-ll="52.4977,13.3549"
+            >Завтрак, Winterfeldtmarkt (уличный рынок)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Winterfeldtplatz,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Winterfeldtplatz на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Winterfeldtplatz · 400 м от отеля</div>
+          <p class="warn">Завтрак в отеле не включён.</p>
+          <p>
+            Крупнейший недельный рынок Берлина: два десятка рядов на площади
+            перед церковью Святого Матфия — фермерские прилавки, сыры, турецкая
+            и итальянская снедь, цветы.
+          </p>
+          <p>Рынок работает по средам и субботам.</p>
+          <p>Завтрак в булочной на Maaßenstraße или Motzstraße; часы выбранной булочной проверить накануне.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d2">
+        <summary>
+          <span class="time">09:00 – 13:00</span
+          ><span class="name" data-ll="52.4986,13.3776"
+            >Немецкий технический музей</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Deutsches+Technikmuseum,+Trebbiner+Stra%C3%9Fe+9,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Trebbiner Str. 9</div>
+          <div class="lines">
+            <span class="ln" style="--c: #7dad4c">U1</span
+            ><span class="ln" style="--c: #16683d">U3</span
+            ><span class="stop">Möckernbrücke</span>
+          </div>
+          <p class="warn">
+            Выход из отеля в 08:35: от Motzstr. до Möckernbrücke ~20 минут. Часы
+            проверены: вт–пт 09:00–17:30, понедельник закрыт.
+          </p>
+          <p>Авиация, железнодорожные залы, Zuse Z3.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d2">
+        <summary>
+          <span class="time">13:00 – 13:45</span
+          ><span class="name">Обед и переход вдоль Ландверканала</span>
+        </summary>
+        <div class="body">
+          <p>Пешком по набережной Landwehrkanal, около 30 минут.</p>
+          <p class="warn">Обед перед магазином и Еврейским музеем. Кафе также есть в Техническом музее.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d2">
+        <summary>
+          <span class="time">13:45 – 14:05</span
+          ><span class="name" data-ll="52.5057,13.3905"
+            >Verflixt &amp; Zugespielt (магазин настолок)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Verflixt+%26+Zugespielt,+Friedrichstra%C3%9Fe+215,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Verflixt &amp; Zugespielt на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Friedrichstraße 215–216, 10969 Berlin</div>
+          <p>Магазин настольных игр у Mehringplatz. Вт–чт 12:00–18:00, пт–сб 12:00–20:00; вс–пн закрыт.</p>
+          <p>До Еврейского музея около 10 минут пешком.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d2">
+        <summary>
+          <span class="time">14:15 – 16:30</span
+          ><span class="name" data-ll="52.5024,13.3953">Еврейский музей</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=J%C3%BCdisches+Museum+Berlin,+Lindenstra%C3%9Fe+9-14"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Lindenstraße 9–14</div>
+          <p>
+            Либескинд: пустоты, Сад изгнания, косые прорезы в цинке. Съёмка
+            внутри местами ограничена.
+          </p>
+          <p class="warn">Вт–вс 10:00–18:00, последний вход 17:00; понедельник закрыт.</p>
+          <p class="warn">
+            Основная экспозиция бесплатна. Билет на время входа — в кассе
+            на месте или онлайн; предварительная бронь не обязательна.
+            При отсутствии ближайшего слота возможно ожидание. Выход в 16:30.
+          </p>
+        </div>
+      </details>
+
+      <details class="item" name="d2">
+        <summary>
+          <span class="time">17:15 – 18:15</span
+          ><span class="name" data-ll="52.5176,13.4419"
+            >Музей компьютерных игр</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Computerspielemuseum,+Karl-Marx-Allee+93A,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Karl-Marx-Allee 93A</div>
+          <div class="lines">
+            <span class="ln" style="--c: #7e5330">U5</span
+            ><span class="stop">Weberwiese</span>
+          </div>
+          <p class="warn">Выход из Еврейского музея в 16:30. На переезд заложено 45 минут. Музей компьютерных игр открыт до 20:00.</p>
+          <p>Эволюция геймдизайна и ретро-интерфейсы.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d2">
+        <summary>
+          <span class="time">по желанию</span
+          ><span class="name" data-ll="52.5146,13.4691"
+            >FUNtainment (магазин настолок)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=FUNtainment+Game+Center,+Frankfurter+Allee+79,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="FUNtainment на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Frankfurter Allee 79–83, 10247 Berlin</div>
+          <div class="lines">
+            <span class="ln" style="--c: #7e5330">U5</span
+            ><span class="stop"
+              >Frankfurter Allee, три остановки от Weberwiese</span
+            >
+          </div>
+          <p>Настольные и коллекционные карточные игры, варгеймы, ролевые игры.</p>
+          <p class="warn">Ср 12:00–20:00, пт 12:00–21:00, сб 10:00–18:00; воскресенье закрыто.</p>
+          <p>До Frankfurter Tor — две остановки U5 от Frankfurter Allee или около 1 км пешком.</p>
+
+          <p class="warn">Вместо вечерней прогулки, если захочется зайти. Выход из магазина до 19:15; возвращение в отель — U5 до Alexanderplatz, затем U2 до Nollendorfplatz.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d2">
+        <summary>
+          <span class="time">18:15 – 19:15</span
+          ><span class="name">Karl-Marx-Allee (архитектурная прогулка)</span>
+        </summary>
+        <div class="body">
+
+          <p>От Музея компьютерных игр идти по Karl-Marx-Allee на запад к Kino International и Café Moskau, затем к Alexanderplatz. На прогулку около часа; после сумерек — ночной режим с опорой на парапет.</p>
+          <div class="addr" data-ll="52.5158,13.4542">
+            Frankfurter Tor (башни-близнецы)<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Frankfurter+Tor,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Frankfurter Tor на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="addr" data-ll="52.5205,13.4228">
+            Kino International (кинотеатр) · Karl-Marx-Allee 33<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Kino+International,+Karl-Marx-Allee+33,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Kino International на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="addr" data-ll="52.5197,13.4226">
+            Café Moskau (павильон модернизма) · Karl-Marx-Allee 34<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Caf%C3%A9+Moskau,+Karl-Marx-Allee+34,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Café Moskau на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            Frankfurter Tor — две башни Хенсельмана, 1957, купола по образцу
+            гонтардовских соборов на Жандарменмаркте, ворота сталинской
+            магистрали. Kino International — кинотеатр 1963 года, парадный зал
+            ГДР: стеклянный объём второго этажа висит над первым на всю ширину
+            фасада. Café Moskau напротив — одноэтажный павильон 1964 года,
+            Йозеф Кайзер, со спутником на крыше и мозаикой на торце.
+          </p>
+          <p>Frankfurter Tor находится в противоположной стороне от музея: при желании выбрать башни вместо прогулки к Kino International; затем U5 до Alexanderplatz.</p>
+          <p>
+            Около 19:30 начать возвращение: U2 от Alexanderplatz до Nollendorfplatz, затем пешком в отель. Ужин у отеля.
+          </p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d2">
+        <summary>
+          <span class="time">запас</span
+          ><span class="name">Рядом, если есть время</span>
+        </summary>
+        <div class="body">
+          <div class="addr" data-ll="52.5039,13.3982">
+            Berlinische Galerie (музей искусства) · Alte Jakobstraße 124<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Berlinische+Galerie,+Alte+Jakobstra%C3%9Fe+124,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Berlinische Galerie на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Около 5–10 минут пешком от Еврейского музея. Музей в бывшем стекольном складе; вариант замены на дождь.</p>
+          <p class="warn">Ср–пн 10:00–18:00, вторник закрыт. Билет €12; с билетом Еврейского музея партнёрский тариф €7.</p>
+          <div class="addr" data-ll="52.5205,13.4177">
+            Haus des Lehrers (высотка с мозаикой) · Alexanderstraße 9<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Haus+des+Lehrers,+Alexanderstra%C3%9Fe+9,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Haus des Lehrers на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="addr" data-ll="52.5211,13.4166">
+            Haus des Reisens (высотка модернизма) · Alexanderstraße 7<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Haus+des+Reisens,+Alexanderstra%C3%9Fe+7,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Haus des Reisens на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="addr" data-ll="52.5232,13.4188">
+            Haus der Statistik (административный комплекс) · Otto-Braun-Str. 70<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Haus+der+Statistik,+Otto-Braun-Stra%C3%9Fe+70,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Haus der Statistik на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            +25 минут. Три коробки ГДР-модернизма на Александерплац:
+            опоясывающая мозаика Вомаки на первой, медный рельеф на второй,
+            пустая громада третьей. Стоят кучно, снаружи, бесплатно.
+          </p>
+
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">03</span><span class="t">Потсдам</span
+      ><span class="wd">чт 01.10</span>
+    </summary>
+    <p class="note">
+      Полдня в Потсдаме, вторая половина — в Берлине.
+    </p>
+    <p class="zone">
+      Билет на день: 24-Stunden-Karte <b>ABC</b>, €12,90 — в зоне C Потсдам.
+    </p>
+    <div class="items">
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">08:15 – 09:22</span
+          ><span class="name">Дорога в Потсдам</span>
+        </summary>
+        <div class="body">
+          <div class="lines">
+            <span class="ln" style="--c: #da421e">U2</span
+            ><span class="stop">до Zoologischer Garten, 2 остановки</span
+            ><span class="ln" style="--c: #7da83f">S7</span
+            ><span class="stop">прямо до Potsdam Hbf, около 30 минут</span>
+          </div>
+          <p class="warn">Выход из отеля в 08:15. U2 до Zoologischer Garten, затем S7 около 08:53 до Potsdam Hbf, прибытие около 09:22. Накануне проверить рейс в VBB.</p>
+          <p>Завтрак около 07:30 перед выездом.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">09:22 – 10:15</span
+          ><span class="name" data-ll="52.3915,13.0668"
+            >Potsdam Hbf (вокзал) → дворец, пешком</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Potsdam+Hauptbahnhof"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Potsdam Hbf на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="lines">
+            <span class="ln" style="--c: #7da83f">S7</span
+            ><span class="stop"
+              >Potsdam Hbf, дальше 3,1 км пешком — 42–48 минут</span
+            >
+          </div>
+          <p class="warn">Пешком около 45–50 минут: Lange Brücke → Alter Markt → Brandenburger Straße → Luisenplatz → Allee nach Sanssouci → террасы дворца.</p>
+          <p class="warn">Если прибытие на Potsdam Hbf позже 09:30 — проверить в VBB автобус до Schloss Sanssouci или трамвай 91 до Luisenplatz-Süd/Park Sanssouci и выбрать вариант с прибытием ко входу к 10:30.</p>
+
+          <div class="addr" data-ll="52.4004,13.0596">
+            Голландский квартал · Mittelstraße<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Holl%C3%A4ndisches+Viertel,+Mittelstra%C3%9Fe,+Potsdam"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Голландский квартал на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Краснокирпичные дома с фронтонами. Дополнительный крюк по старому городу — только при запасе времени до входа во дворец.</p>
+          <p class="warn">Накануне проверить маршрут до дворца и обратные автобусы в VBB/BVG с учётом ремонтных работ.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">10:45 – 13:30</span
+          ><span class="name" data-ll="52.4044,13.0389">Сан-Суси (дворец и парк)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Schloss+Sanssouci,+Maulbeerallee,+Potsdam"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Maulbeerallee, Potsdam</div>
+          <p>
+            Каскадные террасы, симметрия барочных фасадов. Парк — 290 га. Часы
+            проверены: апрель–октябрь вт–вс 10:00–17:30, последний вход 17:00;
+            парк открыт до темноты.
+          </p>
+          <p class="warn">
+            <strong>Билет куплен: 01.10.2026 в 10:45</strong>,
+            sanssouci+ REGULÄR, €22, посещение Сан-Суси с аудиогидом.
+            Приход ко входу к <strong>10:30</strong>.
+            При опоздании вход не гарантирован. Билет сохранить офлайн.
+          </p>
+          <p>
+            Новый дворец — только снаружи. Отдельный слот на посещение
+            внутри не бронировался. Выход через парк к автобусной остановке
+            у Нового дворца не требует билета.
+          </p>
+          <p>Дворец — около 45 минут. Затем террасы, Историческая мельница, обед и прогулка через парк к Новому дворцу. К остановке около 13:30.</p>
+          <p class="warn">Обед у Исторической мельницы. На еду оставить около 30 минут.</p>
+          <p class="warn">От Нового дворца автобусом до Potsdam Hbf.</p>
+          <p class="warn">Накануне проверить два подходящих отправления от остановки Potsdam, Neues Palais до Potsdam Hbf.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d3">
+        <summary>
+          <span class="time">запас</span
+          ><span class="name">В парке, входит в тот же билет</span>
+        </summary>
+        <div class="body">
+          <p>Дополнительные точки парка — при запасе времени до автобуса.</p>
+          <div class="addr" data-ll="52.4059,13.0316">
+            Оранжерея · An der Orangerie 3–5<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Orangerieschloss,+An+der+Orangerie,+Potsdam"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Оранжерея на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p class="warn">Оранжерейный дворец закрыт на реставрацию; посещение внутрь не планировать.</p>
+          <div class="addr" data-ll="52.4020,13.0287">
+            Китайский дом (садовый павильон)<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Chinesisches+Haus,+Park+Sanssouci,+Potsdam"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Китайский дом на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Золочёные фигуры под пальмовыми колоннами. По пути к Новому дворцу.</p>
+          <div class="addr" data-ll="52.4009,13.0166">
+            Новый дворец · Am Neuen Palais<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Neues+Palais,+Am+Neuen+Palais,+Potsdam"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Новый дворец на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            2 км от Сан-Суси по главной аллее. Самый крупный объём парка и точка
+            выхода в конце дня.
+          </p>
+        </div>
+      </details>
+
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">13:35 – 15:00</span
+          ><span class="name">Обратно в Берлин</span>
+        </summary>
+        <div class="body">
+          <div class="lines">
+            <span class="stop">автобус 605/606: Neues Palais → Potsdam Hbf, около 20 минут</span
+            ><span class="ln" style="--c: #7da83f">S7</span
+            ><span class="stop">Potsdam Hbf → Hauptbahnhof, около 45 минут</span>
+          </div>
+          <p>От Potsdam Hbf на S7 до Hauptbahnhof. До Hamburger Bahnhof около 10 минут пешком.</p>
+          <p class="warn">Флактурм — дополнительный выезд, только при запасе времени.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d3">
+        <summary>
+          <span class="time">по желанию</span
+          ><span class="name" data-ll="52.5473,13.3847"
+            >Флактурм Гумбольдтхайн (зенитная башня)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Flakturm+Humboldthain,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Флактурм на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Volkspark Humboldthain, Hochstraße, 13357 Berlin</div>
+          <div class="lines">
+            <span class="ln" style="--c: #dd6ba6">S1</span
+            ><span class="ln" style="--c: #de5c19">S2</span
+            ><span class="stop"
+              >Friedrichstraße → Humboldthain, 3 остановки; затем 10–15 минут через парк</span
+            >
+          </div>
+          <p>Частично разрушенная зенитная башня 1942 года. Сохранившаяся северная часть служит смотровой площадкой.</p>
+
+          <p>
+            Бесплатно, без билетов и слотов. Подъём по лестнице через парк.
+            Северная стена отдана альпклубу под скалодром.
+          </p>
+          <p class="warn">В плане — парк и наружная смотровая площадка. Посещение внутри только с отдельной экскурсией Berliner Unterwelten.</p>
+          <p class="warn">Вариант вместо посещения Futurium: башня 15:20–16:05, Hamburger Bahnhof 16:40–18:10, затем прямо к Band des Bundes к 18:30. От башни до музея заложить около 35 минут.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">15:30 – 17:00</span
+          ><span class="name" data-ll="52.5284,13.3720">Hamburger Bahnhof (музей современного искусства)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Hamburger+Bahnhof,+Invalidenstra%C3%9Fe+50-51,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Hamburger Bahnhof на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">
+            Invalidenstraße 50–51 · около 10 минут от Hauptbahnhof · €16
+          </div>
+          <p>От Hauptbahnhof около 10 минут пешком. После музея до Futurium около 10 минут.</p>
+          <p>
+            Вокзал 1847 года, ставший музеем современного искусства: чугунные
+            фермы, стеклянная кровля, главный зал длиной в перрон.
+            Классицистский фасад снаружи, железо и свет внутри.
+          </p>
+          <p class="warn">Четверг 10:00–20:00; вт–ср и пт 10:00–18:00, сб–вс 11:00–18:00; понедельник закрыт.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">17:10 – 18:00</span
+          ><span class="name" data-ll="52.5239,13.3743"
+            >Futurium (музей будущего) и Hauptbahnhof (вокзал)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Futurium,+Alexanderufer+2,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Futurium на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Alexanderufer 2 · 350 м от Hauptbahnhof</div>
+          <p class="warn">После осмотра — пешком к Band des Bundes, около 15–20 минут с запасом на переходы.</p>
+          <p>Фасад из стеклянных кассет с металлическими отражателями. Вход бесплатный; в четверг до 20:00, по вторникам закрыт.</p>
+          <p>Рядом Hauptbahnhof: стекло, сталь, пять уровней, архитектор gmp.</p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">18:20 – 19:20</span
+          ><span class="name" data-ll="52.5202,13.3783">Band des Bundes (правительственный квартал)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Marie-Elisabeth-L%C3%BCders-Haus,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Band des Bundes на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">
+            Marie-Elisabeth-Lüders-Haus · Schiffbauerdamm · 700 м от Futurium
+          </div>
+          <p>Ведомство канцлера, дом Марии-Элизабет Людерс и двойной мост через Шпрее. Съёмка с набережной.</p>
+          <p class="warn">Закат около 18:43, конец гражданских сумерек около 19:17. Съёмка 18:49–19:14. Телефон на парапет, ночной режим, таймер.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d3">
+        <summary>
+          <span class="time">19:20+</span><span class="name">Ужин</span>
+        </summary>
+        <div class="body">
+          <p>Ужин на Hauptbahnhof или у отеля.</p>
+          <p>К отелю: от Hauptbahnhof S3/S5/S7/S9 до Friedrichstraße, S1/S2 до Potsdamer Platz, U2 до Nollendorfplatz. Заложить около 40 минут.</p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">04</span><span class="t">Авто-инженерия и мосты</span
+      ><span class="wd">пт 02.10</span>
+    </summary>
+    <p class="note">ICC, Classic Remise и Hansaviertel; после обеда — Кройцберг и Обербаумский мост.</p>
+    <p class="zone">
+      Билет на день: 24-Stunden-Karte <b>AB</b>, €11,20 — весь день внутри города.
+    </p>
+    <div class="items">
+      <details class="item" name="d4">
+        <summary>
+          <span class="time">08:40 – 09:10</span
+          ><span class="name" data-ll="52.5045,13.2792">ICC Berlin (конгресс-центр)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Internationales+Congress+Centrum,+Messedamm+22,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="ICC на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Messedamm 22</div>
+          <div class="lines">
+            <span class="ln" style="--c: #c63678">S41</span
+            ><span class="stop"
+              >Messe Nord/ICC — одна остановка после Westkreuz</span
+            >
+          </div>
+          <p class="warn">Выход из отеля около 08:00. U2 до Kaiserdamm, затем около 10 минут пешком. После ICC: S41 от Messe Nord/ICC до Beusselstraße, три остановки.</p>
+          <p>Алюминиевый корпус архитекторов Шюлер, около 320 метров длиной, бетонные опоры над эстакадой.</p>
+          <p>Осмотр снаружи. Ракурсы со стороны Messedamm и радиобашни; доступ к территории проверить перед поездкой.</p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d4">
+        <summary>
+          <span class="time">09:35 – 10:45</span
+          ><span class="name" data-ll="52.5303,13.3186">Classic Remise (ретроавтомобили)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Classic+Remise+Berlin,+Wiebestra%C3%9Fe+36-37"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Wiebestraße 36–37</div>
+          <div class="lines">
+            <span class="ln" style="--c: #c63678">S41</span
+            ><span class="ln" style="--c: #bd5216">S42</span
+            ><span class="stop">Beusselstraße, дальше ~10 минут пешком</span>
+          </div>
+          <p>
+            Открыто с 08:00, вход бесплатный. Винтажная авто-инженерия в бывшем
+            трамвайном депо: стекло, сталь, ряды машин в перспективу.
+          </p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d4">
+        <summary>
+          <span class="time">11:15 – 12:00</span
+          ><span class="name" data-ll="52.5213,13.3475"
+            >Konditorei Buchwald (кондитерская)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Konditorei+Buchwald,+Bartningallee+29,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Bartningallee 29</div>
+          <div class="lines">
+            <span class="ln" style="--c: #c63678">S41</span
+            ><span class="stop">Westhafen, одна остановка</span
+            ><span class="ln" style="--c: #f3791d">U9</span
+            ><span class="stop">Hansaplatz, три остановки</span>
+          </div>
+          <p>
+            Кондитерская с 1852 года. Baumkuchen, выпеченный на открытом огне.
+          </p>
+          <p class="warn">Ежедневно 11:00–18:00.</p>
+        </div>
+      </details>
+
+      <details class="item free" name="d4">
+        <summary>
+          <span class="time">12:00 – 12:45</span
+          ><span class="name" data-ll="52.5180,13.3420">Hansaviertel (модернистский квартал)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Hansaviertel,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Hansaviertel на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Bartningallee · Händelallee · Klopstockstraße</div>
+          <p>В радиусе примерно 300 м от Bartningallee 29: дома Аалто, Нимейера и Гропиуса, Akademie der Künste, Kaiser-Friedrich-Gedächtniskirche.</p>
+          <p>Целый модернистский квартал, снаружи и бесплатно.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d4">
+        <summary>
+          <span class="time">+40 мин</span
+          ><span class="name" data-ll="52.5125,13.3334">Umlauftank 2 (гидродинамический канал)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Umlauftank+2,+Schleuseninsel,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Umlauftank 2 на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Schleuseninsel, Tiergarten</div>
+          <p>От Hansaviertel около 20–25 минут пешком через Straße des 17. Juni к Schleuseninsel.</p>
+          <p>Гидродинамический канал Людвига Лео, 1974: розовый корпус и синяя труба на опорах.</p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d4">
+        <summary>
+          <span class="time">13:15 – 14:05</span
+          ><span class="name" data-ll="52.5022,13.3407"
+            >KaDeWe (универмаг), 6-й этаж — обед<span class="tag cut">режем 1-м</span></span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=KaDeWe,+Tauentzienstra%C3%9Fe+21-24,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Tauentzienstraße 21–24</div>
+          <div class="lines">
+            <span class="ln" style="--c: #7dad4c">U1</span
+            ><span class="ln" style="--c: #da421e">U2</span
+            ><span class="ln" style="--c: #16683d">U3</span
+            ><span class="stop">Wittenbergplatz</span>
+          </div>
+          <p>KaDeWe: гастрономический этаж Feinschmeckeretage на 6-м этаже.</p>
+          <p>Обед. При сокращении KaDeWe поесть по дороге.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d4">
+        <summary>
+          <span class="time">по желанию</span
+          ><span class="name" data-ll="52.4901,13.4095"
+            >spielbrett (магазин настолок)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=spielbrett,+K%C3%B6rtestra%C3%9Fe+27,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="spielbrett на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Körtestraße 27, 10967 Berlin</div>
+          <div class="lines">
+            <span class="ln" style="--c: #7dad4c">U1</span
+            ><span class="stop">до Möckernbrücke</span
+            ><span class="ln" style="--c: #0f8a8e">U7</span
+            ><span class="stop">до Südstern</span>
+          </div>
+          <p>
+            spielbrett oHG — магазин настольных игр в Кройцберге, работает с
+            1980-х: немецкие евро, новинки Эссена, подержанные коробки. Часы
+            проверены: пн–пт 10:00–18:30, сб 10:00–16:00.
+          </p>
+          <p>Два торговых зала и игровая комната.</p>
+          <p class="warn">При желании — 14:40–15:25 перед Kottbusser Tor. Без магазина ехать от Wittenbergplatz прямо на U1/U3 до Kottbusser Tor; освободившееся время — пауза или прогулка.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d4">
+        <summary>
+          <span class="time">15:45 – 16:45</span
+          ><span class="name" data-ll="52.4997,13.4193"
+            >Kottbusser Tor, NKZ (жилой комплекс)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Neues+Kreuzberger+Zentrum,+Adalbertstra%C3%9Fe+4,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="NKZ на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Adalbertstraße 4</div>
+          <div class="lines"><span class="ln" style="--c: #7dad4c">U1</span><span class="ln" style="--c: #00a992">U3</span><span class="stop">Wittenbergplatz → Kottbusser Tor, без пересадок</span></div>
+          <p>Если заходил в spielbrett: U7 от Südstern до Hermannplatz, затем U8 до Kottbusser Tor.</p>
+          <p>
+            Neues Kreuzberger Zentrum: бетонная мегаструктура, перекинутая через
+            улицу. Эстакада U1 проходит вплотную.
+          </p>
+        </div>
+      </details>
+
+      <details class="item" name="d4">
+        <summary>
+          <span class="time">16:45 – 18:35</span
+          ><span class="name" data-ll="52.5045,13.4408"
+            >Виадук U1 и East Side Gallery (росписи стены)<span class="tag cut"
+              >галерею 3-м</span
+            ></span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=East+Side+Gallery,+M%C3%BChlenstra%C3%9Fe,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="East Side Gallery на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">
+            Skalitzer Straße → Oberbaumbrücke → Mühlenstraße
+          </div>
+          <p class="warn">Пешком: Kottbusser Tor → Skalitzer Straße → Oberbaumbrücke → East Side Gallery → обратно к мосту. Полный маршрут около 5 км; с остановками на фото можно пройти только часть галереи.</p>
+          <p>East Side Gallery — 1,3 км Берлинской стены вдоль Шпрее. Росписи 1990 года, включая «Поцелуй» Врубеля и Trabant, пробивающий бетон.</p>
+          <p>На Skalitzer Straße — эстакада U1 и жёлтые поезда.</p>
+          <div class="addr" data-ll="52.5111,13.4429">
+            Berghain (бывшая ТЭЦ) · Am Wriezener Bahnhof<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Berghain,+Am+Wriezener+Bahnhof,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Berghain на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Berghain — бывшая ТЭЦ. Дополнительный крюк от галереи и обратно около 1 км; осмотр снаружи при запасе времени.</p>
+          <p class="warn">При задержке сократить галерею и пропустить Berghain. К мосту к 18:35.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d4">
+        <summary>
+          <span class="time">18:35 – 19:20</span
+          ><span class="name" data-ll="52.5019,13.4456">Обербаумский мост</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Oberbaumbr%C3%BCcke,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Открыть на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Oberbaumbrücke</div>
+          <div class="lines">
+            <span class="ln" style="--c: #7dad4c">U1</span
+            ><span class="stop">Schlesisches Tor</span>
+          </div>
+          <p class="warn">Закат около 18:41, конец гражданских сумерек около 19:15. Съёмка 18:47–19:15.</p>
+          <p>Кирпичная неоготика, жёлтые поезда U1 по верхнему ярусу. Ракурс с северо-восточной стороны моста в сторону заката.</p>
+          <div class="addr" data-ll="52.4974,13.4516">
+            Molecule Man (скульптура в реке)<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Molecule+Man,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Molecule Man на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Molecule Man — три перфорированные фигуры в Шпрее, видны с моста вверх по течению.</p>
+          <p class="warn">После съёмки — ужин и возвращение в отель. Купить воду и перекус на завтра: 3 октября большинство магазинов закрыто.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d4">
+        <summary>
+          <span class="time">по желанию</span><span class="name">Sony Center (крытый городской двор)</span>
+        </summary>
+        <div class="body">
+
+          <p>Potsdamer Platz и бывший Sony Center, Хельмут Ян, 2000: двор под подсвеченным шатром из стекла и ткани на вантах.</p>
+          <div class="addr" data-ll="52.5095,13.3730">
+            Das Center am Potsdamer Platz · бывший Sony Center<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Sony+Center,+Potsdamer+Platz,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Sony Center на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p class="warn">После Обербаумского моста, только при желании. U1/U3 до Gleisdreieck, затем U2 до Potsdamer Platz.</p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">05</span><span class="t">День единства и отлёт</span
+      ><span class="wd">сб 03.10</span>
+    </summary>
+    <p class="note">3 октября — государственный праздник. Большинство магазинов закрыто; транспорт по праздничному расписанию.</p>
+    <p class="zone">
+      Билет на день: 24-Stunden-Karte <b>ABC</b>, €12,90 — в зоне C аэропорт BER.
+    </p>
+    <div class="items">
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">09:00 – 09:45</span
+          ><span class="name">Чек-аут</span>
+        </summary>
+        <div class="body">
+          <p>Выезд до 12:00. Оставить багаж на ресепшене до возвращения после музея.</p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">10:00 – 11:15</span
+          ><span class="name" data-ll="52.5139,13.3785"
+            >Мемориал убитым евреям Европы</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Denkmal+f%C3%BCr+die+ermordeten+Juden+Europas,+Cora-Berliner-Stra%C3%9Fe+1,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Мемориал на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Cora-Berliner-Straße 1</div>
+          <p>
+            2711 бетонных стел на площади в два гектара, Питер Айзенман, 2005.
+            Плиты одного размера в плане, но разной высоты, а пол волнами
+            уходит вниз — в середине поля стелы выше человека и горизонт
+            исчезает.
+          </p>
+          <p>Сетка стел, уклоны, узкие коридоры. Бесплатно, открыто в праздник.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">11:30 – 12:30</span
+          ><span class="name">Обед, Potsdamer Platz</span>
+        </summary>
+        <div class="body">
+          <p class="warn">Обед перед Kulturforum и музеем.</p>
+          <p>В праздник часы кафе и булочных проверить отдельно. Воду и перекус купить накануне.</p>
+        </div>
+      </details>
+
+      <details class="item free" name="d5">
+        <summary>
+          <span class="time">12:30 – 13:15</span
+          ><span class="name" data-ll="52.5101,13.3696">Kulturforum (культурный комплекс)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Berliner+Philharmonie,+Herbert-von-Karajan-Stra%C3%9Fe+1,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Филармония на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Herbert-von-Karajan-Str. 1 · Potsdamer Str. 33</div>
+          <p>
+            Филармония и Staatsbibliothek Шаруна стоят в 200 метрах от Новой
+            национальной галереи. Золотые шатровые объёмы против стеклянного
+            параллелепипеда Миса — два модернизма в одном кадре, снаружи и
+            бесплатно.
+          </p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">13:15 – 14:45</span
+          ><span class="name" data-ll="52.5067,13.3676"
+            >Новая национальная галерея</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Neue+Nationalgalerie,+Potsdamer+Stra%C3%9Fe+50,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Новая национальная галерея на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Potsdamer Straße 50</div>
+          <div class="lines">
+            <span class="stop"
+              >200 метров от Филармонии — ты уже стоишь рядом</span
+            >
+          </div>
+          <p>
+            Мис ван дер Роэ: стальной портик и стеклянный зал, реставрация
+            Чипперфилда.
+          </p>
+          <p>3 октября Новая национальная галерея открыта 10:00–18:00.</p>
+          <p class="warn">Билет в кассе или онлайн: коллекция €14, все выставки €20. Выход не позднее 14:45.</p>
+        </div>
+      </details>
+
+      <details class="item opt" name="d5">
+        <summary>
+          <span class="time">запас</span
+          ><span class="name">Рядом, если есть время</span>
+        </summary>
+        <div class="body">
+          <div class="addr" data-ll="52.5085,13.3665">
+            St.-Matthäus-Kirche (церковь) · Matthäikirchplatz<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=St.-Matth%C3%A4us-Kirche,+Matth%C3%A4ikirchplatz,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="St.-Matthäus-Kirche на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Неороманская церковь между Филармонией и Новой национальной галереей. Осмотр снаружи.</p>
+          <div class="addr" data-ll="52.5080,13.3655">
+            Gemäldegalerie (картинная галерея) · Matthäikirchplatz<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Gem%C3%A4ldegalerie,+Matth%C3%A4ikirchplatz,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Gemäldegalerie на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            Старые мастера XIII–XVIII веков в анфиладе залов Хильмера и
+            Саттлера: Вермеер, Рембрандт, Брейгель, Дюрер, Кранах.
+          </p>
+          <p>Альтернатива на дождь вместо Новой национальной галереи. Выход из музея не позднее 14:45.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">14:45 – 15:45</span
+          ><span class="name">Отель, забрать багаж</span>
+        </summary>
+        <div class="body">
+          <p>
+            Багаж лежит на ресепшене с утра. От галереи 10 минут пешком до
+            Potsdamer Platz, U2 до Nollendorfplatz, обратно тем же путём.
+          </p>
+
+        </div>
+      </details>
+
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">15:45 – 17:00</span
+          ><span class="name" data-ll="52.3648,13.5095">Трансфер в BER</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Flughafen+Berlin+Brandenburg+BER"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="BER на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Терминал 1</div>
+          <div class="lines">
+            <span class="ln" style="--c: #da421e">U2</span
+            ><span class="stop">до Potsdamer Platz</span
+            ><span class="ln" style="--c: #ec0016">FEX</span
+            ><span class="stop">до BER, 19 минут</span>
+          </div>
+          <p class="warn">FEX: Potsdamer Platz → Südkreuz → BER.</p>
+          <p>Проверить отправление FEX накануне. Из отеля выехать с запасом для прибытия в BER к 17:00.</p>
+          <p class="warn">Для аэропорта нужна зона C. Билет ABC действует 24 часа с активации; проверь, что он покрывает поездку в BER.</p>
+        </div>
+      </details>
+
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">17:00 – 20:20</span
+          ><span class="name">Регистрация и контроль</span>
+        </summary>
+        <div class="body">
+          <p class="warn">В BER к 17:00, примерно за 3 часа 20 минут до вылета. Регистрация и контроль — по указателям рейса Bluebird.</p>
+          <p class="warn">
+            Bluebird оставляет за собой право сдать ручную кладь в багаж даже
+            при соблюдении лимита — это написано в самом билете. Повербанк в
+            трюм нельзя, поэтому он и всё ценное едут в личной вещи, а не в
+            8-килограммовой сумке.
+          </p>
+          <p>
+            Онлайн-регистрация у Bluebird заявлена только для вылетов из
+            Тель-Авива. Из Берлина — стойка, паспорт смотрят там.
+          </p>
+        </div>
+      </details>
+
+      <details class="item" name="d5">
+        <summary>
+          <span class="time">20:20</span><span class="name">BZ271, вылет</span>
+        </summary>
+        <div class="body">
+          <p>
+            Прилёт в TLV — 01:40 в ночь на воскресенье, на исходе Шмини Ацерет.
+          </p>
+          <p class="warn">
+            Проверить заранее, идёт ли в этот час поезд из Бен-Гуриона. Если нет
+            — такси, и лучше знать об этом до посадки в Берлине.
+          </p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">—</span><span class="t">Свободное гуляние</span
+      ><span class="wd">когда угодно</span>
+    </summary>
+    <p class="note">Дополнительные места при свободном времени или замене основного блока.</p>
+    <div class="items">
+      <details class="item" name="dx">
+        <summary>
+          <span class="time">порядок</span
+          ><span class="name">Если выбился из графика</span>
+        </summary>
+        <div class="body">
+          <p>Порядок сокращений при нехватке времени.</p>
+          <p>Среда: FUNtainment — по желанию. При отставании сократить вечернюю прогулку; возвращение начать около 19:30.</p>
+          <p>Четверг: пропустить дополнительный Флактурм, затем сократить Futurium. Сохранить вечернюю съёмку Band des Bundes.</p>
+          <p>Пятница: spielbrett и Sony Center — по желанию. При отставании: 1) KaDeWe. 2) Umlauftank 2. 3) East Side Gallery. 4) ICC.</p>
+          <p>Суббота: сократить мемориал и дополнительные точки Kulturforum; сохранить время на багаж и аэропорт.</p>
+          <p class="warn">
+            Никогда не режется: слот в Сан-Суси, слот в Рейхстаг, трансфер в
+            аэропорт.
+          </p>
+        </div>
+      </details>
+
+      <details class="item" name="dx">
+        <summary>
+          <span class="time">до заката</span
+          ><span class="name" data-ll="52.4750,13.4015">Темпельхофер Фельд (бывший аэродром)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Tempelhofer+Feld,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Темпельхофер Фельд на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Tempelhofer Feld</div>
+          <div class="lines">
+            <span class="ln" style="--c: #8c6dab">U6</span
+            ><span class="ln" style="--c: #0a3f83">U8</span
+            ><span class="stop">~20 минут от отеля</span>
+          </div>
+          <p>
+            Бывший аэропорт: взлётные полосы, по которым ходят пешком, и
+            терминал Загебиля — одно из крупнейших зданий Европы.
+          </p>
+          <p>Прогулка по полю бесплатная, без бронирования. Вход в терминал — отдельно.</p>
+        </div>
+      </details>
+
+      <details class="item" name="dx">
+        <summary>
+          <span class="time">полдня</span
+          ><span class="name" data-ll="52.4975,13.2411">Тойфельсберг (станция радиоперехвата)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Teufelsberg,+Teufelsseechaussee+10,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Тойфельсберг на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Teufelsseechaussee 10, Grunewald</div>
+          <div class="lines">
+            <span class="stop"
+              >S Grunewald, дальше ~25 минут в гору пешком</span
+            >
+          </div>
+          <p>
+            Американская станция радиоперехвата на холме из военного щебня.
+            Белые купола радаров, обшитые изнутри рваной тканью, всё расписано
+            граффити.
+          </p>
+          <p>Купола, граффити и виды с холма; доступность отдельных помещений зависит от условий на месте.</p>
+          <p class="warn">€12. Ежедневно с 11:00: в сентябре до 20:00, в октябре до 19:00. Последний вход за час до закрытия. Дорога около часа в одну сторону.</p>
+        </div>
+      </details>
+
+      <details class="item" name="dx">
+        <summary>
+          <span class="time">час</span
+          ><span class="name" data-ll="52.5119,13.2410">Corbusierhaus (жилой дом)</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Corbusierhaus,+Flatowallee+16,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Corbusierhaus на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Flatowallee 16</div>
+          <div class="lines">
+            <span class="ln" style="--c: #da421e">U2</span
+            ><span class="stop">Olympia-Stadion, дальше 10 минут пешком</span>
+          </div>
+          <p>Берлинская Unité d’Habitation Корбюзье, 1957: бетон на опорах, цветные лоджии. Осмотр снаружи.</p>
+          <p>От ICC пешком до U Kaiserdamm, затем U2 три остановки до Olympia-Stadion. Заложить около часа дополнительно с осмотром и обратной дорогой.</p>
+        </div>
+      </details>
+
+      <details class="item" name="dx">
+        <summary>
+          <span class="time">полдня</span
+          ><span class="name">Брутализм на юге</span>
+        </summary>
+        <div class="body">
+          <p>
+            Три объекта одной линией на юг:
+            <span class="ln" style="--c: #da421e">U2</span> до Potsdamer Platz,
+            дальше <span class="ln" style="--c: #dd6ba6">S1</span>. Всё снаружи
+            и бесплатно, по 40 минут на объект.
+          </p>
+          <div class="addr" data-ll="52.4614,13.3249">
+            Bierpinsel (башня-ресторан) · Schloßstraße 17<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Steglitzer+Pinsel,+Schlo%C3%9Fstra%C3%9Fe+17,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Bierpinsel на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="lines">
+            <span class="ln" style="--c: #dd6ba6">S1</span
+            ><span class="stop"
+              >Rathaus Steglitz, дальше 8 минут пешком по Шлоссштрассе</span
+            >
+          </div>
+          <p>
+            Башня-ресторан 1976 года работы Шюлеров, 47 метров: бетонная нога и
+            насаженный сверху корпус, из-за формы прозванный «пивной кистью».
+            Закрыт с 2010 года, расписан граффити, стоит над эстакадой
+            Шлоссштрассе.
+          </p>
+          <p class="warn">По пути Steglitzer Kreisel, Schloßstraße 80: башня Зигрид Крессман-Цшах.</p>
+          <p class="warn">От Rathaus Steglitz до Bierpinsel около 8 минут пешком или одна остановка U9 до Schloßstraße.</p>
+          <div class="addr" data-ll="52.4366,13.3169">
+            Mäusebunker (бывшая лаборатория) · Krahmerstraße 6<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=M%C3%A4usebunker,+Krahmerstra%C3%9Fe+6,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Mäusebunker на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="lines">
+            <span class="ln" style="--c: #dd6ba6">S1</span
+            ><span class="stop"
+              >Lichterfelde West, дальше ~18 минут пешком</span
+            >
+          </div>
+          <p>
+            Бывшая лаборатория опытов на животных Свободного университета,
+            1971–1981, Герд и Магдалена Хэнска. Серый бетонный клин без окон, из
+            стен наискось торчат синие вентиляционные трубы. Расселён с 2020
+            года, снаружи один из самых узнаваемых брутализмов Европы.
+          </p>
+          <p>От станции до объекта около 1,5 км в каждую сторону.</p>
+          <div class="addr" data-ll="52.4371,13.3181">
+            Институт гигиены (бруталистский комплекс) · Hindenburgdamm 27<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Institut+f%C3%BCr+Hygiene+und+Umweltmedizin,+Hindenburgdamm+27,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Институт гигиены на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>Через дорогу от Mäusebunker: институт гигиены, Фелинг и Гогель, 1968–1974. Бетонные консоли, ленты окон, криволинейные фасады.</p>
+
+        </div>
+      </details>
+
+      <details class="item" name="dx">
+        <summary>
+          <span class="time">вечер</span
+          ><span class="name" data-ll="52.4814,13.3573"
+            >Газгольдер Шёнеберг</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Gasometer+Sch%C3%B6neberg,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Газгольдер на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">EUREF-Campus, Torgauer Straße</div>
+          <div class="lines">
+            <span class="stop">S Schöneberg, ~20 минут от отеля</span>
+          </div>
+          <p>
+            Стальной каркас газгольдера 1910 года с ночной подсветкой, вокруг —
+            офисный кампус в бывшей газовой станции.
+          </p>
+          <p>Запасной вечерний маршрут рядом с отелем.</p>
+        </div>
+      </details>
+
+      <details class="item" name="dx">
+        <summary>
+          <span class="time">дождь</span><span class="name">Если льёт</span>
+        </summary>
+        <div class="body">
+          <p>Варианты замены на дождь:</p>
+          <p class="warn">Вторник: магазины на маршруте по центру; вечером можно осмотреть Hauptbahnhof под крышей.</p>
+          <p class="warn">Среда: музейный маршрут. Berlinische Galerie — возможная замена одному из блоков.</p>
+          <p class="warn">Четверг: сохранить слот Сан-Суси; пропустить Флактурм и увеличить время в Hamburger Bahnhof, открытом до 20:00.</p>
+          <p class="warn">Пятница: Classic Remise под крышей; вместо прогулки по Hansaviertel можно посетить Hamburger Bahnhof, 10:00–18:00.</p>
+          <p class="warn">Суббота: выбрать Новую национальную галерею или Gemäldegalerie. Сохранить выезд в аэропорт.</p>
+          <div class="addr" data-ll="52.5039,13.3982">
+            Berlinische Galerie (музей искусства) · Alte Jakobstraße 124<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Berlinische+Galerie,+Alte+Jakobstra%C3%9Fe+124,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Berlinische Galerie на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <div class="addr" data-ll="52.5080,13.3655">
+            Gemäldegalerie (картинная галерея) · Matthäikirchplatz<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Gem%C3%A4ldegalerie,+Matth%C3%A4ikirchplatz,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Gemäldegalerie на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+
+          <div class="addr" data-ll="52.5284,13.3720">
+            Hamburger Bahnhof (музей современного искусства) · Invalidenstraße 50–51<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Hamburger+Bahnhof,+Invalidenstra%C3%9Fe+50-51,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Hamburger Bahnhof на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            Вокзал 1847 года, ставший музеем современного искусства: чугунные
+            фермы, стеклянная кровля, зал длиной в перрон. Пн закрыт, вт–ср и пт 10:00–18:00, чт до 20:00, сб–вс
+            11:00–18:00.
+          </p>
+          <div class="addr" data-ll="52.5239,13.3743">
+            Futurium (музей будущего) · Alexanderufer 2<a
+              class="map"
+              href="https://www.google.com/maps/search/?api=1&amp;query=Futurium,+Alexanderufer+2,+Berlin"
+              target="_blank"
+              rel="noopener"
+              title="Открыть на Google Картах"
+              aria-label="Futurium на Google Картах"
+              ><svg><use href="#pin" /></svg
+            ></a>
+          </div>
+          <p>
+            Фасад из восьми тысяч кассет литого стекла с металлическими
+            отражателями — меняется от часа и от погоды. Вход бесплатный.
+          </p>
+          <p class="warn">Futurium закрыт по вторникам. Он и Hamburger Bahnhof находятся рядом с Hauptbahnhof. От Рейхстага до вокзала около 15 минут пешком.</p>
+          <p>Пергамский музей закрыт до 2027 года. На Музейном острове доступен осмотр фасадов.</p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">—</span><span class="t">Игротека</span
+      ><span class="wd">день назовут</span>
+    </summary>
+    <p class="note">День русскоязычной игротеки объявляют в телеграм-группе.</p>
+    <div class="items">
+      <details class="item" name="dg">
+        <summary>
+          <span class="time">когда</span
+          ><span class="name">Как действовать</span>
+        </summary>
+        <div class="body">
+          <p>После объявления сверить место и время; использовать порядок сокращений выше.</p>
+        </div>
+      </details>
+
+      <details class="item" name="dg">
+        <summary>
+          <span class="time">снять</span
+          ><span class="name">Что жертвуем первым</span>
+        </summary>
+        <div class="body">
+          <p><strong>Среда 30.09:</strong> FUNtainment, затем вечерняя прогулка; если этого мало — Музей компьютерных игр.</p>
+          <p><strong>Четверг 01.10:</strong> дополнительный Флактурм, затем Futurium; при совпадении по времени с игротекой — вечерняя съёмка.</p>
+          <p><strong>Пятница 02.10:</strong> spielbrett и Sony Center, затем KaDeWe и Umlauftank 2.</p>
+
+
+          <p class="warn">В субботу сохранить время на багаж и вылет.</p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="day" name="day">
+    <summary>
+      <span class="n">—</span><span class="t">Отель</span
+      ><span class="wd">все ночи</span>
+    </summary>
+
+    <div class="items">
+      <details class="item" name="dh">
+        <summary>
+          <span class="time">адрес</span
+          ><span class="name" data-ll="52.4987,13.3514">Hotel Sachsenhof</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Hotel+Sachsenhof,+Motzstra%C3%9Fe+7,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Отель на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Motzstr. 7, 10777 Berlin · +49 30 2162074</div>
+          <div class="lines">
+            <span class="ln" style="--c: #7dad4c">U1</span
+            ><span class="ln" style="--c: #da421e">U2</span
+            ><span class="ln" style="--c: #16683d">U3</span
+            ><span class="ln" style="--c: #f0d722">U4</span
+            ><span class="stop">Nollendorfplatz, ~4 минуты пешком</span>
+          </div>
+          <p>
+            Заселение с 15:00, выезд до 12:00. Ресепшен круглосуточно. Бронь
+            6278.279.437, PIN 0043.
+          </p>
+          <p>Завтрак не включён. Оплата на месте картой, €342, включая городской налог и НДС.</p>
+
+        </div>
+      </details>
+
+      <details class="item" name="dh">
+        <summary>
+          <span class="time">экстренно</span
+          ><span class="name" data-ll="52.4837,13.2886">Посольство Израиля</span
+          ><a
+            class="map"
+            href="https://www.google.com/maps/search/?api=1&amp;query=Botschaft+des+Staates+Israel,+Auguste-Viktoria-Stra%C3%9Fe+74,+Berlin"
+            target="_blank"
+            rel="noopener"
+            title="Открыть на Google Картах"
+            aria-label="Посольство на Google Картах"
+            ><svg><use href="#pin" /></svg
+          ></a>
+        </summary>
+        <div class="body">
+          <div class="addr">Auguste-Viktoria-Str. 74–76, 14193 Berlin</div>
+          <div class="lines">
+            <span class="ln" style="--c: #c63678">S41</span
+            ><span class="ln" style="--c: #bd5216">S42</span
+            ><span class="stop">Hohenzollerndamm, дальше пешком</span
+            ><span class="stop">автобус 110 — остановка Elgersburger Str.</span>
+          </div>
+          <p>
+            Коммутатор <strong>+49 30 8904 5500</strong>. Консульский отдел
+            <strong>+49 30 8904 5511</strong>, приём звонков пн–чт 14:00–16:00.
+          </p>
+          <p class="warn">
+            Дежурный по экстренным случаям: <strong>+49 30 8904 5203</strong>.
+            Горячая линия МИДа: <strong>+972 50 507 3969</strong>.
+          </p>
+          <p class="warn">Пн–чт 08:30–17:00, пт 08:30–14:30. При утрате паспорта в выходной звонить дежурному.</p>
+          <p>
+            Общеевропейский экстренный номер — <strong>112</strong>, полиция —
+            <strong>110</strong>. Копии паспорта, билетов и брони держать в
+            облаке и распечаткой отдельно от оригиналов.
+          </p>
+        </div>
+      </details>
+    </div>
+  </details>
+</div>
+
+<script>
+  /* Расстояние по прямой от текущего местоположения до точек с data-ll:
+     geolocation и формула гаверсинуса, без сети и внешних библиотек.
+     Ближе километра — подсвечивается акцентом.
+
+     Спрашивает сразу при загрузке и дальше раз в пять минут. Внутри рамки
+     браузер геолокацию не отдаёт — страницу надо открывать отдельной вкладкой.
+     Отказ ничего не рисует: расстояний просто нет. Запрет доступа
+     не переспрашиваем — внутри рамки он не изменится. */
+  (function () {
+    var els = document.querySelectorAll("[data-ll]");
+    if (!els.length || !navigator.geolocation) return;
+
+    var REFRESH = 5 * 60 * 1000;
+    var timer,
+      stopped = false;
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      var R = 6371,
+        rad = Math.PI / 180;
+      var dLat = (lat2 - lat1) * rad,
+        dLon = (lon2 - lon1) * rad;
+      var a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * rad) *
+          Math.cos(lat2 * rad) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    function fmt(km) {
+      return "(" + (km < 10 ? km.toFixed(1) : Math.round(km)) + " км)";
+    }
+
+    function update(pos) {
+      var lat = pos.coords.latitude,
+        lon = pos.coords.longitude;
+      els.forEach(function (el) {
+        var c = el.getAttribute("data-ll").split(",");
+        var km = haversine(lat, lon, parseFloat(c[0]), parseFloat(c[1]));
+        var tag = el.querySelector(":scope > .dist");
+        if (!tag) {
+          tag = document.createElement("span");
+          var pin = el.querySelector(":scope > .map");
+          if (pin) el.insertBefore(tag, pin);
+          else el.appendChild(tag);
+        }
+        tag.className = km <= 1 ? "dist near" : "dist";
+        tag.textContent = fmt(km);
+      });
+    }
+
+    function fail(err) {
+      if (err && err.code === 1) {
+        stopped = true;
+        clearInterval(timer);
+      }
+    }
+
+    function ask() {
+      if (stopped) return;
+      navigator.geolocation.getCurrentPosition(update, fail, {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 60000,
+      });
+    }
+
+    ask();
+    timer = setInterval(ask, REFRESH);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) ask();
+    });
+  })();
+</script>

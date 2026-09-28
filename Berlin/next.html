@@ -1,0 +1,545 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Куда дальше</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f5f6f1;
+    --ink: #161a10;
+    --muted: #666d5a;
+    --line: #d5dcc8;
+    --ok: #3f7a26;
+    --soon: #a86a0c;
+    --go: #bf3b22;
+    --btn: #1f2a14;
+    --btn-ink: #f5f6f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0f110c;
+      --ink: #eef0e7;
+      --muted: #9aa18c;
+      --line: #2c3223;
+      --ok: #8cc56a;
+      --soon: #e9a93b;
+      --go: #ff7a5c;
+      --btn: #e6ebdc;
+      --btn-ink: #10130c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f110c;
+    --ink: #eef0e7;
+    --muted: #9aa18c;
+    --line: #2c3223;
+    --ok: #8cc56a;
+    --soon: #e9a93b;
+    --go: #ff7a5c;
+    --btn: #e6ebdc;
+    --btn-ink: #10130c;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  main {
+    min-height: 100%;
+    max-width: 30rem;
+    margin: 0 auto;
+    padding: 1.25rem 1.1rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.6rem;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .top {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .clocks {
+    margin: 0;
+    display: flex;
+    gap: 1.1rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .clocks b {
+    font-weight: 650;
+    color: var(--ink);
+  }
+  .now {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .eyebrow {
+    margin: 0 0 0.35rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .eyebrow b {
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+  }
+  .fix {
+    padding: 0.12rem 0.3rem;
+    border: 1px solid var(--go);
+    border-radius: 2px;
+    color: var(--go);
+    font-size: 0.66rem;
+    font-weight: 700;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(1.9rem, 9vw, 2.6rem);
+    line-height: 1.08;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .blurb {
+    margin: 0.6rem 0 0;
+    color: var(--muted);
+    max-width: 34em;
+  }
+
+  .clock {
+    --state: var(--ok);
+    border-top: 1px solid var(--line);
+    padding-top: 1.1rem;
+  }
+  .clock[data-state="soon"] {
+    --state: var(--soon);
+  }
+  .clock[data-state="go"] {
+    --state: var(--go);
+  }
+  .cap {
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--state);
+  }
+  .big {
+    margin: 0.1rem 0 0.2rem;
+    font-size: clamp(4.6rem, 27vw, 8rem);
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: -0.05em;
+    color: var(--state);
+    white-space: nowrap;
+  }
+  .big small {
+    font-size: 0.32em;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .plan {
+    margin: 0.25rem 0 0;
+    font-size: 0.92rem;
+  }
+  .mode {
+    margin: 0.7rem 0 0;
+    font-size: 0.92rem;
+    font-weight: 650;
+  }
+
+  .btn {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    min-height: 3.6rem;
+    padding: 0 1rem;
+    border-radius: 0.8rem;
+    background: var(--btn);
+    color: var(--btn-ink);
+    font-size: 1.05rem;
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .btn svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: currentColor;
+  }
+  .btn:focus-visible {
+    outline: 3px solid var(--ok);
+    outline-offset: 3px;
+  }
+  .test {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--go);
+    text-align: center;
+  }
+</style>
+
+<main>
+  <header class="top">
+    <p class="clocks">
+      <span>Израиль <b class="mono" id="il"></b></span
+      ><span>Берлин <b class="mono" id="ber"></b></span>
+    </p>
+    <p class="now" id="now" hidden></p>
+  </header>
+
+  <section>
+    <p class="eyebrow">
+      <span id="when">дальше</span><b class="mono" id="at"></b
+      ><span class="fix" id="fix" hidden>слот</span>
+    </p>
+    <h1 id="name">…</h1>
+    <p class="blurb" id="blurb"></p>
+  </section>
+
+  <section class="clock" id="clock">
+    <p class="cap" id="cap"></p>
+    <div class="big mono" id="big"></div>
+    <p class="plan mono" id="plan"></p>
+    <p class="mode" id="mode" hidden></p>
+  </section>
+
+  <a class="btn" id="go" href="#" target="_blank" rel="noopener"
+    ><svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 2.2c-3.7 0-6.7 3-6.7 6.7 0 4.9 6 12.4 6.3 12.7a.5.5 0 0 0 .8 0c.3-.3 6.3-7.8 6.3-12.7 0-3.7-3-6.7-6.7-6.7zm0 9.4a2.7 2.7 0 1 1 0-5.4 2.7 2.7 0 0 1 0 5.4z"
+      /></svg
+    ><span id="goLabel">Маршрут в Google Картах</span></a
+  >
+  <p class="test mono" id="test" hidden></p>
+</main>
+
+<script>
+  /* Следующая точка маршрута по текущему времени.
+     Точки — выжимка из index.html: t — начало этапа (если go < t, прибыть к t), end — уйти,
+     go — выйти к этой точке (если не задано — end предыдущей точки дня),
+     walk — пеший маршрут, drive — машина/такси (иначе общественный транспорт),
+     hard — фиксированный слот, wait — ждать на месте (прилёт, вылет, чек-аут),
+     il — время израильское (Бен-Гурион), остальные — берлинское.
+     Время выхода всегда берётся из плана, маршрут считает Google Maps.
+     Проверка на другое время: #MMDD-HHMM в конце ссылки, например #0930-1230. */
+  (function () {
+    var HOTEL = [52.4987, 13.3514],
+      HOTEL_Q = "Hotel Sachsenhof, Motzstraße 7, Berlin",
+      BER = [52.3648, 13.5095],
+      BER_Q = "Flughafen Berlin Brandenburg BER Terminal 1",
+      TLV = [32.001, 34.871],
+      TLV_Q = "Ben Gurion Airport Terminal 3";
+
+    var DAYS = {
+      "09-29": "вт 29.09",
+      "09-30": "ср 30.09",
+      "10-01": "чт 01.10",
+      "10-02": "пт 02.10",
+      "10-03": "сб 03.10",
+      "10-04": "вс 04.10",
+    };
+
+    var PLAN = {
+      "09-29": [
+        { t: "03:20", end: "06:20", go: "02:00", il: 1, hard: 1, drive: 1, n: "Бен-Гурион, терминал 3", ll: TLV, q: TLV_Q,
+          b: "Время израильское. Выезд из дома 02:00–02:30: контроль за три часа до вылета, 29.09 — холь ха-моэд Суккот, аэропорт загружен сильнее обычного." },
+        { t: "06:20", wait: 1, il: 1, n: "Вылет LY2371", ll: TLV, q: TLV_Q,
+          b: "El Al, терминал 3. Прилёт в Берлин в 09:35 по берлинскому времени — там на час меньше, чем в Израиле." },
+        { t: "09:35", end: "11:00", wait: 1, n: "BER, прилёт", ll: BER, q: BER_Q,
+          b: "Аэропорт Берлин-Бранденбург, терминал 1, рейс LY2371. На границе EES: отпечатки и фото, первая регистрация удлиняет очередь. Если выход из терминала позже 11:15 — вместо отеля FEX до Hauptbahnhof, багаж в камеру хранения, обед на вокзале, Pallasseum пропустить." },
+        { t: "12:00", end: "12:45", go: "11:00", zone: "ABC", n: "Hotel Sachsenhof", ll: HOTEL, q: HOTEL_Q,
+          b: "Отель у Nollendorfplatz. Заселение с 15:00, до этого багаж на ресепшене. Обед на Гольцштрассе или Винтерфельдтплац; взять флиску на вечер." },
+        { t: "12:45", end: "13:05", walk: 1, n: "Pallasseum", ll: [52.4934, 13.3564], q: "Pallasseum, Pallasstraße 3, Berlin",
+          b: "Жилая плита Юргена Заваде, 1977: переброшена через Паласштрассе и поставлена на бомбоубежище 1943 года, которое не смогли снести. Снаружи, бесплатно." },
+        { t: "13:45", end: "15:30", go: "13:05", hard: 1, slot: "вход 14:00", n: "Рейхстаг", ll: [52.5181, 13.3747], q: "52.5181324,13.374726",
+          b: "Слот 14:00, бронь SYS-20260907-212019. На досмотре к 13:45 с паспортом, вход с Scheidemannstraße. Купол закрыт, открыта терраса." },
+        { t: "15:50", end: "16:05", go: "15:30", walk: 1, n: "Бебельплац", ll: [52.5161, 13.3944], q: "Bebelplatz, Berlin",
+          b: "«Пустая библиотека» Ульмана: белые полки под стеклом в мостовой — памятник сожжению книг 1933 года. При отставании пропускается вторым." },
+        { t: "16:15", end: "16:25", walk: 1, n: "Rausch", ll: [52.5121, 13.3913], q: "Rausch Schokoladenhaus, Charlottenstraße 60, Berlin",
+          b: "Шоколадный дом: Бранденбургские ворота и Рейхстаг, отлитые из шоколада. Пн–сб до 20:00." },
+        { t: "16:30", end: "16:40", walk: 1, n: "Ritter Sport", ll: [52.5146, 13.3905], q: "Ritter Sport Bunte SchokoWelt, Friedrichstraße 83, Berlin",
+          b: "Фирменный магазин, плитка на развес. При отставании пропускается первым." },
+        { t: "17:05", end: "17:35", walk: 1, n: "Hackesche Höfe", ll: [52.5245, 13.4021], q: "Hackesche Höfe, Rosenthaler Straße 40, Berlin",
+          b: "Восемь сцепленных дворов 1906 года, Берндт и Энделль: первый облицован цветным глазурованным кирпичом, дальше проходы сужаются до Sophienstraße." },
+        { t: "17:40", end: "17:55", walk: 1, n: "Erzgebirgskunst", ll: [52.525, 13.4023], q: "Erzgebirgskunst Original, Sophienstraße 9, Berlin",
+          b: "Рудногорская деревянная игрушка: щелкунчики, курительные человечки, пирамиды. Потом кофе рядом до 18:35." },
+        { t: "18:40", end: "19:25", go: "18:35", walk: 1, n: "Monbijoubrücke", ll: [52.5223, 13.3957], q: "Monbijoubrücke, Berlin",
+          b: "Боде-музей с моста на запад, против заката 18:48. Съёмка 18:55–19:20: телефон на парапет, ночной режим, таймер 3 с." },
+        { t: "20:05", go: "19:25", n: "Отель", ll: HOTEL, q: HOTEL_Q,
+          b: "Ужин у Nollendorfplatz." },
+      ],
+      "09-30": [
+        { t: "08:00", end: "08:30", go: "07:55", walk: 1, n: "Winterfeldtmarkt", ll: [52.4977, 13.3549], q: "Winterfeldtplatz, Berlin",
+          b: "Крупнейший недельный рынок Берлина перед церковью Святого Матфия: фермерские прилавки, сыры, цветы. Завтрак здесь или в булочной на Maaßenstraße." },
+        { t: "09:00", end: "13:00", go: "08:35", walk: 1, n: "Технический музей", ll: [52.4986, 13.3776], q: "Deutsches Technikmuseum, Trebbiner Straße 9, Berlin",
+          b: "От Winterfeldtplatz можно дойти пешком примерно за 25 минут; по основному маршруту также идёт U1/U3 до Möckernbrücke. Авиация, железнодорожные залы, Zuse Z3. Кафе внутри." },
+        { t: "13:45", end: "14:05", go: "13:00", walk: 1, n: "Verflixt & Zugespielt", ll: [52.5057, 13.3905], q: "Verflixt & Zugespielt, Friedrichstraße 215, Berlin",
+          b: "Магазин настольных игр у Mehringplatz. По пути — обед и набережная Landwehrkanal." },
+        { t: "14:15", end: "16:30", walk: 1, n: "Еврейский музей", ll: [52.5024, 13.3953], q: "Jüdisches Museum Berlin, Lindenstraße 9-14",
+          b: "Либескинд: пустоты, Сад изгнания, косые прорезы в цинке. Основная экспозиция бесплатна, билет на время входа в кассе." },
+        { t: "17:15", end: "18:15", n: "Музей компьютерных игр", ll: [52.5176, 13.4419], q: "Computerspielemuseum, Karl-Marx-Allee 93A, Berlin",
+          b: "Эволюция геймдизайна и ретро-интерфейсы. Открыт до 20:00." },
+        { t: "18:45", end: "19:15", walk: 1, n: "Kino International", ll: [52.5205, 13.4228], q: "Kino International, Karl-Marx-Allee 33, Berlin",
+          b: "Пешком на запад по Karl-Marx-Allee. Кинотеатр 1963 года: стеклянный второй этаж висит над первым; напротив Café Moskau со спутником на крыше." },
+        { t: "20:00", go: "19:15", n: "Отель", ll: HOTEL, q: HOTEL_Q,
+          b: "Ужин у отеля." },
+      ],
+      "10-01": [
+        { t: "09:22", end: "09:25", go: "08:15", zone: "ABC", n: "Potsdam Hbf", ll: [52.3915, 13.0668], q: "Potsdam Hauptbahnhof",
+          b: "Вокзал Потсдама, дальше пешком к дворцу. Сегодня нужен билет ABC. Завтрак около 07:30." },
+        { t: "10:30", end: "13:00", go: "09:25", hard: 1, slot: "билет 10:45", walk: 1, n: "Сан-Суси", ll: [52.4044, 13.0389], q: "Schloss Sanssouci, Maulbeerallee, Potsdam",
+          b: "Билет на 10:45, у входа к 10:30 — при опоздании вход не гарантирован. Дворец около 45 минут; затем террасы, Историческая мельница, обед. Около 13:00 — через парк к Новому дворцу, 2 км." },
+        { t: "13:30", end: "13:35", walk: 1, n: "Новый дворец, остановка", ll: [52.4009, 13.0166], q: "Potsdam, Neues Palais bus stop",
+          b: "После Сан-Суси пройди через парк к Новому дворцу. У остановки Potsdam, Neues Palais будь около 13:30; автобус 605/606 до Potsdam Hbf. Новый дворец осматривается только снаружи." },
+        { t: "15:30", end: "17:00", go: "13:35", zone: "ABC", n: "Hamburger Bahnhof", ll: [52.5284, 13.372], q: "Hamburger Bahnhof, Invalidenstraße 50-51, Berlin",
+          b: "Вокзал 1847 года, ставший музеем современного искусства: чугунные фермы, стеклянная кровля, зал длиной в перрон. €16, в четверг до 20:00." },
+        { t: "17:10", end: "18:00", walk: 1, n: "Futurium", ll: [52.5239, 13.3743], q: "Futurium, Alexanderufer 2, Berlin",
+          b: "Музей будущего: фасад из стеклянных кассет с металлическими отражателями, вход бесплатный. Рядом Hauptbahnhof — стекло и сталь, пять уровней." },
+        { t: "18:20", end: "19:20", walk: 1, n: "Band des Bundes", ll: [52.5202, 13.3783], q: "Marie-Elisabeth-Lüders-Haus, Berlin",
+          b: "Ведомство канцлера, дом Людерс и двойной мост через Шпрее. Закат 18:43, съёмка с набережной 18:49–19:14." },
+        { t: "20:00", go: "19:20", n: "Отель", ll: HOTEL, q: HOTEL_Q,
+          b: "Ужин на Hauptbahnhof или у отеля." },
+      ],
+      "10-02": [
+        { t: "08:40", end: "09:10", go: "08:00", n: "ICC Berlin", ll: [52.5045, 13.2792], q: "Internationales Congress Centrum, Messedamm 22, Berlin",
+          b: "Конгресс-центр Шюлеров: алюминиевый корпус около 320 м, бетонные опоры над эстакадой. Снаружи, ракурсы с Messedamm." },
+        { t: "09:35", end: "10:45", n: "Classic Remise", ll: [52.5303, 13.3186], q: "Classic Remise Berlin, Wiebestraße 36-37",
+          b: "Ретроавтомобили в бывшем трамвайном депо: стекло, сталь, ряды машин в перспективу. Вход бесплатный." },
+        { t: "11:15", end: "12:00", n: "Konditorei Buchwald", ll: [52.5213, 13.3475], q: "Konditorei Buchwald, Bartningallee 29, Berlin",
+          b: "Кондитерская с 1852 года. Baumkuchen, выпеченный на открытом огне." },
+        { t: "12:00", end: "12:45", walk: 1, n: "Hansaviertel", ll: [52.518, 13.342], q: "Hansaviertel, Berlin",
+          b: "Модернистский квартал в радиусе 300 м: дома Аалто, Нимейера, Гропиуса, Akademie der Künste. Снаружи, бесплатно." },
+        { t: "13:15", end: "14:05", n: "KaDeWe, 6-й этаж", ll: [52.5022, 13.3407], q: "KaDeWe, Tauentzienstraße 21-24, Berlin",
+          b: "Обед на гастрономическом этаже Feinschmeckeretage. При отставании пропускается первым — поесть по дороге." },
+        { t: "15:45", end: "16:45", go: "15:25", n: "Kottbusser Tor, NKZ", ll: [52.4997, 13.4193], q: "Neues Kreuzberger Zentrum, Adalbertstraße 4, Berlin",
+          b: "Бетонная мегаструктура поперёк улицы, вплотную — эстакада U1. До выхода свободное время или spielbrett." },
+        { t: "17:15", end: "18:25", go: "16:45", walk: 1, n: "East Side Gallery", ll: [52.5045, 13.4408], q: "East Side Gallery, Mühlenstraße, Berlin",
+          b: "Пешком под виадуком U1 и через Обербаумский мост. 1,3 км стены с росписями 1990 года. При отставании пропускается третьей." },
+        { t: "18:35", end: "19:20", walk: 1, n: "Обербаумский мост", ll: [52.5019, 13.4456], q: "Oberbaumbrücke, Berlin",
+          b: "Кирпичная неоготика, жёлтые поезда U1 по верхнему ярусу. Закат 18:41, съёмка 18:47–19:15 с северо-восточной стороны." },
+        { t: "20:00", go: "19:20", n: "Отель", ll: HOTEL, q: HOTEL_Q,
+          b: "Ужин по пути. Купить воду и перекус: 3 октября магазины закрыты." },
+      ],
+      "10-03": [
+        { t: "09:00", end: "09:45", wait: 1, n: "Чек-аут", ll: HOTEL, q: HOTEL_Q,
+          b: "Выезд из номера, багаж оставить на ресепшене до возвращения." },
+        { t: "10:00", end: "11:15", go: "09:45", n: "Мемориал убитым евреям Европы", ll: [52.5139, 13.3785], q: "Denkmal für die ermordeten Juden Europas, Cora-Berliner-Straße 1, Berlin",
+          b: "2711 бетонных стел Айзенмана, 2005: пол волнами уходит вниз, в середине поля стелы выше человека. Открыт в праздник." },
+        { t: "11:30", end: "12:30", walk: 1, n: "Обед, Potsdamer Platz", ll: [52.5096, 13.376], q: "Potsdamer Platz, Berlin",
+          b: "3 октября праздник: часы кафе проверить на месте." },
+        { t: "12:30", end: "13:15", walk: 1, n: "Kulturforum", ll: [52.5101, 13.3696], q: "Berliner Philharmonie, Herbert-von-Karajan-Straße 1, Berlin",
+          b: "Золотые шатры Филармонии и Staatsbibliothek Шаруна против стеклянного зала Миса — два модернизма в одном кадре." },
+        { t: "13:15", end: "14:45", walk: 1, n: "Новая национальная галерея", ll: [52.5067, 13.3676], q: "Neue Nationalgalerie, Potsdamer Straße 50, Berlin",
+          b: "Мис ван дер Роэ: стальной портик и стеклянный зал, реставрация Чипперфилда. Коллекция €14. Выход не позднее 14:45." },
+        { t: "15:05", end: "15:45", go: "14:45", n: "Отель — забрать багаж", ll: HOTEL, q: HOTEL_Q,
+          b: "Багаж на ресепшене." },
+        { t: "17:00", end: "20:20", go: "15:45", hard: 1, zone: "ABC", n: "BER, терминал 1", ll: BER, q: BER_Q,
+          b: "Нужна зона C. Регистрация Bluebird только на стойке. Повербанк и ценное — в личной вещи: ручную кладь могут сдать в багаж." },
+        { t: "20:20", wait: 1, n: "Вылет BZ271", ll: BER, q: BER_Q,
+          b: "Стойка Bluebird и контроль в терминале 1. Вылет в 20:20; прилёт в Тель-Авив 04.10 в 01:40 по времени Израиля." },
+      ],
+      "10-04": [
+        { t: "01:40", wait: 1, il: 1, n: "Прилёт в Тель-Авив", ll: TLV, q: TLV_Q,
+          b: "Рейс BZ271. Время израильское; расписание ночного поезда из аэропорта проверь накануне вылета." },
+      ],
+    };
+
+    /* Летнее время до 25.10.2026: Берлин UTC+2, Израиль UTC+3 (точки с il). */
+    var TZ = 2 * 3600e3,
+      TZ_IL = 3 * 3600e3,
+      MIN = 60e3;
+
+    function at(d, t, il) {
+      return Date.parse("2026-" + d + "T" + t + ":00" + (il ? "+03:00" : "+02:00"));
+    }
+    function hm(ms, il) {
+      return new Date(ms + (il ? TZ_IL : TZ)).toISOString().slice(11, 16);
+    }
+    function dayOf(ms, il) {
+      return new Date(ms + (il ? TZ_IL : TZ)).toISOString().slice(5, 10);
+    }
+
+    var STOPS = [];
+    Object.keys(PLAN).forEach(function (d) {
+      var prev = null;
+      PLAN[d].forEach(function (s) {
+        s.d = d;
+        s.at = at(d, s.t, s.il);
+        s.endAt = s.end ? at(d, s.end, s.il) : null;
+        s.goAt = s.go ? at(d, s.go, s.il) : prev && prev.endAt;
+        s.prev = prev;
+        STOPS.push(s);
+        prev = s;
+      });
+    });
+
+    function dur(ms) {
+      var m = Math.ceil(ms / MIN);
+      if (m < 60) return [m, "мин"];
+      if (m < 10 * 60) {
+        var r = m % 60;
+        return [Math.floor(m / 60) + ":" + (r < 10 ? "0" : "") + r, "ч"];
+      }
+      if (m < 24 * 60) return [Math.round(m / 60), "ч"];
+      return [Math.floor(m / 1440), "дн"];
+    }
+
+    var $ = function (id) {
+      return document.getElementById(id);
+    };
+    var el = {
+      il: $("il"), ber: $("ber"), now: $("now"), when: $("when"), at: $("at"), fix: $("fix"),
+      name: $("name"), blurb: $("blurb"), clock: $("clock"), cap: $("cap"),
+      big: $("big"), plan: $("plan"), mode: $("mode"), go: $("go"), goLabel: $("goLabel"), test: $("test"),
+    };
+    /* Пишем в DOM, только если значение изменилось. */
+    var shown = {};
+    function put(key, node, value, prop) {
+      if (shown[key] === value) return;
+      shown[key] = value;
+      node[prop || "textContent"] = value;
+    }
+    function show(node, on) {
+      if (node.hidden === on) node.hidden = !on;
+    }
+
+    /* Сдвиг часов для проверки: #0930-1230 → 30.09 12:30 по Берлину. */
+    var shift = 0;
+    var m = /^#(\d\d)(\d\d)-(\d\d)(\d\d)$/.exec(location.hash);
+    if (m) {
+      shift = at(m[1] + "-" + m[2], m[3] + ":" + m[4]) - Date.now();
+      show(el.test, true);
+    }
+    function now() {
+      return Date.now() + shift;
+    }
+
+    function render() {
+      var t = now(),
+        i = 0;
+      while (i < STOPS.length && STOPS[i].at <= t) i++;
+      if (shift) put("test", el.test, "проверка: " + dayOf(t).split("-").reverse().join(".") + " " + hm(t));
+      put("il", el.il, hm(t, 1));
+      put("ber", el.ber, hm(t));
+
+      if (i === STOPS.length) {
+        put("name", el.name, "Поездка окончена");
+        put("blurb", el.blurb, "BZ271: прилёт в Тель-Авив 04.10 в 01:40 по времени Израиля.");
+        put("when", el.when, "");
+        put("at", el.at, "");
+        show(el.fix, false);
+        show(el.now, false);
+        show(el.clock, false);
+        show(el.mode, false);
+        show(el.go, false);
+        return;
+      }
+
+      var s = STOPS[i],
+        cur = s.prev;
+      var inCur = cur && cur.endAt && t < cur.endAt;
+      show(el.now, !!inCur);
+      if (inCur) put("now", el.now, "по плану: " + cur.n + (cur.slot ? " · " + cur.slot : "") + " · до " + cur.end);
+
+      var d = dayOf(t, s.il),
+        label =
+          s.d === d ? "дальше" : s.d === dayOf(t + 864e5, s.il) ? "завтра" : DAYS[s.d];
+      put("when", el.when, label);
+      put("at", el.at, s.t + (s.il ? " по Израилю" : ""));
+      show(el.fix, !!s.hard);
+      put("name", el.name, s.n);
+      put("blurb", el.blurb, s.b);
+
+      var leave = s.wait ? s.at : s.goAt;
+
+      var left = leave - t,
+        state,
+        cap,
+        big;
+      if (s.wait) {
+        big = dur(s.at - t);
+        cap = "осталось";
+        state = s.at - t > 15 * MIN ? "ok" : "soon";
+        put("plan", el.plan, s.t + " · " + (s.d === d ? "сегодня" : DAYS[s.d]));
+      } else if (left > 0) {
+        big = dur(left);
+        cap = "до выхода";
+        state = left > 15 * MIN ? "ok" : "soon";
+        /* Соседние точки (слот в index.html включает переход): «выход 12:30 → там к 12:30» не пишем. */
+        put("plan", el.plan, "выход " + hm(leave, s.il) + (leave < s.at ? " → там к " + s.t : ""));
+      } else {
+        big = dur(s.at - t);
+        cap = "выходи — там через";
+        state = "go";
+        put("plan", el.plan, "выход был в " + hm(leave, s.il) + (leave < s.at ? " · там к " + s.t : ""));
+      }
+      show(el.clock, true);
+      if (el.clock.dataset.state !== state) el.clock.dataset.state = state;
+      put("cap", el.cap, cap);
+      put("big", el.big, big[0] + "<small>&nbsp;" + big[1] + "</small>", "innerHTML");
+
+      /* Если переход входит во время текущего этапа, не переключаем карту раньше его конца. */
+      var routeStop = inCur && cur.goAt === cur.at ? cur : s;
+      show(el.mode, !s.wait);
+      if (!s.wait) {
+        put("mode", el.mode, routeStop === s ?
+          (s.drive ? "Такси или машина" : s.walk ? "Можно пешком" :
+          "Для графика нужен общественный транспорт" + (s.zone ? " · зона " + s.zone : "")) :
+          "Текущая точка, пешком: " + routeStop.n);
+      }
+      show(el.go, !s.wait);
+      if (s.wait) return;
+      put("goLabel", el.goLabel, routeStop === s ? "Маршрут к следующей точке" : "Маршрут: " + routeStop.n);
+      put(
+        "href",
+        el.go,
+        "https://www.google.com/maps/dir/?api=1&destination=" +
+          encodeURIComponent(routeStop.q) + "&travelmode=" + (routeStop.drive ? "driving" : routeStop.walk ? "walking" : "transit"),
+        "href"
+      );
+    }
+
+    var timer = 0;
+    function tick() {
+      clearTimeout(timer);
+      render();
+      timer = setTimeout(tick, MIN - (now() % MIN) + 50);
+    }
+
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) return clearTimeout(timer);
+      tick();
+    });
+    /* Возврат из bfcache: таймер мог быть снят, а visibilitychange не прийти. */
+    window.addEventListener("pageshow", function (e) {
+      if (e.persisted) tick();
+    });
+    tick();
+  })();
+</script>
