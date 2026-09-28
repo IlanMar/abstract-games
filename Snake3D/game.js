@@ -762,7 +762,7 @@
     return new T.ShaderMaterial({
       defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}),
       uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0},
-        ...fadeUniforms()},
+        uInner: {value: 0.8}, ...fadeUniforms()},
       vertexShader: FADE + `
         #ifdef INSTANCED
           attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx;
@@ -786,13 +786,13 @@
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
       fragmentShader: SHAPES + `
-        uniform float uTime;
+        uniform float uTime, uInner;
         varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
         void main(){
           vec2 uv = tileUv(vUv);
           float thick = vFx.x;
           float border = 1.0 - SHAPE(uv, 1.13 - 0.38 * thick);
-          float inner = SHAPE(uv * 1.06 - 0.03, 0.8);
+          float inner = SHAPE(uv * 1.06 - 0.03, uInner);
           vec3 c2 = mix(vCol2, vHL, thick);
           vec3 col = mix(vCol1, c2, abs(cos(uTime * 4.0))) * (1.0 + thick * (vFx.y - 1.0));
           gl_FragColor = vec4((col * inner + border * vHL) * vFade, 1.0);
@@ -1500,12 +1500,16 @@
         uniforms: fadeUniforms(),
         vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
+        // Energy_Mat is LWRP Simple Lit (no specular): ambient probe plus the scene's directional light
+        // (colour 1, 0.967, 0.873, intensity 1, no shadows), then emission.
         fragmentShader: `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
-          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade, 1.0); }`
+          vec3 sun = vec3(1.0, 0.967, 0.873) * max(dot(n, vec3(0.321, 0.766, 0.557)), 0.0);
+          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * (amb + sun) + vec3(0.493, 0.484, 0.104)) * vFade, 1.0); }`
       });
       this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
       this.quadMat = flashMaterial(false, false);
+      this.quadMat.uniforms.uInner.value = 1;   // FlashingShad.Start sets _bCutOut 0 on the cube: silver on the whole face
       const c = COLORS.power;
       this.quadMat.uniforms.uCol1.value.set(...c.c1);
       this.quadMat.uniforms.uCol2.value.set(...c.c2);
