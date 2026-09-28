@@ -24,7 +24,8 @@
 | 9 | Level 9 · Sunburst | [`tools/worlds/sunburst.js`](tools/worlds/sunburst.js) | квадрат 44×44 | яркие сады препятствий у разных участков маршрута, безопасная обочина и повороты по цепочкам |
 | 10 | Level 10 · Kite Parade | [`tools/worlds/kite-parade.js`](tools/worlds/kite-parade.js) | гекс 40×44 | односторонний яркий сад с цветами, воздушными змеями и безопасной извилистой дорожкой |
 | 11 | Level 11 · Causeway | [`tools/worlds/causeway.js`](tools/worlds/causeway.js) | гекс 44×52 | мосты над пустотой в духе поздних классических уровней: острова, зигзаг, туннель из стен с разгоном |
-| 12–53 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
+| 12 | Level 12 · Mosaic | [`tools/worlds/mosaic.js`](tools/worlds/mosaic.js) | гекс 48×56 | односторонний мир-попурри из мотивов поздних классических уровней: узор на каждую прямую по `(u, d, v)` в гексе, отдельная цепочка на каждый изгиб зигзага, спирали на пустых местах |
+| 13–54 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
 
 Карты 0 (Initial) и 1 (Hexagone) — оригинальные, из `nsnakes-data.js`. Движок, который читает миры, лежит в [`game.js`](game.js) (см. [«Где это в игре»](#где-это-в-игре)).
 
