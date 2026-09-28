@@ -201,6 +201,8 @@
       if (stored && Object.keys(stored).some(key => !(key in defaults))) this.write();
     }
     write() { try { localStorage.setItem('nsnakes-save', JSON.stringify(this.data)); } catch (e) { /* storage unavailable */ } }
+    // Options > Reset All Data: forgets the settings, the completed levels and Continue.
+    erase() { try { localStorage.removeItem('nsnakes-save'); } catch (e) { /* storage unavailable */ } }
   }
 
   // ---------------------------------------------------------------- groove music
@@ -2455,6 +2457,14 @@
         this.settingButtons();
       }));
       this.settingButtons();
+      // Reset All Data asks for a second tap within three seconds, then starts the game afresh.
+      const reset = $('reset-data');
+      let armed = null;
+      reset.addEventListener('click', () => {
+        if (armed) { clearTimeout(armed); game.save.erase(); location.reload(); return; }
+        reset.textContent = 'Tap Again to Erase Progress and Settings';
+        armed = setTimeout(() => { armed = null; reset.textContent = 'Reset All Data'; }, 3000);
+      });
       this.boostButton();
       game.showFps(s.fpsCounter === 'on');
       this.scoreShown();
