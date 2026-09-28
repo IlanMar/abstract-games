@@ -14,7 +14,7 @@
   // ---------------------------------------------------------------- constants
   // Values come from the serialized scene components of the Unity build.
   const FIXED_DT = 0.02;
-  const MAX_FPS = 60;        // frame cap on any screen: a steady 60 looks smoother than 60…120 and saves battery
+  const TOUCH_FPS = 60;      // Options > Frame rate > Auto: the cap on touch screens; a mouse screen runs at its own rate
   const COMPLETE_COUNTDOWN = 10;   // Level Complete: seconds before Continue goes on to the next map by itself
   const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5,
     dash: 1.5};              // the on-screen boost button (not in the original): 1.5 times faster while held
@@ -194,7 +194,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, grading: 'on', popups: 'on', boostButton: 'off', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -1842,6 +1842,7 @@
       this.highlights = new Map();
       this.clearColor = new T.Color();
       this.setView(this.save.data.viewDistance);
+      this.setFrameRate(this.save.data.frameRate);
       this.followAt = V();
       this.glowItems = [];
       this.timers = [];
@@ -2104,12 +2105,16 @@
     // ---------------- frame loop
     frame(now) {
       requestAnimationFrame(t => this.frame(t));
-      // rAF runs at the display rate, so on 120 Hz every other frame is skipped. Deadlines follow
-      // a fixed grid rather than "one step since the last frame", which would give 45 FPS on 90 Hz;
-      // 2 ms of slack absorbs vsync jitter. After a stall the grid restarts from now.
-      const step = 1000 / MAX_FPS;
-      if (now < this.nextDraw - 2) return;
-      this.nextDraw = now - this.nextDraw > step ? now + step : this.nextDraw + step;
+      // rAF runs at the display rate. Under a 60 cap every other frame of a 120 Hz screen is skipped.
+      // Deadlines follow a fixed grid rather than "one step since the last frame", which would give
+      // 45 FPS on 90 Hz; 2 ms of slack absorbs vsync jitter. After a stall the grid restarts from now.
+      // Without a cap every frame is drawn: the fixed physics step and the drawn step progress keep
+      // the motion even at any rate.
+      if (this.fpsCap) {
+        const step = 1000 / this.fpsCap;
+        if (now < this.nextDraw - 2) return;
+        this.nextDraw = now - this.nextDraw > step ? now + step : this.nextDraw + step;
+      }
       let dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
       this.last = now;
       if (this.frozen) dt = 0;
@@ -2119,6 +2124,34 @@
         this.render();
         this.drawnState = this.state === 'playing' ? null : this.state;
       }
+      if (this.fpsShown && this.state === 'playing') this.countFrame(now);
+      else this.fpsFrom = 0;   // a pause is not a long frame
+    }
+    // Options > Frame rate: 'auto' caps touch screens (phones, tablets) at 60 and leaves a mouse
+    // screen at its refresh rate; '60' caps everything; 'max' caps nothing.
+    setFrameRate(mode) {
+      const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+      this.fpsCap = mode === 'max' ? 0 : mode === '60' || touch ? TOUCH_FPS : 0;
+      this.nextDraw = 0;
+    }
+    // Options > FPS counter: frames drawn per second and the longest frame, twice a second.
+    showFps(on) {
+      this.fpsShown = on;
+      $('fps').classList.toggle('hidden', !on);
+      this.fpsFrom = 0;
+    }
+    // The longest frame is timed from the frame timestamps, not from dt, which is capped at 0.1 s.
+    countFrame(now) {
+      if (!this.fpsFrom) { this.fpsFrom = this.fpsLast = now; this.fpsCount = 0; this.fpsWorst = 0; return; }
+      this.fpsCount++;
+      this.fpsWorst = Math.max(this.fpsWorst, now - this.fpsLast);
+      this.fpsLast = now;
+      if (now - this.fpsFrom < 500) return;
+      const fps = this.fpsCount * 1000 / (now - this.fpsFrom);
+      setText($('fps'), `${Math.round(fps)} FPS · max ${Math.round(this.fpsWorst)} ms`);
+      this.fpsFrom = now;
+      this.fpsCount = 0;
+      this.fpsWorst = 0;
     }
     update(dt) {
       this.time += dt;
@@ -2284,7 +2317,9 @@
       const apply = {
         grading: () => { game.fx.grade = s.grading !== 'off'; game.drawnState = null; },
         popups: () => { if (s.popups === 'off') while (this.popups.length) this.popups.shift().remove(); },
-        boostButton: () => this.boostButton()
+        boostButton: () => this.boostButton(),
+        frameRate: () => game.setFrameRate(s.frameRate),
+        fpsCounter: () => game.showFps(s.fpsCounter === 'on')
       };
       document.querySelectorAll('[data-setting] button').forEach(b => b.addEventListener('click', () => {
         const key = b.parentElement.dataset.setting;
@@ -2295,6 +2330,7 @@
       }));
       this.settingButtons();
       this.boostButton();
+      game.showFps(s.fpsCounter === 'on');
       document.addEventListener('pointerdown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
       document.addEventListener('keydown', () => { if (game.state === 'menu') game.audio.playMusic(game.audio.menuMusic); }, {once: true});
     }

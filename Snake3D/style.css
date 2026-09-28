@@ -211,3 +211,4 @@ button { font: inherit; color: inherit; }
 .panel .results > span:nth-child(even) { font-family: "Tomorrow", var(--menu-font); text-align: right; }
 
 #fade { position: absolute; inset: 0; background: #000; opacity: 1; pointer-events: none; transition: opacity 1s linear; }
+#fps { position: absolute; left: calc(12px + env(safe-area-inset-left)); bottom: calc(10px + env(safe-area-inset-bottom)); font: 12px/1 ui-monospace, Menlo, Consolas, monospace; color: rgb(220 235 255 / 0.85); text-shadow: 0 1px 3px #000; pointer-events: none; white-space: nowrap; }
