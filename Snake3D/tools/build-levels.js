@@ -7,7 +7,7 @@ const path = require('path');
 const {hexStep, MOVES, isItem} = require('./grid');
 const floorOrItem = ch => ch === '.' || isItem(ch);
 
-const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'classic'];
+const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'reef', 'observatory', 'aqueduct', 'classic'];
 
 function check(world) {
   const {grid: g, start} = world;

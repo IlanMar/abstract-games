@@ -31,13 +31,16 @@
 | 16 | Level 16 · Lanterns | [`tools/worlds/lanterns.js`](tools/worlds/lanterns.js) | квадрат 48×48 | лёгкий мир: у дороги только площадки, целые картинки (`g.shape`) на пустырях, каждая на самом дальнем свободном месте |
 | 17 | Level 17 · Clockwork | [`tools/worlds/clockwork.js`](tools/worlds/clockwork.js) | гекс 48×52 | средний: детали механизма вдоль дороги, большие шестерни (`g.ring`) на пустырях, «тиканье» `>=` на дороге |
 | 18 | Level 18 · Tightrope | [`tools/worlds/tightrope.js`](tools/worlds/tightrope.js) | квадрат 52×52 | трудный: мосты разной ширины над пустотой, платформы на углах, одна цепочка через лестницу поворотов, разгоны в длинные цепочки |
-| 19–60 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
+| 19 | Level 19 · Reef | [`tools/worlds/reef.js`](tools/worlds/reef.js) | квадрат 64×64 | большой лёгкий мир: дорога змейкой через весь участок (четыре отрезка через 16 столбцов, последний переход за край к старту), картинки `g.shape` между отрезками |
+| 20 | Level 20 · Observatory | [`tools/worlds/observatory.js`](tools/worlds/observatory.js) | гекс 64×64 | большой средний гекс: четыре прохода по 64 ряда со сдвигом на 16 столбцов, узоры выбираются по длине прямой, планеты `g.ring` между проходами |
+| 21 | Level 21 · Aqueduct | [`tools/worlds/aqueduct.js`](tools/worlds/aqueduct.js) | квадрат 64×64 | большой трудный мир над пустотой: мосты по длине прямой, цистерны на углах, одна цепочка через каждую группу близких поворотов |
+| 22–63 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
 
 Карты 0 (Initial) и 1 (Hexagone) — оригинальные, из `nsnakes-data.js`. Движок, который читает миры, лежит в [`game.js`](game.js) (см. [«Где это в игре»](#где-это-в-игре)).
 
 ## Классические уровни — главный образец
 
-Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 19–60). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
+Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 22–63). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
 
 ```bash
 node -e "const w={};new Function('window',require('fs').readFileSync('levels.js','utf8'))(w);const L=w.SNAKES_LEVELS.find(l=>l.kind==='Vents');L.top.forEach((r,i)=>console.log(r+'  |  '+L.bottom[i]))"
@@ -90,7 +93,7 @@ node tools/build-levels.js          # проверить и записать lev
 
 ```js
 document.head.append(Object.assign(document.createElement('script'), {src: 'tools/autopilot.js'}))
-autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19–60 классические
+autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19 Reef, 20 Observatory, 21 Aqueduct, 22–63 классические
 autopilot.route(2)   // найдёт ли дорогу игрок, который не знает карту
 ```
 
