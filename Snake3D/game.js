@@ -699,10 +699,11 @@
   // GR_Graph_Shad: a floor cell is a quad whose inner square (or hexagon) carries the colour from
   // the colouring map, with a white outline while highlighted, black distance fog and the
   // "spectro" wireframe look used during the intro and after a crash.
-  // Everything on the floor fades the same way: black distance fog from the camera, and a fade
-  // towards the edge of the square window of cells generated around the head, so that a cell or
-  // an item enters the view at zero brightness. Without the edge fade the glowing cells, whose
-  // colours go past 1 and feed the bloom, popped in bright at the far edge.
+  // Everything on the floor fades towards the edge of the square window of cells generated around
+  // the head, so that a cell or an item enters the view at zero brightness. Without it the glowing
+  // cells, whose colours go past 1 and feed the bloom, popped in bright at the far edge. The floor,
+  // the props and the snake also have black distance fog from the camera; glowing cells and gems
+  // never had it and keep their full brightness up to the edge fade.
   const FADE = `
     uniform vec3 uCam; uniform vec3 uHead; uniform float uFog, uEdge;
     float camFog(vec3 p){ return 1.0 - clamp(distance(p, uCam) / uFog, 0.0, 1.0); }
@@ -790,7 +791,7 @@
               vec4 w = modelMatrix * vec4(position, 1.0);
             #endif
           #endif
-          vFade = fade(w.xyz);
+          vFade = edgeFade(w.xyz);   // glowing cells keep their full brightness: no distance fog
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
       fragmentShader: SHAPES + `
@@ -1499,7 +1500,7 @@
       this.gemMat = new T.ShaderMaterial({
         uniforms: fadeUniforms(),
         vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
-          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = fade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
+          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
         fragmentShader: `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
           gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade, 1.0); }`
       });
