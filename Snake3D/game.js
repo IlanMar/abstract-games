@@ -194,7 +194,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, itemColor: 0, grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', scoreShown: 'on', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, itemColor: 0, graphics: 'modern', grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', scoreShown: 'on', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -698,7 +698,15 @@
     float edgeFade(vec3 p){ vec2 d = abs(p.xz - uHead.xz); return clamp((uEdge - max(d.x, d.y)) / 3.0, 0.0, 1.0); }
     float fade(vec3 p){ return camFog(p) * edgeFade(p); }
   `;
-  const fadeUniforms = () => ({uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}, uFog: {value: FOG}, uEdge: {value: RANGE - 1}, uGlow: {value: 1}, uPlain: {value: 0}});
+  // Options > Graphics > Classic: the look of the 2005 game, shared by every material. Its renderer
+  // drew flat-shaded polygons on a small phone screen: plain floor cells, lit blocks, a star field and
+  // no glow. One uniform object for all the materials, so the switch is a single assignment.
+  const CLASSIC = {value: 0};
+  const CLASSIC_LIGHT = `
+    uniform float uClassic;
+    float classicLight(vec3 n){ return 0.42 + 0.58 * abs(dot(normalize(n), normalize(vec3(0.35, 1.0, 0.55)))); }
+  `;
+  const fadeUniforms = () => ({uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}, uFog: {value: FOG}, uEdge: {value: RANGE - 1}, uGlow: {value: 1}, uPlain: {value: 0}, uClassic: CLASSIC});
   // Options > Item glow and Item colour. dim: the item as Item glow draws it (the remake's colour times
   // the glow), full: the remake's colour. Item colour brings the full hue and brightness back as a plain
   // colour capped at 1, and the alpha tells the bloom pass which share of the pixel may glow (only the
@@ -744,7 +752,7 @@
           vec3 p = position + iPos; vWorld = p;
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
-      fragmentShader: SHAPES + FADE + `
+      fragmentShader: SHAPES + FADE + CLASSIC_LIGHT + `
         uniform float uSpectro;
         varying vec2 vUv; varying vec3 vCol; varying vec2 vFx; varying vec3 vWorld;
         void main(){
@@ -754,8 +762,10 @@
           float border = 1.0 - SHAPE(uv, 1.09 - 0.17 * thick);
           float ring = SHAPE(uv, 0.8);
           vec3 col = vCol * (1.0 + (thick + inten) * 0.7) * inner + vec3(border);
-          col = clamp(col * camFog(vWorld), 0.0, 1.0);
           float a = border + inner;
+          // Classic: a solid cell in its colour with a thin darker seam, no white frame.
+          if (uClassic > 0.5) { col = vCol * mix(0.45, 1.0, SHAPE(uv, 0.95)); a = 1.0; }
+          col = clamp(col * camFog(vWorld), 0.0, 1.0);
           col = mix(col, vec3(a - ring), uSpectro);
           float edge = edgeFade(vWorld);
           gl_FragColor = vec4(col * edge, mix(a, a - ring, uSpectro) * edge);
@@ -779,7 +789,7 @@
           attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx;
         #endif
         uniform vec3 uCol1, uCol2, uHL; uniform float uHLI, uThick;
-        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
+        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade; varying vec3 vW;
         void main(){
           vUv = uv;
           #ifdef INSTANCED
@@ -794,11 +804,12 @@
             #endif
           #endif
           vFade = edgeFade(w.xyz);   // glowing cells keep their full brightness: no distance fog
+          vW = w.xyz;
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
-      fragmentShader: SHAPES + ITEM_LOOK + `
+      fragmentShader: SHAPES + ITEM_LOOK + CLASSIC_LIGHT + `
         uniform float uTime;
-        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
+        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade; varying vec3 vW;
         float border, inner;
         // Item glow softens the highlight of a cell the snake has entered too: at 100% its colour
         // goes to the HDR highlight colour times the intensity (3 on chains), as in the remake;
@@ -819,6 +830,18 @@
             inner = SHAPE(uv * 1.06 - 0.03, 0.8);
           #endif
           vec4 c = itemLook(look(uGlow), look(1.0));
+          if (uClassic > 0.5) {
+            // Classic: the plain colour, a slow pulse towards the lighter one, lighter still under the
+            // snake; cells get a seam like the floor, the chain cubes flat shading.
+            vec3 base = min(mix(vCol1, vCol2, 0.35 * abs(cos(uTime * 4.0))), vec3(1.0));
+            base = mix(base, vec3(1.0), 0.45 * vFx.x);
+            #ifdef SOLID
+              base *= classicLight(cross(dFdx(vW), dFdy(vW)));
+            #else
+              base *= mix(0.45, 1.0, SHAPE(tileUv(vUv), 0.95));
+            #endif
+            c = vec4(base, 1.0);
+          }
           gl_FragColor = vec4(c.rgb * vFade, c.a);
         }`,
       side: T.DoubleSide,
@@ -838,7 +861,7 @@
           vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
-      fragmentShader: FADE + `
+      fragmentShader: FADE + CLASSIC_LIGHT + `
         uniform vec3 uColor;
         varying vec3 vN; varying vec3 vWorld;
         vec3 sky(vec3 r){ return mix(vec3(0.37, 0.35, 0.34), mix(vec3(0.62, 0.62, 0.62), vec3(0.42, 0.52, 0.66), clamp(r.y * 2.0, 0.0, 1.0)), smoothstep(-0.08, 0.04, r.y)); }
@@ -849,6 +872,7 @@
           vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
           float fres = pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 4.0) * 0.5 + 0.04;
           vec3 col = uColor * 0.96 * amb + sky(reflect(-v, n)) * 0.94 * fres;
+          if (uClassic > 0.5) col = uColor * vec3(0.78, 0.8, 0.86) * classicLight(n);   // a flat-shaded block
           gl_FragColor = vec4(col * fade(vWorld), 1.0);
         }`,
       side: T.DoubleSide
@@ -1528,9 +1552,11 @@
         uniforms: fadeUniforms(),
         vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
-        fragmentShader: ITEM_LOOK + `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
+        fragmentShader: ITEM_LOOK + CLASSIC_LIGHT + `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
           vec3 full = vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104) + ${GEM_GLOW};
-          vec4 c = itemLook(full * uGlow, full); gl_FragColor = vec4(c.rgb * vFade, c.a); }`
+          vec4 c = itemLook(full * uGlow, full);
+          if (uClassic > 0.5) c = vec4(vec3(0.25, 0.95, 0.2) * classicLight(n), 1.0);   // the green pickup of the 2005 game
+          gl_FragColor = vec4(c.rgb * vFade, c.a); }`
       });
       this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
@@ -1855,6 +1881,25 @@
   }
 
   // ---------------------------------------------------------------- game
+  // Classic graphics: the star field of the 2005 game (CStarField) round the camera, one pixel a star.
+  function starField() {
+    const n = 700, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const v = V(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize().multiplyScalar(400);
+      pos.set([v.x, v.y, v.z], i * 3);
+      const b = 0.35 + Math.random() * 0.65;
+      col.set([b, b, b * (0.9 + Math.random() * 0.2)], i * 3);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.BufferAttribute(pos, 3));
+    g.setAttribute('color', new T.BufferAttribute(col, 3));
+    const stars = new T.Points(g, new T.PointsMaterial({size: 1, sizeAttenuation: false, vertexColors: true, depthWrite: false, toneMapped: false}));
+    stars.frustumCulled = false;
+    stars.renderOrder = -1;
+    stars.visible = false;
+    return stars;
+  }
+
   class Game {
     constructor() {
       this.save = new Save();
@@ -1871,6 +1916,8 @@
       this.snake = new SnakeBuilder(this.snakeMat);
       this.scene.add(this.snake.mesh.mesh);
       this.particles = new Particles(this.scene);
+      this.stars = starField();
+      this.scene.add(this.stars);
       this.state = 'menu';
       this.mapIndex = 0;
       this.maps = {};
@@ -1887,7 +1934,7 @@
       this.timers = [];
       this.ui = new UI(this);
       this.input = new Input(this);
-      this.resize();
+      this.setGraphics(this.save.data.graphics);
       window.addEventListener('resize', () => { this.resize(); this.ui.popupFrom = null; });
       document.addEventListener('visibilitychange', () => {
         this.audio.setHidden(document.hidden);
@@ -1921,9 +1968,19 @@
       if (!this.maps[def.key]) this.maps[def.key] = new MapData(def.source ? buildLevel(def.source) : DATA[def.key], def.hex);
       return this.maps[def.key];
     }
+    // Options > Graphics: 'modern' (the remake's neon look) or 'classic' (the 2005 game: flat colours,
+    // a star field, no post-processing), both at the device's own resolution.
+    setGraphics(mode) {
+      this.classic = mode === 'classic';
+      CLASSIC.value = this.classic ? 1 : 0;
+      this.stars.visible = this.classic;
+      this.resize();
+    }
     resize() {
       const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
-      const q = Math.min(window.devicePixelRatio || 1, 2);
+      // Modern stops at 2x: its post-processing passes cost per pixel. Classic has none and draws at
+      // the full pixel density of the screen (3x on an iPhone).
+      const q = Math.min(window.devicePixelRatio || 1, this.classic ? 3 : 2);
       this.renderer.setPixelRatio(q);
       this.renderer.setSize(w, h, false);
       const aspect = w / h;
@@ -2260,7 +2317,11 @@
         this.fx.chromatic = 0;
         this.renderer.setClearColor(0x000000, 1);
       }
-      this.post.render(this.scene, this.camera, this.fx);
+      if (this.classic) {
+        this.stars.position.copy(this.camera.position);
+        this.renderer.setRenderTarget(null);
+        this.renderer.render(this.scene, this.camera);
+      } else this.post.render(this.scene, this.camera, this.fx);
     }
   }
 
@@ -2378,6 +2439,7 @@
       color.addEventListener('input', () => { s.itemColor = +color.value; showColor(); game.drawnState = null; game.save.write(); });
       // The On/Off rows in Options: a row names its save key, each button a value.
       const apply = {
+        graphics: () => game.setGraphics(s.graphics),
         grading: () => { game.fx.grade = s.grading !== 'off'; game.drawnState = null; },
         popups: () => { if (s.popups === 'off') while (this.popups.length) this.popups.shift().remove(); },
         boostButton: () => this.boostButton(),
