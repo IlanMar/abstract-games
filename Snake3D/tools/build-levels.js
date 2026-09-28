@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const {hexStep, MOVES} = require('./grid');
 
-const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst'];
+const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade'];
 
 function check(world) {
   const {grid: g, start} = world;

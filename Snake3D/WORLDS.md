@@ -22,6 +22,7 @@
 | 7 | Level 7 · Candy | [`tools/worlds/candy.js`](tools/worlds/candy.js) | гекс 40×44 | рисунки из плиток (`shape`), покраска по клеткам (`layers`) |
 | 8 | Level 8 · Carnival | [`tools/worlds/carnival.js`](tools/worlds/carnival.js) | квадрат 40×40 | узор на каждую прямую в координатах дороги, этапы раскладываются автоматически |
 | 9 | Level 9 · Sunburst | [`tools/worlds/sunburst.js`](tools/worlds/sunburst.js) | квадрат 44×44 | яркие сады препятствий у разных участков маршрута, безопасная обочина и повороты по цепочкам |
+| 10 | Level 10 · Kite Parade | [`tools/worlds/kite-parade.js`](tools/worlds/kite-parade.js) | гекс 40×44 | односторонний яркий сад с цветами, воздушными змеями и безопасной извилистой дорожкой |
 
 Карты 0 (Initial) и 1 (Hexagone) — оригинальные, из `nsnakes-data.js`. Движок, который читает миры, лежит в [`game.js`](game.js) (см. [«Где это в игре»](#где-это-в-игре)).
 
