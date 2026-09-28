@@ -1473,7 +1473,9 @@
   // The floor cells of a power chain glow a little less than in the remake; the spinning cubes
   // above them keep COLORS.power.
   const POWER_FLOOR = 0.8;
-  COLORS.powerFloor = {...COLORS.power, ...Object.fromEntries(['c1', 'c2', 'hl'].map(k => [k, COLORS.power[k].map(v => v * POWER_FLOOR)]))};
+  // Green emission added to the spinning energy gems (not in the remake): a slight green glow.
+  const GEM_GLOW = 'vec3(0.04, 0.4, 0.06)';
+  COLORS.powerFloor ={...COLORS.power, ...Object.fromEntries(['c1', 'c2', 'hl'].map(k => [k, COLORS.power[k].map(v => v * POWER_FLOOR)]))};
 
   const SIDES = [TOP, BOTTOM];
   function setColors(items, i, c) {
@@ -1501,7 +1503,7 @@
         vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
         fragmentShader: `uniform float uGlow; varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
-          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade * uGlow, 1.0); }`
+          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104) + ${GEM_GLOW}) * vFade * uGlow, 1.0); }`
       });
       this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
