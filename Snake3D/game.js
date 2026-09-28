@@ -17,12 +17,12 @@
   const MAX_FPS = 60;        // frame cap on any screen: a steady 60 looks smoother than 60…120 and saves battery
   const COMPLETE_COUNTDOWN = 10;   // Level Complete: seconds before Continue goes on to the next map by itself
   const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5,
-    dash: 1.3};              // the on-screen boost button (not in the original): 30% faster while held
+    dash: 1.5};              // the on-screen boost button (not in the original): 1.5 times faster while held
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
   const FOG = 18;            // distance from the camera where the floor has faded to black
-  const VIEW_MAX = 1.2;      // Options > View distance: up to 20% further than the original
+  const VIEW_MAX = 1.5;      // Options > View distance: 100% (the original) to 150%, 120% by default
   const DATA_OFFSET = 12;    // world cell x maps to data column x + RenderingRange / 2
   const SCORE_POWER = 10, SCORE_ENERGY = 5;
   const CONTROL = [[1, 0], [0, -1], [-1, 0], [0, 1]];
@@ -193,7 +193,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, view: 1, grading: 'on', popups: 'on', boostButton: 'off', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, grading: 'on', popups: 'on', boostButton: 'off', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -1315,7 +1315,7 @@
       this.group = new T.Group();
       scene.add(this.group);
       const hex = map.hex;
-      this.maxCells = 1000;      // (2 * 14 + 1)^2 cells at the longest view distance
+      this.maxCells = 1400;      // (2 * 18 + 1)^2 cells at the longest view distance
       const tileGeo = hex ? hexTileGeometry() : unitQuad();
       this.tileMat = tileMaterial(hex);
       this.tiles = this.instanced(tileGeo, this.tileMat, {iPos: 3, iTop: 3, iRev: 3, iFx: 2});
@@ -1372,7 +1372,7 @@
       return {mesh, geometry: g, arrays, list: Object.values(arrays)};
     }
     props(geometry, material) {
-      const mesh = new T.InstancedMesh(geometry, material, 500);
+      const mesh = new T.InstancedMesh(geometry, material, 900);
       mesh.frustumCulled = false;
       mesh.count = 0;
       this.group.add(mesh);
@@ -1679,7 +1679,7 @@
       this.fx = {bloom: CAMERA.bloom, chromatic: 0, grade: this.save.data.grading !== 'off'};
       this.highlights = new Map();
       this.clearColor = new T.Color();
-      this.setView(this.save.data.view);
+      this.setView(this.save.data.viewDistance);
       this.followAt = V();
       this.glowItems = [];
       this.timers = [];
@@ -1697,9 +1697,9 @@
       requestAnimationFrame(t => this.frame(t));
     }
     isRunning() { return this.state === 'playing'; }
-    // View distance: the window of generated cells and the fog grow together, 100% to 120%.
+    // View distance: the window of generated cells and the fog grow together, 100% to 150%.
     setView(scale) {
-      scale = Math.min(VIEW_MAX, Math.max(1, +scale || 1));
+      scale = Math.min(VIEW_MAX, Math.max(1, +scale || 1.2));
       this.viewRange = Math.round(RANGE * scale);
       this.viewFog = FOG * scale;
       this.drawnState = null;
@@ -2105,10 +2105,10 @@
       music.addEventListener('input', () => { s.music = +music.value; game.audio.applyVolumes(); game.save.write(); });
       sfx.addEventListener('input', () => { s.sfx = +sfx.value; game.audio.applyVolumes(); game.save.write(); });
       const view = $('view-distance'), viewLabel = $('view-value');
-      const showView = () => { viewLabel.textContent = `${Math.round(s.view * 100)}%`; };
-      view.value = s.view;
+      const showView = () => { viewLabel.textContent = `${Math.round(s.viewDistance * 100)}%`; };
+      view.value = s.viewDistance;
       showView();
-      view.addEventListener('input', () => { s.view = +view.value; game.setView(s.view); showView(); game.save.write(); });
+      view.addEventListener('input', () => { s.viewDistance = +view.value; game.setView(s.viewDistance); showView(); game.save.write(); });
       // The On/Off rows in Options: a row names its save key, each button a value.
       const apply = {
         grading: () => { game.fx.grade = s.grading !== 'off'; game.drawnState = null; },
