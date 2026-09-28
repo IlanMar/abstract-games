@@ -936,6 +936,14 @@
   // ---------------------------------------------------------------- snake mesh
   // The snake is baked from a head arrow, rhombic body segments (two per cell) and a tail spike.
   // Every face is black with a white outline, like the "Skin" texture of the original.
+  // Marks the first count entries of a dynamic buffer for upload. needsUpdate alone sends the whole
+  // buffer, sized for the worst case: about 0.5 MB a frame for the world, mostly unused.
+  function uploadUsed(attr, count) {
+    if (count === 0) return;   // nothing is drawn from it this frame
+    attr.updateRange.offset = 0;
+    attr.updateRange.count = count * attr.itemSize;
+    attr.needsUpdate = true;
+  }
   const TRIS3 = [0, 1, 2], TRIS4 = [0, 1, 2, 0, 2, 3], TRIS5 = [0, 1, 2, 0, 2, 4, 4, 2, 3];
   const SNAKE_ATTRS = [['position', 3], ['aEdge', 4], ['aEdge2', 1]];
   class SnakeMesh {
@@ -1075,8 +1083,8 @@
       }
       this.cubes.count = n;
       for (let i = g; i < this.glows.length; i++) this.glows[i].visible = false;
-      this.cubes.instanceMatrix.needsUpdate = true;
-      this.cubes.instanceColor.needsUpdate = true;
+      uploadUsed(this.cubes.instanceMatrix, n);
+      uploadUsed(this.cubes.instanceColor, n);
     }
   }
 
@@ -1593,7 +1601,7 @@
         }
       }
       this.tiles.geometry.instanceCount = n;
-      for (const a of this.tiles.list) a.needsUpdate = true;
+      for (const a of this.tiles.list) uploadUsed(a, n);
       // Items of the current level inside the generated window.
       let ng = 0, nq = 0;
       const spin = time * 600 * DEG;
@@ -1633,15 +1641,16 @@
         }
       }
       this.itemTiles.geometry.instanceCount = ni;
-      for (const a of this.itemTiles.list) a.needsUpdate = true;
+      for (const a of this.itemTiles.list) uploadUsed(a, ni);
       this.gems.count = ng;
-      this.gems.instanceMatrix.needsUpdate = true;
+      uploadUsed(this.gems.instanceMatrix, ng);
       this.quads.count = nq;
-      this.quads.instanceMatrix.needsUpdate = true;
+      uploadUsed(this.quads.instanceMatrix, nq);
       for (const side of SIDES) {
         this.obstacles[side].count = counts[side];
         this.spikes[side].count = counts[2 + side];
-        this.obstacles[side].instanceMatrix.needsUpdate = this.spikes[side].instanceMatrix.needsUpdate = true;
+        uploadUsed(this.obstacles[side].instanceMatrix, counts[side]);
+        uploadUsed(this.spikes[side].instanceMatrix, counts[2 + side]);
       }
       this.itemMat.uniforms.uTime.value = time;
       this.quadMat.uniforms.uTime.value = time;
