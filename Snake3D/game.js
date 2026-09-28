@@ -626,8 +626,7 @@
     }
     setSize(w, h) {
       if (this.scene && this.scene.width === w && this.scene.height === h) return;
-      if (this.scene) this.scene.dispose();
-      for (const t of [...this.down, ...this.up]) t.dispose();
+      this.release();
       this.scene = this.target(w, h, this.samples);
       this.width = w;
       this.height = h;
@@ -643,6 +642,15 @@
         tw = Math.max(1, tw >> 1);
         th = Math.max(1, th >> 1);
       }
+    }
+    // Frees the render targets while Classic graphics draws straight to the screen: at 3x on a phone
+    // the multisampled HDR scene alone takes well over 100 MB of video memory.
+    release() {
+      if (this.scene) this.scene.dispose();
+      for (const t of [...this.down, ...this.up]) t.dispose();
+      this.scene = null;
+      this.down = [];
+      this.up = [];
     }
     pass(material, target) {
       this.quad.material = material;
@@ -907,8 +915,7 @@
 
   // ---------------------------------------------------------------- geometry helpers
   const V = (x, y, z) => new T.Vector3(x, y, z);
-  // Unity (left-handed) to three.js (right-handed): negate z.
-  const toThree = (p, out) => out.set(p.x, p.y, -p.z);
+  // Unity (left-handed) to three.js (right-handed): z is negated wherever a position is placed.
 
   function unitQuad() {
     const g = new T.PlaneGeometry(1, 1);
@@ -1991,7 +1998,8 @@
       if (aspect < 1) fov = Math.min(90, 2 * Math.atan(Math.tan(37.5 * DEG) / aspect) / DEG);
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
-      this.post.setSize(Math.floor(w * q), Math.floor(h * q));
+      if (this.classic) this.post.release();
+      else this.post.setSize(Math.floor(w * q), Math.floor(h * q));
       this.drawnState = null;
     }
     later(delay, fn) { this.timers.push({at: this.time + delay, fn}); }
