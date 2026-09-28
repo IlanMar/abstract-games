@@ -19,7 +19,7 @@
   const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5,
     dash: 1.5};              // the on-screen boost button (not in the original): 1.5 times faster while held
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
-    height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
+    height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.0};   // bloom 2.5 in the remake, softened on request
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
   const MUSIC_GAIN = 0.2;     // groove output level: the beat scripts about as loud as the old menu music
   const FOG = 18;            // distance from the camera where the floor has faded to black
