@@ -1,0 +1,28 @@
+;
+; since we now have a lot of grooves all
+; referenceing the same samples we need 
+; a sample bank
+;
+; just a list of samples to load up
+;
+
+AMBSANDH1.adp
+AMBSANDH2.adp
+AMBSANDH3.adp
+AMBSANDH4.adp
+DelayDecay1.adp
+DelayDecay2.adp
+Drums_Medium1.adp
+FutMed1.adp
+FutMed2.adp
+FutMin1.adp
+FutMin2.adp
+PadMel1.adp
+RVSEGUIT1.ADP
+TrevorMel1.adp
+TrevorSEQ1.adp
+WarHar1.adp
+WarHarFDIN1.adp
+WarHarFDOUT1.adp
+
+; end 

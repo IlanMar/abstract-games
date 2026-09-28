@@ -1,0 +1,85 @@
+;
+; this is the groovetracker master script
+; it specifies the order in which grooves
+; should be played and the level on which
+; they should start
+;
+
+
+;
+; section 1
+;
+1:ambient_1.txt
+2:ambient_extras_2.txt
+3:ambient_melody_3.txt
+4:ambient_melody_beat_4.txt
+5:light_beat_5.txt
+6:med_beat_6.txt
+
+;
+; section 2
+;
+7:ambient_extras_2.txt
+8:ambient_melody_3.txt
+9:ambient_melody_beat_4.txt
+10:light_beat_5.txt
+11:med_beat_6.txt
+12:full_beat_seq_7.txt
+
+;
+; section 3
+;
+13:ambient_extras_2.txt
+14:ambient_melody_3.txt
+15:ambient_melody_beat_4.txt
+16:light_beat_5.txt
+17:med_beat_6.txt
+18:full_beat_seq_7.txt
+
+;
+; section 4
+;
+19:ambient_extras_2.txt
+20:ambient_melody_3.txt
+21:ambient_melody_beat_4.txt
+22:light_beat_5.txt
+23:med_beat_6.txt
+24:full_beat_seq_7.txt
+
+;
+; section 5
+;
+25:ambient_extras_2.txt
+26:ambient_melody_3.txt
+27:ambient_melody_beat_4.txt
+28:light_beat_5.txt
+29:med_beat_6.txt
+30:full_beat_seq_7.txt
+
+;
+; section 6
+;
+31:ambient_extras_2.txt
+32:ambient_melody_3.txt
+33:ambient_melody_beat_4.txt
+34:light_beat_5.txt
+35:med_beat_6.txt
+36:full_beat_seq_7.txt
+
+
+;
+; jub for Bonus levels all bonus levels play this one
+;
+80:final_seq_8.txt
+
+
+;
+; multiplayer music starts at 100
+;
+101:light_beat_5.txt
+102:med_beat_6.txt
+103:full_beat_seq_7.txt
+104:final_seq_8.txt
+105:ambient_melody_3.txt
+
+; end

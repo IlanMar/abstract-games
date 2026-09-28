@@ -21,6 +21,7 @@
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
+  const MUSIC_GAIN = 0.2;     // groove output level: the beat scripts about as loud as the old menu music
   const FOG = 18;            // distance from the camera where the floor has faded to black
   const VIEW_MAX = 1.5;      // Options > View distance: 100% (the original) to 150%, 120% by default
   const DATA_OFFSET = 12;    // world cell x maps to data column x + RenderingRange / 2
@@ -202,8 +203,169 @@
     write() { try { localStorage.setItem('nsnakes-save', JSON.stringify(this.data)); } catch (e) { /* storage unavailable */ } }
   }
 
+  // ---------------------------------------------------------------- groove music
+  // The music of the original is not a recording but a "groove tracker": audio/groove holds its
+  // 18 loops (headerless 4-bit IMA ADPCM, high nibble first, 16 kHz mono) and its scripts. A script
+  // has three channels; a channel plays a list of loops (a groovelet), then picks the next state
+  // by the percentages of the current one. Every loop is a whole number of steps of 16646 samples
+  // (half a bar at 115 BPM), a bare NULL rests one step and NULL(file) rests as long as that file,
+  // so the channels stay in time. groovemaster.txt names the script of each level.
+  const ADPCM_STEPS = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97,
+    107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060,
+    1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845,
+    8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767];
+  const ADPCM_INDEX = [-1, -1, -1, -1, 2, 4, 6, 8];
+  const GROOVE_RATE = 16000, GROOVE_STEP = 16646 / GROOVE_RATE, GROOVE_AHEAD = 1.5;
+  function decodeAdpcm(bytes) {
+    const out = new Float32Array(bytes.length * 2);
+    let pred = 0, index = 0, o = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      for (let h = 1; h >= 0; h--) {
+        const n = h ? bytes[i] >> 4 : bytes[i] & 15, step = ADPCM_STEPS[index];
+        let diff = step >> 3;
+        if (n & 1) diff += step >> 2;
+        if (n & 2) diff += step >> 1;
+        if (n & 4) diff += step;
+        pred = n & 8 ? Math.max(-32768, pred - diff) : Math.min(32767, pred + diff);
+        index = Math.max(0, Math.min(88, index + ADPCM_INDEX[n & 7]));
+        out[o++] = pred / 32768;
+      }
+    }
+    return out;
+  }
+  function parseGroove(text) {
+    const song = {samples: {}, channels: []};
+    let mode = null, channel = null, state = null;
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.replace(/;.*/, '').trim();
+      let m;
+      if (!line) continue;
+      if (/^\[SAMPLE\]/i.test(line)) mode = 'sample';
+      else if (/^\[GROOVECHANNEL\]/i.test(line)) song.channels.push(channel = {start: 0, lets: [], states: []});
+      else if (/^\[GROOVELET\]/i.test(line)) { mode = 'let'; channel.lets.push([]); }
+      else if (/^\[GROOVESTATE\]/i.test(line)) channel.states.push(state = {let: 0, next: []});
+      else if (/^\[\//.test(line)) mode = null;
+      else if ((m = /^StartState\s+(\d+)/i.exec(line))) channel.start = +m[1];
+      else if ((m = /^PLAYS\s+GROOVELET\s+(\d+)/i.exec(line))) state.let = +m[1];
+      else if ((m = /^SELECTS\s+STATE\s+(\d+)\s+(\d+)/i.exec(line))) state.next.push([+m[1], +m[2]]);
+      else if (mode === 'sample' && (m = /^(\S+)\s+(\S+)/.exec(line))) {
+        const rest = /^NULL\((.+)\)$/i.exec(m[2]);
+        song.samples[m[1].toUpperCase()] = rest ? {rest: rest[1].toLowerCase()} : {file: m[2].toLowerCase()};
+      } else if (mode === 'let') channel.lets[channel.lets.length - 1].push(...line.split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
+    }
+    return song;
+  }
+  class GrooveMusic {
+    constructor(ctx, out) {
+      this.ctx = ctx;
+      this.out = out;
+      this.buffers = {};
+      this.scripts = {};
+      this.master = {};
+      this.ready = false;
+      this.song = null;
+      this.want = null;
+      this.timer = 0;
+      this.load().catch(() => { /* no music */ });
+    }
+    async load() {
+      const base = 'audio/groove/';
+      const text = file => fetch(base + file).then(r => r.text());
+      for (const line of (await text('groovemaster.txt')).split(/\r?\n/)) {
+        const m = /^\s*(\d+)\s*:\s*(\S+)/.exec(line);
+        if (m) this.master[m[1]] = m[2].toLowerCase();
+      }
+      const scripts = new Set([...Object.values(this.master), 'menu_1.txt', 'game_end_1.txt']);
+      const bank = (await text('groovebank.txt')).split(/\r?\n/).map(l => l.replace(/;.*/, '').trim().toLowerCase()).filter(l => l.endsWith('.adp'));
+      await Promise.all([
+        ...[...scripts].map(async file => { this.scripts[file] = parseGroove(await text(file)); }),
+        ...bank.map(async file => {
+          const pcm = decodeAdpcm(new Uint8Array(await (await fetch(base + file)).arrayBuffer()));
+          const buffer = this.ctx.createBuffer(1, pcm.length, GROOVE_RATE);
+          buffer.copyToChannel(pcm, 0);
+          this.buffers[file] = buffer;
+        })
+      ]);
+      this.ready = true;
+      if (this.onReady) this.onReady();
+    }
+    steps(file) {
+      const b = this.buffers[file];
+      return b ? Math.max(1, Math.round(b.duration / GROOVE_STEP)) : 1;
+    }
+    entry(song, name) {
+      const s = song.samples[name];
+      if (!s) return {buffer: null, steps: 1};               // bare NULL: one step of rest
+      if (s.rest) return {buffer: null, steps: this.steps(s.rest)};
+      return {buffer: this.buffers[s.file] || null, steps: this.steps(s.file)};
+    }
+    levelFile(level) { return this.master[level] || this.master[1]; }
+    // Starts a script by file name; null stops the music.
+    play(file) {
+      this.stop();
+      this.want = file;
+      if (!file || !this.ready || !this.scripts[file]) return;
+      const gain = this.ctx.createGain();
+      gain.connect(this.out);
+      const t0 = this.ctx.currentTime + 0.05;
+      const song = this.scripts[file];
+      this.song = {song, gain, sources: new Set(), channels: song.channels.map(c => ({c, state: c.start, pos: 0, time: t0}))};
+      this.pump();
+      this.timer = setInterval(() => this.pump(), 250);
+    }
+    // Schedules every channel up to GROOVE_AHEAD seconds ahead. It runs on a timer, never in a frame.
+    pump() {
+      const s = this.song, now = this.ctx.currentTime;
+      if (!s) return;
+      // After a stall (a throttled timer) all channels move on together, so they stay in time.
+      const late = now + 0.05 - Math.min(...s.channels.map(ch => ch.time));
+      if (late > 0) for (const ch of s.channels) ch.time += late;
+      for (const ch of s.channels) {
+        for (let guard = 0; ch.time < now + GROOVE_AHEAD && guard < 64; guard++) {
+          const state = ch.c.states[ch.state];
+          if (!state) break;
+          const list = ch.c.lets[state.let] || [];
+          if (ch.pos >= list.length) {
+            let r = Math.random() * state.next.reduce((a, n) => a + n[1], 0);
+            const pick = state.next.find(n => (r -= n[1]) < 0);
+            ch.state = pick ? pick[0] : ch.c.start;
+            ch.pos = 0;
+            if (!list.length) ch.time += GROOVE_STEP;
+            continue;
+          }
+          const e = this.entry(s.song, list[ch.pos++]);
+          if (e.buffer) {
+            const src = this.ctx.createBufferSource();
+            src.buffer = e.buffer;
+            src.connect(s.gain);
+            src.start(ch.time);
+            s.sources.add(src);
+            src.onended = () => s.sources.delete(src);
+          }
+          ch.time += e.steps * GROOVE_STEP;
+        }
+      }
+    }
+    stop() {
+      clearInterval(this.timer);
+      const s = this.song;
+      this.song = null;
+      if (!s) return;
+      const now = this.ctx.currentTime;
+      s.gain.gain.setTargetAtTime(0, now, 0.03);
+      for (const src of s.sources) { try { src.stop(now + 0.2); } catch (e) { /* not started */ } }
+      setTimeout(() => s.gain.disconnect(), 400);
+    }
+  }
+
+  // The line of groovemaster.txt for a map: the classic levels keep their number (bonus levels
+  // share line 80), the other maps take the lines from 1 in menu order.
+  function grooveLevel(def, index) {
+    const m = /^classic-(bonus-)?(\d+)$/.exec(def.key);
+    return m ? (m[1] ? 80 : +m[2]) : index % 36 + 1;
+  }
   // ---------------------------------------------------------------- audio
-  // MusicManager: one music source, one effect source (a new effect cuts the previous one) and
+  // MusicManager: the groove music, one effect source (a new effect cuts the previous one) and
   // one looping source for the power-chain buzz.
   class AudioManager {
     constructor(save) {
@@ -216,17 +378,18 @@
       this.loopStopTimer = 0;
       this.files = {energy: 'EnergyPickUp.wav', power: 'PowerPickUp_single.wav', spike: 'SpikeHit.wav', obstacle: 'ObstecleHit.wav',
         boost: 'Boost.wav', group: 'GroupComplete.wav', explosion: 'explosion.wav'};
-      this.gameMusic = this.music('audio/GameMusic.mp3', 0.37);
-      this.menuMusic = this.music('audio/MainMusic.mp3', 0.49);
-      this.pauseMusic = this.music('audio/MainMusic.mp3', 0.37);
+      // Music is asked for by name: the level script (see Game.startMap), the menu and the game end.
+      this.gameMusic = 'game';
+      this.menuMusic = 'menu';
+      this.pauseMusic = 'menu';
+      this.endMusic = 'end';
+      this.level = 1;
+      this.music = null;
       this.unlocked = false;
     }
-    music(src, volume) {
-      const el = new Audio(src);
-      el.loop = true;
-      el.preload = 'auto';
-      el.baseVolume = volume;
-      return el;
+    musicFile(name) {
+      if (!this.groove) return null;
+      return name === 'game' ? this.groove.levelFile(this.level) : name === 'menu' ? 'menu_1.txt' : name === 'end' ? 'game_end_1.txt' : null;
     }
     unlock() {
       if (this.unlocked) return;
@@ -235,6 +398,10 @@
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         this.sfxGain = this.ctx.createGain();
         this.sfxGain.connect(this.ctx.destination);
+        this.musicGain = this.ctx.createGain();
+        this.musicGain.connect(this.ctx.destination);
+        this.groove = new GrooveMusic(this.ctx, this.musicGain);
+        this.groove.onReady = () => { if (this.wantMusic) this.restartMusic(this.wantMusic); };
         this.applyVolumes();
         for (const [id, file] of Object.entries(this.files)) {
           fetch(`audio/${file}`).then(r => r.arrayBuffer()).then(b => this.ctx.decodeAudioData(b)).then(buf => { this.buffers[id] = buf; })
@@ -244,28 +411,31 @@
         this.ctx = null;
       }
       this.applyVolumes();
-      if (this.wantMusic) this.playMusic(this.wantMusic);
+      if (this.wantMusic) this.restartMusic(this.wantMusic);
     }
     applyVolumes() {
       const m = this.save.data.music, s = this.save.data.sfx;
-      for (const el of [this.gameMusic, this.menuMusic, this.pauseMusic]) el.volume = clamp01(el.baseVolume * m);
+      if (this.musicGain) this.musicGain.gain.value = MUSIC_GAIN * m;
       if (this.sfxGain) this.sfxGain.gain.value = s;
     }
-    playMusic(el) {
-      this.wantMusic = el;
-      for (const other of [this.gameMusic, this.menuMusic, this.pauseMusic]) if (other !== el) other.pause();
-      if (!el || !this.unlocked || this.hidden) return;
-      if (el.paused) el.play().catch(() => {});
+    // Keeps the music that is already playing; restartMusic starts it again (a new level).
+    playMusic(name) {
+      if (name === this.wantMusic && this.groove && this.groove.ready && this.groove.want === this.musicFile(name)) return;
+      this.restartMusic(name);
     }
-    // A hidden page stays silent; the wanted track resumes when the page is shown again.
+    restartMusic(name) {
+      this.wantMusic = name;
+      if (!this.groove) return;
+      if (this.ctx.state !== 'running' && !this.hidden) this.ctx.resume();
+      this.music = this.musicFile(name);
+      this.groove.play(this.music);
+    }
+    // A hidden page stays silent: the audio clock stops, so the music goes on where it was.
     setHidden(hidden) {
       this.hidden = hidden;
-      if (hidden) for (const el of [this.gameMusic, this.menuMusic, this.pauseMusic]) el.pause();
-      else if (this.wantMusic) this.playMusic(this.wantMusic);
-    }
-    restartMusic(el) {
-      try { el.currentTime = 0; } catch (e) { /* not loaded yet */ }
-      this.playMusic(el);
+      if (!this.ctx) return;
+      if (hidden) this.ctx.suspend();
+      else this.ctx.resume();
     }
     stopMusic() { this.playMusic(null); }
     source(id, volume, loop) {
@@ -1686,7 +1856,7 @@
       this.ui = new UI(this);
       this.input = new Input(this);
       this.resize();
-      window.addEventListener('resize', () => this.resize());
+      window.addEventListener('resize', () => { this.resize(); this.ui.popupFrom = null; });
       document.addEventListener('visibilitychange', () => {
         this.audio.setHidden(document.hidden);
         if (document.hidden && this.isRunning()) this.pause(true);
@@ -1697,6 +1867,14 @@
       requestAnimationFrame(t => this.frame(t));
     }
     isRunning() { return this.state === 'playing'; }
+    // Compiles every shader while the map fades in. WebGL compiles a program the first time it
+    // draws with it, so the explosion sprites, hidden until the first crash, stalled that frame.
+    precompile() {
+      const glow = this.particles.glows[0];
+      glow.visible = true;
+      this.renderer.compile(this.scene, this.camera);
+      glow.visible = false;
+    }
     // View distance: the window of generated cells and the fog grow together, 100% to 150%.
     setView(scale) {
       scale = Math.min(VIEW_MAX, Math.max(1, +scale || 1.2));
@@ -1749,6 +1927,7 @@
       this.cameraRig = new CameraRig(this);
       if (!this.player.rev) this.cameraRig.pivot = this.cameraRig.reversingAngle = 180;
       this.particles.clear();
+      this.precompile();
       this.highlights.clear();
       this.glowItems = [];
       this.timers = [];
@@ -1771,6 +1950,7 @@
       this.ui.hud(true);
       this.ui.updateScore(0, 1);
       this.ui.startPrompt(this.awaitingStart);
+      this.audio.level = grooveLevel(def, index);
       this.audio.restartMusic(this.audio.gameMusic);
       this.ui.fade(1, 0);
       // MenuManager.waitingInstatiat: the player is enabled after one second, then the fade out.
@@ -1927,6 +2107,7 @@
       this.later(1, () => {
         const def = MAPS[this.mapIndex];
         $('lost-stage').textContent = `${def.name} · ${def.kind}`;
+        this.audio.playMusic(this.audio.endMusic);
         this.ui.showMenu('lost', true);
       });
     }
@@ -2211,8 +2392,12 @@
       el.className = 'popup';
       el.textContent = String(value).padStart(4, '0');
       host.appendChild(el);
-      const hostRect = host.getBoundingClientRect();
-      const dx = innerWidth / 2 - (hostRect.left + hostRect.width / 2), dy = innerHeight / 2 - (hostRect.top + hostRect.height / 2);
+      // The host's place is measured once per layout: reading it forces a layout on every pickup.
+      if (!this.popupFrom) {
+        const r = host.getBoundingClientRect();
+        this.popupFrom = {dx: innerWidth / 2 - (r.left + r.width / 2), dy: innerHeight / 2 - (r.top + r.height / 2)};
+      }
+      const {dx, dy} = this.popupFrom;
       el.animate([{transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`}, {transform: 'translate(-50%, -50%)'}], {duration: 250, easing: 'linear'});
       this.popups.push(el);
       while (this.popups.length > 1) this.popups.shift().remove();
