@@ -5,6 +5,7 @@
   T.ColorManagement.enabled = false;
   const DATA = window.NSNAKES_DATA;
   const $ = id => document.getElementById(id);
+  const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
   const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
   const lerp = (a, b, t) => a + (b - a) * clamp01(t);
   const mod = (a, n) => ((a % n) + n) % n;
@@ -758,6 +759,8 @@
   // ---------------------------------------------------------------- snake mesh
   // The snake is baked from a head arrow, rhombic body segments (two per cell) and a tail spike.
   // Every face is black with a white outline, like the "Skin" texture of the original.
+  const TRIS3 = [0, 1, 2], TRIS4 = [0, 1, 2, 0, 2, 3], TRIS5 = [0, 1, 2, 0, 2, 4, 4, 2, 3];
+  const SNAKE_ATTRS = [['position', 3], ['aEdge', 4], ['aEdge2', 1]];
   class SnakeMesh {
     constructor(material) {
       this.max = 16384;          // vertices: about 340 cells of snake; the rest of a longer tail is not drawn
@@ -772,37 +775,46 @@
       this.mesh.frustumCulled = false;
       this.count = 0;
       this.tmp = [V(), V(), V()];
+      this.dist = new Float32Array(25);   // distance of point i to outlined edge k, at i * 5 + k
     }
     begin() { this.count = 0; }
     // Adds a polygon (3..5 points); outline[i] tells whether edge i -> i+1 is drawn.
+    // Runs for every face of the snake on every frame, so it allocates nothing.
     poly(points, outline) {
-      const n = points.length;
-      const lines = [];
-      for (let i = 0; i < n; i++) if (outline[i]) lines.push([points[i], points[(i + 1) % n]]);
-      const dist = p => {
-        const out = [99, 99, 99, 99, 99];
-        lines.forEach(([a, b], k) => {
-          const ab = this.tmp[0].subVectors(b, a), ap = this.tmp[1].subVectors(p, a);
-          const len = ab.length();
-          out[k] = len > 1e-6 ? this.tmp[2].crossVectors(ab, ap).length() / len : ap.length();
-        });
-        return out;
-      };
-      const d = points.map(dist);
+      const n = points.length, d = this.dist, ab = this.tmp[0], ap = this.tmp[1], cr = this.tmp[2];
+      d.fill(99);
+      let k = 0;
+      for (let i = 0; i < n; i++) {
+        if (!outline[i]) continue;
+        const a = points[i], b = points[(i + 1) % n];
+        ab.subVectors(b, a);
+        const len = ab.length();
+        for (let j = 0; j < n; j++) {
+          ap.subVectors(points[j], a);
+          d[j * 5 + k] = len > 1e-6 ? cr.crossVectors(ab, ap).length() / len : ap.length();
+        }
+        k++;
+      }
       // Quads split on 0-2; pentagons are a quad (0,1,2,4) plus a triangle (4,2,3).
-      const tris = n === 5 ? [0, 1, 2, 0, 2, 4, 4, 2, 3] : n === 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2];
-      for (const k of tris) this.vertex(points[k], d[k]);
+      const tris = n === 5 ? TRIS5 : n === 4 ? TRIS4 : TRIS3;
+      for (let i = 0; i < tris.length; i++) this.vertex(points[tris[i]], tris[i] * 5);
     }
-    vertex(p, d) {
+    vertex(p, o) {
       if (this.count >= this.max) return;
-      const c = this.count++;
+      const c = this.count++, d = this.dist;
       this.pos[c * 3] = p.x; this.pos[c * 3 + 1] = p.y; this.pos[c * 3 + 2] = p.z;
-      this.edge[c * 4] = d[0]; this.edge[c * 4 + 1] = d[1]; this.edge[c * 4 + 2] = d[2]; this.edge[c * 4 + 3] = d[3];
-      this.edge2[c] = d[4];
+      this.edge[c * 4] = d[o]; this.edge[c * 4 + 1] = d[o + 1]; this.edge[c * 4 + 2] = d[o + 2]; this.edge[c * 4 + 3] = d[o + 3];
+      this.edge2[c] = d[o + 4];
     }
     end() {
       this.geometry.setDrawRange(0, this.count);
-      for (const name of ['position', 'aEdge', 'aEdge2']) this.geometry.attributes[name].needsUpdate = true;
+      // Upload only the part of the buffers the snake uses, not all 16384 vertices.
+      for (const [name, size] of SNAKE_ATTRS) {
+        const a = this.geometry.attributes[name];
+        a.updateRange.offset = 0;
+        a.updateRange.count = Math.max(1, this.count) * size;
+        a.needsUpdate = true;
+      }
     }
   }
 
@@ -944,6 +956,7 @@
       this.oldCi = s.ci;
       this.speed = 0;
       this.time = 0;
+      this.cellAge = 0;          // seconds of fixed steps since the last cell
       this.returnOrgSpeed = true;
       this.slowDown = false;
       this.boost = false;
@@ -998,6 +1011,7 @@
     }
     fixedUpdate(dt) {
       if (this.isDead) return;
+      this.cellAge += dt;
       this.time += dt * this.speed;
       let target = PLAYER.org, rate = PLAYER.returning;
       if (this.returnOrgSpeed) { target = (this.boostKey && this.slowDown) ? PLAYER.org : (this.slowDown ? PLAYER.min : PLAYER.max); rate = PLAYER.accel; }
@@ -1010,6 +1024,18 @@
       if (this.time < 1) return;
       this.step();
       this.time = 0;
+      this.cellAge = 0;
+    }
+    // Drawn progress through the current cell. A cell ends on the first fixed step that brings
+    // time to 1, so it lasts a whole number of steps and the overshoot is dropped. Extrapolating
+    // time itself hit 1 before that step and held the snake still for up to 20 ms on every cell;
+    // spreading the move over the steps the cell really takes keeps it smooth at the same pace.
+    drawnTime(acc) {
+      const perStep = this.speed * FIXED_DT;
+      if (perStep < 1e-4) return clamp01(this.time);
+      const left = Math.max(1, Math.ceil((1 - this.time) / perStep - 1e-9)) * FIXED_DT;
+      const age = this.cellAge + acc;
+      return clamp01(age / (this.cellAge + left));
     }
     step() {
       const g = this.game;
@@ -1262,6 +1288,12 @@
     boostDown: {c1: [1, 0.009, 0], c2: [1, 0.481, 0.476], hl: [16, 0, 0], hli: 1.7}
   };
 
+  const SIDES = [TOP, BOTTOM];
+  function setColors(items, i, c) {
+    items.iCol1.setXYZ(i, c.c1[0], c.c1[1], c.c1[2]);
+    items.iCol2.setXYZ(i, c.c2[0], c.c2[1], c.c2[2]);
+    items.iHL.setXYZ(i, c.hl[0], c.hl[1], c.hl[2]);
+  }
   class WorldView {
     constructor(scene, map) {
       this.map = map;
@@ -1302,6 +1334,7 @@
       this.one = V(1, 1, 1);
       this.v = V();
       this.w = {x: 0, z: 0};
+      this.counts = [0, 0, 0, 0];
     }
     instanced(geometry, material, attrs) {
       const g = new T.InstancedBufferGeometry();
@@ -1318,7 +1351,7 @@
       const mesh = new T.Mesh(g, material);
       mesh.frustumCulled = false;
       this.group.add(mesh);
-      return {mesh, geometry: g, arrays};
+      return {mesh, geometry: g, arrays, list: Object.values(arrays)};
     }
     props(geometry, material) {
       const mesh = new T.InstancedMesh(geometry, material, 300);
@@ -1333,7 +1366,8 @@
       const hx = Math.round(head.x), hz = head.z;
       const tiles = this.tiles.arrays, items = this.itemTiles.arrays;
       let n = 0, ni = 0;
-      const counts = {o0: 0, o1: 0, s0: 0, s1: 0};
+      const counts = this.counts;   // obstacles of the top and the bottom, then spikes
+      counts.fill(0);
       const glowing = game.glowItems;
       for (let x = hx - RANGE; x <= hx + RANGE; x++) {
         const odd = hex && (map.dataX(x) & 1);
@@ -1358,11 +1392,11 @@
           }
           tiles.iFx.setXY(n, thick, inten);
           n++;
-          for (const side of [TOP, BOTTOM]) {
+          for (const side of SIDES) {
             const v = map.env[side][idx];
             if (v === 1 || v === 2) {
               const list = v === 1 ? this.obstacles[side] : this.spikes[side];
-              const key = (v === 1 ? 'o' : 's') + side;
+              const key = (v === 1 ? 0 : 2) + side;
               if (counts[key] < list.instanceMatrix.count) {
                 this.m.makeTranslation(x, 0, tz);
                 list.setMatrixAt(counts[key]++, this.m);
@@ -1370,7 +1404,7 @@
             } else if ((v === 5 || v === 6) && ni < this.maxCells) {
               const c = v === 5 ? COLORS.boostUp : COLORS.boostDown;
               items.iPos.setXYZ(ni, x, side === TOP ? 0.006 : -0.006, tz);
-              items.iCol1.setXYZ(ni, ...c.c1); items.iCol2.setXYZ(ni, ...c.c2); items.iHL.setXYZ(ni, ...c.hl);
+              setColors(items, ni, c);
               items.iFx.setXY(ni, thick, c.hli);
               ni++;
             }
@@ -1378,7 +1412,7 @@
         }
       }
       this.tiles.geometry.instanceCount = n;
-      for (const a of Object.values(tiles)) a.needsUpdate = true;
+      for (const a of this.tiles.list) a.needsUpdate = true;
       // Items of the current level inside the generated window.
       let ng = 0, nq = 0;
       const spin = time * 600 * DEG;
@@ -1393,7 +1427,7 @@
         const c = COLORS[it.type];
         const sgn = it.side === TOP ? 1 : -1;
         items.iPos.setXYZ(ni, this.w.x, 0.005 * sgn, -this.w.z);
-        items.iCol1.setXYZ(ni, ...c.c1); items.iCol2.setXYZ(ni, ...c.c2); items.iHL.setXYZ(ni, ...c.hl);
+        setColors(items, ni, c);
         items.iFx.setXY(ni, game.highlightOf(it.idx, time), c.hli);
         ni++;
         this.v.set(this.w.x, 0.5 * sgn, -this.w.z);
@@ -1407,14 +1441,15 @@
         }
       }
       this.itemTiles.geometry.instanceCount = ni;
-      for (const a of Object.values(items)) a.needsUpdate = true;
+      for (const a of this.itemTiles.list) a.needsUpdate = true;
       this.gems.count = ng;
       this.gems.instanceMatrix.needsUpdate = true;
       this.quads.count = nq;
       this.quads.instanceMatrix.needsUpdate = true;
-      for (const [key, list] of [['o0', this.obstacles[0]], ['o1', this.obstacles[1]], ['s0', this.spikes[0]], ['s1', this.spikes[1]]]) {
-        list.count = counts[key];
-        list.instanceMatrix.needsUpdate = true;
+      for (const side of SIDES) {
+        this.obstacles[side].count = counts[side];
+        this.spikes[side].count = counts[2 + side];
+        this.obstacles[side].instanceMatrix.needsUpdate = this.spikes[side].instanceMatrix.needsUpdate = true;
       }
       this.itemMat.uniforms.uTime.value = time;
       this.quadMat.uniforms.uTime.value = time;
@@ -1435,12 +1470,22 @@
   // ---------------------------------------------------------------- snake builder
   // Body rings sit on the grid (two per cell) and only jump when the snake steps; the head
   // pivot and the tail pivot slide with the step progress, as in TransformGroup.calculate.
+  const OUTLINE_SIDE = [1, 1, 1, 0], OUTLINE_FLAT = [1, 0, 1, 1], OUTLINE_HEAD = [1, 1, 1, 1, 1];
+  const OUTLINE_TAIL_SIDE = [1, 1, 1, 0, 0], OUTLINE_TAIL_FLAT = [1, 0, 0, 1, 1];
   class SnakeBuilder {
     constructor(material) {
       this.mesh = new SnakeMesh(material);
       this.pts = [];
       this.nrm = [];
-      this.a = V(); this.b = V(); this.c = V(); this.d = V();
+      this.a = V(); this.b = V(); this.c = V();
+      this.lastFwd = V(0, 0, -1);
+      this.frames = [];
+      this.quad = [null, null, null, null];
+      this.penta = [null, null, null, null, null];
+      this.flare = [V(), V(), V(), V()];
+      this.mid = [V(), V(), V(), V()];
+      this.tip = V();
+      this.tail = V();
     }
     prepare(player, map) {
       const trail = player.trail;
@@ -1484,38 +1529,41 @@
         .addScaledVector(p3, 0.5 * t3 - 0.5 * t2);
       return out;
     }
-    frame(u) {
-      const pos = this.point(u, V());
-      const ahead = this.point(u - 0.05, V()), behind = this.point(u + 0.05, V());
+    // Frames, rings and the corners of the head and the tail come from pools that only grow,
+    // so building the snake every frame leaves no garbage behind.
+    frameAt(i) {
+      const f = this.frames[i] || (this.frames[i] = {pos: V(), fwd: V(), up: V(), right: V(), ring: [V(), V(), V(), V()]});
+      return f;
+    }
+    frame(u, f) {
+      const pos = this.point(u, f.pos);
+      const ahead = this.point(u - 0.05, f.fwd), behind = this.point(u + 0.05, this.c);
       const fwd = ahead.sub(behind);
       if (fwd.lengthSq() < 1e-8) {
         const k = Math.max(0, Math.min(this.pts.length - 1, Math.round(u)));
         const front = this.distinct(k, -1), rear = this.distinct(k, 1);
         if (front) fwd.subVectors(front, this.pts[k]);
         else if (rear) fwd.subVectors(this.pts[k], rear);
-        if (fwd.lengthSq() < 1e-8) fwd.copy(this.lastFwd || V(0, 0, -1));
+        if (fwd.lengthSq() < 1e-8) fwd.copy(this.lastFwd);
       }
       fwd.normalize();
-      this.lastFwd = fwd.clone();
+      this.lastFwd.copy(fwd);
       const last = this.nrm.length - 1;
       const uc = Math.max(0, Math.min(last, u));
       const i = Math.min(last - 1, Math.floor(uc)), t = uc - i;
-      const up = V().copy(this.nrm[i]).multiplyScalar(1 - t).addScaledVector(this.nrm[i + 1], t);
+      const up = f.up.copy(this.nrm[i]).multiplyScalar(1 - t).addScaledVector(this.nrm[i + 1], t);
       up.addScaledVector(fwd, -up.dot(fwd));
       if (up.lengthSq() < 1e-6) up.set(0, 1, 0).addScaledVector(fwd, -fwd.y);
       up.normalize();
-      const right = V().crossVectors(fwd, up).normalize();
-      return {pos, fwd, up, right};
+      f.right.crossVectors(fwd, up).normalize();
+      const r = f.ring;
+      this.local(f, 0, 0.22, 0, r[0]);
+      this.local(f, 0.275, 0, 0, r[1]);
+      this.local(f, 0, -0.22, 0, r[2]);
+      this.local(f, -0.275, 0, 0, r[3]);
+      return f;
     }
-    ring(f) {
-      return [
-        f.pos.clone().addScaledVector(f.up, 0.22),
-        f.pos.clone().addScaledVector(f.right, 0.275),
-        f.pos.clone().addScaledVector(f.up, -0.22),
-        f.pos.clone().addScaledVector(f.right, -0.275)
-      ];
-    }
-    local(f, x, y, z) { return f.pos.clone().addScaledVector(f.right, x).addScaledVector(f.up, y).addScaledVector(f.fwd, z); }
+    local(f, x, y, z, out) { return out.copy(f.pos).addScaledVector(f.right, x).addScaledVector(f.up, y).addScaledVector(f.fwd, z); }
     build(player, map, t) {
       const m = this.mesh;
       m.begin();
@@ -1524,40 +1572,45 @@
       const n = player.bodyLength;
       const th = player.tailTouched ? 1 : t;
       const uHead = 1.5 - th, uTail = Math.max(uHead, n - 0.5 - t);
-      const us = [uHead];
-      for (let u = 1.5; u < uTail - 1e-4; u += 0.5) if (u > uHead + 1e-4) us.push(u);
-      us.push(uTail);
-      const frames = us.map(u => this.frame(u));
-      const rings = frames.map(f => this.ring(f));
+      let count = 0;
+      this.frame(uHead, this.frameAt(count++));
+      for (let u = 1.5; u < uTail - 1e-4; u += 0.5) if (u > uHead + 1e-4) this.frame(u, this.frameAt(count++));
+      this.frame(uTail, this.frameAt(count++));
+      const frames = this.frames, quad = this.quad, penta = this.penta;
       // Body: faces between rings. Outlines on the ring edges and on the side ridges only.
-      for (let r = 0; r < rings.length - 1; r++) {
-        const a = rings[r], b = rings[r + 1];
+      for (let r = 0; r < count - 1; r++) {
+        const a = frames[r].ring, b = frames[r + 1].ring;
         for (let q = 0; q < 4; q++) {
           const q1 = (q + 1) % 4;
-          const side = q === 0 || q === 2 ? 1 : 0;   // vertex index 1/3 are the side ridges
-          const pts = [a[q], a[q1], b[q1], b[q]];
-          const outline = side ? [1, 1, 1, 0] : [1, 0, 1, 1];
-          m.poly(pts, outline);
+          const side = q === 0 || q === 2;   // vertex index 1/3 are the side ridges
+          quad[0] = a[q]; quad[1] = a[q1]; quad[2] = b[q1]; quad[3] = b[q];
+          m.poly(quad, side ? OUTLINE_SIDE : OUTLINE_FLAT);
         }
       }
       // Head: the arrow "Cone" mesh, four pentagon faces, all edges outlined.
       const hf = frames[0];
-      const back = this.ring(hf);
-      const tip = this.local(hf, 0, 0, 1.21);
-      const flare = [this.local(hf, 0, 0.495, 0.385), this.local(hf, 0.55, 0, 0.385), this.local(hf, 0, -0.495, 0.385), this.local(hf, -0.55, 0, 0.385)];
+      const back = hf.ring, flare = this.flare, tip = this.local(hf, 0, 0, 1.21, this.tip);
+      this.local(hf, 0, 0.495, 0.385, flare[0]);
+      this.local(hf, 0.55, 0, 0.385, flare[1]);
+      this.local(hf, 0, -0.495, 0.385, flare[2]);
+      this.local(hf, -0.55, 0, 0.385, flare[3]);
       for (let q = 0; q < 4; q++) {
         const q1 = (q + 1) % 4;
-        m.poly([back[q], back[q1], flare[q1], tip, flare[q]], [1, 1, 1, 1, 1]);
+        penta[0] = back[q]; penta[1] = back[q1]; penta[2] = flare[q1]; penta[3] = tip; penta[4] = flare[q];
+        m.poly(penta, OUTLINE_HEAD);
       }
       // Tail: a short straight piece and a long pyramid.
-      const tf = frames[frames.length - 1];
-      const tailRing = this.ring(tf);
-      const mid = [this.local(tf, 0, 0.22, -0.585), this.local(tf, 0.275, 0, -0.585), this.local(tf, 0, -0.22, -0.585), this.local(tf, -0.275, 0, -0.585)];
-      const tail = this.local(tf, 0, 0, -2.2);
+      const tf = frames[count - 1];
+      const tailRing = tf.ring, mid = this.mid, tail = this.local(tf, 0, 0, -2.2, this.tail);
+      this.local(tf, 0, 0.22, -0.585, mid[0]);
+      this.local(tf, 0.275, 0, -0.585, mid[1]);
+      this.local(tf, 0, -0.22, -0.585, mid[2]);
+      this.local(tf, -0.275, 0, -0.585, mid[3]);
       for (let q = 0; q < 4; q++) {
         const q1 = (q + 1) % 4;
         const side = q === 0 || q === 2;
-        m.poly([tailRing[q], tailRing[q1], mid[q1], tail, mid[q]], side ? [1, 1, 1, 0, 0] : [1, 0, 0, 1, 1]);
+        penta[0] = tailRing[q]; penta[1] = tailRing[q1]; penta[2] = mid[q1]; penta[3] = tail; penta[4] = mid[q];
+        m.poly(penta, side ? OUTLINE_TAIL_SIDE : OUTLINE_TAIL_FLAT);
       }
       m.end();
       return hf;
@@ -1589,6 +1642,8 @@
       this.last = performance.now();
       this.fx = {bloom: CAMERA.bloom, chromatic: 0, grade: this.save.data.grading !== 'off'};
       this.highlights = new Map();
+      this.clearColor = new T.Color();
+      this.followAt = V();
       this.glowItems = [];
       this.timers = [];
       this.ui = new UI(this);
@@ -1876,7 +1931,7 @@
         this.scoreTick += dt * 20;
         if (this.scoreTick >= 1) { this.scoreTick = 0; this.shownScore += 5 * this.multiply; this.ui.updateScore(Math.min(this.shownScore, 999999), this.multiply); }
       }
-      this.glowItems = [];
+      this.glowItems.length = 0;
       if (this.levels) for (const it of this.levels.items.values()) if (it.type === 'energy' && it.inView && this.time - it.bornAt < 1) this.glowItems.push(it);
       this.particles.update(dt);
       this.dt = dt;
@@ -1884,9 +1939,9 @@
     render() {
       if (this.player && this.world) {
         const p = this.player;
-        const t = p.isDead ? 1 : clamp01(p.time + (this.enabled && !p.isDead ? this.acc * p.speed : 0));
+        const t = p.isDead ? 1 : this.enabled ? p.drawnTime(this.acc) : clamp01(p.time);
         const head = this.snake.build(p, this.map, t);
-        if (head) this.follow = head.pos.clone();
+        if (head) this.follow = (this.follow || V()).copy(head.pos);
         const follow = this.follow || V(p.oldpos.x, p.oldpos.y, -p.oldpos.z);
         const d = p.direction;
         const horizontal = Math.hypot(d.x, d.z) > 1e-6;
@@ -1894,7 +1949,7 @@
         if (horizontal) yaw = Math.atan2(d.x, d.z) + (p.rev ? 0 : Math.PI);
         this.lastYaw = yaw;
         const dt = this.state === 'playing' ? this.dt || 0 : 0;
-        this.cameraRig.update(dt, V(follow.x, follow.y, -follow.z), yaw);
+        this.cameraRig.update(dt, this.followAt.set(follow.x, follow.y, -follow.z), yaw);
         this.cameraRig.apply(this.camera);
         this.world.tileMat.uniforms.uSpectro.value = this.spectro;
         this.world.tileMat.uniforms.uRev.value = this.rev;
@@ -1904,7 +1959,7 @@
         this.fx.bloom = this.cameraRig.bloom;
         this.fx.chromatic = this.cameraRig.chromatic;
         const bg = this.cameraRig.background;
-        this.renderer.setClearColor(new T.Color(bg, bg, bg), 1);
+        this.renderer.setClearColor(this.clearColor.setRGB(bg, bg, bg), 1);
       } else {
         this.fx.bloom = CAMERA.bloom;
         this.fx.chromatic = 0;
@@ -2097,9 +2152,10 @@
     hud(on) { $('hud').classList.toggle('hidden', !on); }
     updateStage(index, total) { $('stage-indicator').textContent = `Stage ${index + 1} / ${total}`; }
     startPrompt(on) { $('start-prompt').classList.toggle('hidden', !on); }
+    // Text is only written when it changes: every write makes the page lay out the HUD again.
     updateScore(score, mult) {
-      $('score').textContent = String(Math.max(0, score | 0)).padStart(6, '0');
-      $('mult').textContent = `x${mult}`;
+      setText($('score'), String(Math.max(0, score | 0)).padStart(6, '0'));
+      setText($('mult'), `x${mult}`);
     }
     popup(value) {
       if (this.game.save.data.popups === 'off') return;
