@@ -2311,8 +2311,10 @@
       $('next-map').addEventListener('click', () => game.nextMap());
       $('replay-map').addEventListener('click', () => game.startMap(game.mapIndex));
       $('complete-to-menu').addEventListener('click', () => game.toMenu());
-      $('next-level').addEventListener('click', () => { this.selected = Math.min(MAPS.length - 1, this.selected + 1); this.levelCard(); });
-      $('prev-level').addEventListener('click', () => { this.selected = Math.max(0, this.selected - 1); this.levelCard(); });
+      // Select Level: a drop-down of every map (the phone shows its own scrolling picker); it opens on
+      // the map played last, and a tick marks the completed ones.
+      const pick = $('level-select');
+      pick.addEventListener('change', () => { this.selected = +pick.value; this.levelCard(); });
       $('resume').addEventListener('click', () => game.pause(false));
       $('to-menu').addEventListener('click', () => game.toMenu());
       $('restart-level').addEventListener('click', () => game.restartLevel());
@@ -2403,7 +2405,12 @@
         const s = this.game.save.data;
         $('continue').disabled = !s.played;
       }
-      if (panel === 'new') this.levelCard();
+      if (panel === 'new') {
+        const s = this.game.save.data, last = MAPS.findIndex(m => m.key === s.lastMap);
+        if (last >= 0) this.selected = last;
+        $('level-select').replaceChildren(...MAPS.map((m, i) => new Option(`${i + 1}. ${m.name} · ${m.kind}${s.cleared[m.key] ? ' ✓' : ''}`, i)));
+        this.levelCard();
+      }
       const first = document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
       if (first && matchMedia('(hover: hover)').matches) first.focus({preventScroll: true});
     }
@@ -2411,8 +2418,7 @@
       const def = MAPS[this.selected];
       $('level-name').textContent = def.name;
       $('level-kind').textContent = def.kind;
-      $('prev-level').disabled = this.selected === 0;
-      $('next-level').disabled = this.selected === MAPS.length - 1;
+      $('level-select').value = this.selected;
       const map = this.game.mapData(this.selected);
       const count = $('level-count');
       count.textContent = `${this.selected + 1} / ${MAPS.length}`;

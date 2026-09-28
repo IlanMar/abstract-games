@@ -166,6 +166,22 @@ button { font: inherit; color: inherit; }
 .panel .row { display: flex; gap: max(10px, calc(20 * var(--u))); }
 .panel .row button { flex: 1 1 0; }
 .panel .label { text-align: center; font-size: max(17px, calc(24 * var(--u))); margin-top: max(4px, calc(6 * var(--u))); }
+/* Select Level: the drop-down of every map, in the look of the menu buttons. */
+#level-select {
+  height: max(40px, calc(40 * var(--u)));
+  padding: 0 2.2em 0 0.8em;
+  border: 0;
+  border-radius: 0;
+  background: var(--button) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E") right 0.8em center / 0.9em no-repeat;
+  color: #fff;
+  font: inherit;
+  text-align-last: center;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+#level-select:focus-visible { outline: 2px solid var(--button-hover); outline-offset: 2px; }
+#level-select option { background: #1b2248; color: #fff; }
 .panel input[type="range"] { width: 100%; margin: 0; accent-color: rgb(43 55 108); height: max(28px, calc(30 * var(--u))); }
 /* Options: a name on the left, its control on the right. */
 .panel .settings {
