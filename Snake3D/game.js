@@ -1470,6 +1470,10 @@
     boostUp: {c1: [0, 1, 0], c2: [0.481, 0.991, 0.481], hl: [0, 2.996, 0], hli: 1.7},
     boostDown: {c1: [1, 0.009, 0], c2: [1, 0.481, 0.476], hl: [16, 0, 0], hli: 1.7}
   };
+  // The floor cells of a power chain glow a little less than in the remake; the spinning cubes
+  // above them keep COLORS.power.
+  const POWER_FLOOR = 0.8;
+  COLORS.powerFloor = {...COLORS.power, ...Object.fromEntries(['c1', 'c2', 'hl'].map(k => [k, COLORS.power[k].map(v => v * POWER_FLOOR)]))};
 
   const SIDES = [TOP, BOTTOM];
   function setColors(items, i, c) {
@@ -1610,7 +1614,7 @@
         if (!inView) continue;
         // A small map repeats inside the window, and so do its items: the floor of every copy is
         // drawn, so an item that only showed on the nearest copy jumped between copies.
-        const c = COLORS[it.type];
+        const c = it.type === 'power' ? COLORS.powerFloor : COLORS[it.type];
         const sgn = it.side === TOP ? 1 : -1;
         const fx = game.highlightOf(it.idx, time);
         for (let ix = -1; ix <= 1; ix++) {
