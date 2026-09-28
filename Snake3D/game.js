@@ -754,9 +754,10 @@
   }
 
   // GR_Graph_Shad_Flashing_Continous: energy, power and boost cells pulse with |cos(4t)|.
-  function flashMaterial(hex, instanced) {
+  // solid: every face one colour, with no dark frame (the spinning chain cubes).
+  function flashMaterial(hex, instanced, solid = false) {
     return new T.ShaderMaterial({
-      defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}),
+      defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}, solid ? {SOLID: 1} : {}),
       uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0},
         ...fadeUniforms()},
       vertexShader: FADE + `
@@ -787,8 +788,12 @@
         void main(){
           vec2 uv = tileUv(vUv);
           float thick = vFx.x;
-          float border = 1.0 - SHAPE(uv, 1.13 - 0.38 * thick);
-          float inner = SHAPE(uv * 1.06 - 0.03, 0.8);
+          #ifdef SOLID
+            float border = 0.0, inner = 1.0;
+          #else
+            float border = 1.0 - SHAPE(uv, 1.13 - 0.38 * thick);
+            float inner = SHAPE(uv * 1.06 - 0.03, 0.8);
+          #endif
           // Item glow softens the highlight of a cell the snake has entered too: at 100% its colour
           // goes to the HDR highlight colour times the intensity (3 on chains), as in the remake;
           // lower settings scale that flash down with the glow, so a driven chain stops dazzling.
@@ -1509,7 +1514,7 @@
       });
       this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
-      this.quadMat = flashMaterial(false, false);
+      this.quadMat = flashMaterial(false, false, true);
       const c = COLORS.power;
       this.quadMat.uniforms.uCol1.value.set(...c.c1);
       this.quadMat.uniforms.uCol2.value.set(...c.c2);
