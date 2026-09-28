@@ -527,6 +527,16 @@
   // GR_Graph_Shad: a floor cell is a quad whose inner square (or hexagon) carries the colour from
   // the colouring map, with a white outline while highlighted, black distance fog and the
   // "spectro" wireframe look used during the intro and after a crash.
+  // Everything on the floor fades the same way: black distance fog from the camera, and a fade
+  // towards the edge of the square window of cells generated around the head, so that a cell or
+  // an item enters the view at zero brightness. Without the edge fade the glowing cells, whose
+  // colours go past 1 and feed the bloom, popped in bright at the far edge.
+  const FADE = `
+    uniform vec3 uCam; uniform vec3 uHead;
+    float camFog(vec3 p){ return 1.0 - clamp(distance(p, uCam) / 18.0, 0.0, 1.0); }
+    float edgeFade(vec3 p){ vec2 d = abs(p.xz - uHead.xz); return clamp((${RANGE - 1}.0 - max(d.x, d.y)) / 3.0, 0.0, 1.0); }
+    float fade(vec3 p){ return camFog(p) * edgeFade(p); }
+  `;
   const SHAPES = `
     float rectMask(vec2 uv, float s){ vec2 d = abs(uv * 2.0 - 1.0) - vec2(s); d = 1.0 - d / max(fwidth(d), vec2(1e-5)); return clamp(min(d.x, d.y), 0.0, 1.0); }
     float polyMask(vec2 uv, float s){
@@ -549,7 +559,7 @@
   function tileMaterial(hex) {
     return new T.ShaderMaterial({
       defines: hex ? {HEX: 1} : {},
-      uniforms: {uRev: {value: 0}, uSpectro: {value: 1}, uCam: {value: new T.Vector3()}},
+      uniforms: {uRev: {value: 0}, uSpectro: {value: 1}, uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}},
       vertexShader: `
         attribute vec3 iPos; attribute vec3 iTop; attribute vec3 iRev; attribute vec2 iFx;
         uniform float uRev;
@@ -559,8 +569,8 @@
           vec3 p = position + iPos; vWorld = p;
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
-      fragmentShader: SHAPES + `
-        uniform float uSpectro; uniform vec3 uCam;
+      fragmentShader: SHAPES + FADE + `
+        uniform float uSpectro;
         varying vec2 vUv; varying vec3 vCol; varying vec2 vFx; varying vec3 vWorld;
         void main(){
           vec2 uv = tileUv(vUv);
@@ -569,11 +579,11 @@
           float border = 1.0 - SHAPE(uv, 1.09 - 0.17 * thick);
           float ring = SHAPE(uv, 0.8);
           vec3 col = vCol * (1.0 + (thick + inten) * 0.7) * inner + vec3(border);
-          float fog = clamp(distance(vWorld, uCam) / 18.0, 0.0, 1.0);
-          col = clamp(col * (1.0 - fog), 0.0, 1.0);
+          col = clamp(col * camFog(vWorld), 0.0, 1.0);
           float a = border + inner;
           col = mix(col, vec3(a - ring), uSpectro);
-          gl_FragColor = vec4(col, mix(a, a - ring, uSpectro));
+          float edge = edgeFade(vWorld);
+          gl_FragColor = vec4(col * edge, mix(a, a - ring, uSpectro) * edge);
         }`,
       transparent: true,
       depthWrite: false,
@@ -586,30 +596,33 @@
   function flashMaterial(hex, instanced) {
     return new T.ShaderMaterial({
       defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}),
-      uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0}},
-      vertexShader: `
+      uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0},
+        uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}},
+      vertexShader: FADE + `
         #ifdef INSTANCED
           attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx;
         #endif
         uniform vec3 uCol1, uCol2, uHL; uniform float uHLI, uThick;
-        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx;
+        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
         void main(){
           vUv = uv;
           #ifdef INSTANCED
             vCol1 = iCol1; vCol2 = iCol2; vHL = iHL; vFx = iFx;
-            gl_Position = projectionMatrix * viewMatrix * vec4(position + iPos, 1.0);
+            vec4 w = vec4(position + iPos, 1.0);
           #else
             vCol1 = uCol1; vCol2 = uCol2; vHL = uHL; vFx = vec2(uThick, uHLI);
             #ifdef USE_INSTANCING
-              gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+              vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
             #else
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              vec4 w = modelMatrix * vec4(position, 1.0);
             #endif
           #endif
+          vFade = fade(w.xyz);
+          gl_Position = projectionMatrix * viewMatrix * w;
         }`,
       fragmentShader: SHAPES + `
         uniform float uTime;
-        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx;
+        varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
         void main(){
           vec2 uv = tileUv(vUv);
           float thick = vFx.x;
@@ -617,7 +630,7 @@
           float inner = SHAPE(uv * 1.06 - 0.03, 0.8);
           vec3 c2 = mix(vCol2, vHL, thick);
           vec3 col = mix(vCol1, c2, abs(cos(uTime * 4.0))) * (1.0 + thick * (vFx.y - 1.0));
-          gl_FragColor = vec4(col * inner + border * vHL, 1.0);
+          gl_FragColor = vec4((col * inner + border * vHL) * vFade, 1.0);
         }`,
       side: T.DoubleSide,
       extensions: {derivatives: true}
@@ -627,7 +640,7 @@
   // Obj_Shad: obstacles and spikes, lit only by the ambient probe and sky reflection, with fog.
   function propMaterial(color) {
     return new T.ShaderMaterial({
-      uniforms: {uColor: {value: new T.Vector3(color, color, color)}, uCam: {value: new T.Vector3()}},
+      uniforms: {uColor: {value: new T.Vector3(color, color, color)}, uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}},
       vertexShader: `
         varying vec3 vN; varying vec3 vWorld;
         void main(){
@@ -636,8 +649,8 @@
           vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
-      fragmentShader: `
-        uniform vec3 uColor; uniform vec3 uCam;
+      fragmentShader: FADE + `
+        uniform vec3 uColor;
         varying vec3 vN; varying vec3 vWorld;
         vec3 sky(vec3 r){ return mix(vec3(0.37, 0.35, 0.34), mix(vec3(0.62, 0.62, 0.62), vec3(0.42, 0.52, 0.66), clamp(r.y * 2.0, 0.0, 1.0)), smoothstep(-0.08, 0.04, r.y)); }
         void main(){
@@ -647,8 +660,7 @@
           vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
           float fres = pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 4.0) * 0.5 + 0.04;
           vec3 col = uColor * 0.96 * amb + sky(reflect(-v, n)) * 0.94 * fres;
-          float fog = 1.0 - clamp(distance(vWorld, uCam) / 18.0, 0.0, 1.0);
-          gl_FragColor = vec4(col * fog, 1.0);
+          gl_FragColor = vec4(col * fade(vWorld), 1.0);
         }`,
       side: T.DoubleSide
     });
@@ -1312,11 +1324,13 @@
       this.obstacles = [0, 1].map(side => this.props(obstacleGeometry(hex, side === BOTTOM), this.propMats[0]));
       this.spikes = [0, 1].map(side => this.props(spikeGeometry(hex, side === BOTTOM), this.propMats[1]));
       this.gemMat = new T.ShaderMaterial({
-        vertexShader: `varying vec3 vN; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0); }`,
-        fragmentShader: `varying vec3 vN; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
-          gl_FragColor = vec4(vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104), 1.0); }`
+        uniforms: {uCam: {value: V()}, uHead: {value: V()}},
+        vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = fade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
+        fragmentShader: `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
+          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade, 1.0); }`
       });
-      this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 64);
+      this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
       this.quadMat = flashMaterial(false, false);
       const c = COLORS.power;
@@ -1324,7 +1338,7 @@
       this.quadMat.uniforms.uCol2.value.set(...c.c2);
       this.quadMat.uniforms.uHL.value.set(...c.hl);
       this.quadMat.uniforms.uHLI.value = c.hli;
-      this.quads = new T.InstancedMesh(new T.BoxGeometry(0.4, 0.4, 0.03), this.quadMat, 128);
+      this.quads = new T.InstancedMesh(new T.BoxGeometry(0.4, 0.4, 0.03), this.quadMat, 512);
       this.quads.frustumCulled = false;
       this.group.add(this.gems, this.quads);
       this.m = new T.Matrix4();
@@ -1335,6 +1349,7 @@
       this.v = V();
       this.w = {x: 0, z: 0};
       this.counts = [0, 0, 0, 0];
+      this.fadeMats = [this.tileMat, this.itemMat, this.quadMat, this.gemMat, ...this.propMats];
     }
     instanced(geometry, material, attrs) {
       const g = new T.InstancedBufferGeometry();
@@ -1423,21 +1438,32 @@
         if (inView && !it.inView) { it.bornAt = time; }
         it.inView = inView;
         it.wx = this.w.x; it.wz = this.w.z;
-        if (!inView || ni >= this.maxCells) continue;
+        if (!inView) continue;
+        // A small map repeats inside the window, and so do its items: the floor of every copy is
+        // drawn, so an item that only showed on the nearest copy jumped between copies.
         const c = COLORS[it.type];
         const sgn = it.side === TOP ? 1 : -1;
-        items.iPos.setXYZ(ni, this.w.x, 0.005 * sgn, -this.w.z);
-        setColors(items, ni, c);
-        items.iFx.setXY(ni, game.highlightOf(it.idx, time), c.hli);
-        ni++;
-        this.v.set(this.w.x, 0.5 * sgn, -this.w.z);
-        if (it.type === 'energy' && ng < 64) {
-          this.m.compose(this.v, this.q, this.one);
-          this.gems.setMatrixAt(ng++, this.m);
-        } else if (it.type === 'power' && nq < 128 && time >= it.hiddenUntil) {
-          this.v.y = 0.46 * sgn;
-          this.m.compose(this.v, this.q2.setFromAxisAngle(this.axis, spin + 1.3), this.one);
-          this.quads.setMatrixAt(nq++, this.m);
+        const fx = game.highlightOf(it.idx, time);
+        for (let ix = -1; ix <= 1; ix++) {
+          const x = this.w.x + ix * map.w;
+          if (Math.abs(x - hx) > RANGE) continue;
+          for (let iz = -1; iz <= 1; iz++) {
+            const z = this.w.z + iz * map.zPeriod;
+            if (Math.abs(z - hz) > RANGE + 0.5 || ni >= this.maxCells) continue;
+            items.iPos.setXYZ(ni, x, 0.005 * sgn, -z);
+            setColors(items, ni, c);
+            items.iFx.setXY(ni, fx, c.hli);
+            ni++;
+            this.v.set(x, 0.5 * sgn, -z);
+            if (it.type === 'energy' && ng < 256) {
+              this.m.compose(this.v, this.q, this.one);
+              this.gems.setMatrixAt(ng++, this.m);
+            } else if (it.type === 'power' && nq < 512 && time >= it.hiddenUntil) {
+              this.v.y = 0.46 * sgn;
+              this.m.compose(this.v, this.q2.setFromAxisAngle(this.axis, spin + 1.3), this.one);
+              this.quads.setMatrixAt(nq++, this.m);
+            }
+          }
         }
       }
       this.itemTiles.geometry.instanceCount = ni;
@@ -1454,9 +1480,12 @@
       this.itemMat.uniforms.uTime.value = time;
       this.quadMat.uniforms.uTime.value = time;
     }
-    setCamera(cam) {
-      this.tileMat.uniforms.uCam.value.copy(cam);
-      for (const m of this.propMats) m.uniforms.uCam.value.copy(cam);
+    // Camera and drawn head position for the fog and the edge fade of every floor material.
+    setView(cam, head) {
+      for (const m of this.fadeMats) {
+        m.uniforms.uCam.value.copy(cam);
+        m.uniforms.uHead.value.copy(head);
+      }
     }
     dispose() {
       this.group.parent.remove(this.group);
@@ -1954,7 +1983,7 @@
         this.world.tileMat.uniforms.uSpectro.value = this.spectro;
         this.world.tileMat.uniforms.uRev.value = this.rev;
         this.world.update(this, this.time);
-        this.world.setCamera(this.camera.position);
+        this.world.setView(this.camera.position, follow);
         this.snakeMat.uniforms.uCam.value.copy(this.camera.position);
         this.fx.bloom = this.cameraRig.bloom;
         this.fx.chromatic = this.cameraRig.chromatic;
