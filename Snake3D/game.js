@@ -21,7 +21,6 @@
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
-  const ITEM_GLOW = 0.75;     // item cells, gems and cubes a quarter dimmer than the remake: their glow dazzled
   const MUSIC_GAIN = 0.2;     // groove output level: the beat scripts about as loud as the old menu music
   const FOG = 18;            // distance from the camera where the floor has faded to black
   const VIEW_MAX = 1.5;      // Options > View distance: 100% (the original) to 150%, 120% by default
@@ -195,7 +194,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -702,7 +701,7 @@
     float edgeFade(vec3 p){ vec2 d = abs(p.xz - uHead.xz); return clamp((uEdge - max(d.x, d.y)) / 3.0, 0.0, 1.0); }
     float fade(vec3 p){ return camFog(p) * edgeFade(p); }
   `;
-  const fadeUniforms = () => ({uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}, uFog: {value: FOG}, uEdge: {value: RANGE - 1}});
+  const fadeUniforms = () => ({uCam: {value: new T.Vector3()}, uHead: {value: new T.Vector3()}, uFog: {value: FOG}, uEdge: {value: RANGE - 1}, uGlow: {value: 1}});
   const SHAPES = `
     float rectMask(vec2 uv, float s){ vec2 d = abs(uv * 2.0 - 1.0) - vec2(s); d = 1.0 - d / max(fwidth(d), vec2(1e-5)); return clamp(min(d.x, d.y), 0.0, 1.0); }
     float polyMask(vec2 uv, float s){
@@ -787,7 +786,7 @@
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
       fragmentShader: SHAPES + `
-        uniform float uTime;
+        uniform float uTime, uGlow;
         varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade;
         void main(){
           vec2 uv = tileUv(vUv);
@@ -796,7 +795,7 @@
           float inner = SHAPE(uv * 1.06 - 0.03, 0.8);
           vec3 c2 = mix(vCol2, vHL, thick);
           vec3 col = mix(vCol1, c2, abs(cos(uTime * 4.0))) * (1.0 + thick * (vFx.y - 1.0));
-          gl_FragColor = vec4((col * inner + border * vHL) * vFade * ${ITEM_GLOW.toFixed(2)}, 1.0);
+          gl_FragColor = vec4((col * inner + border * vHL) * vFade * uGlow, 1.0);
         }`,
       side: T.DoubleSide,
       extensions: {derivatives: true}
@@ -1501,8 +1500,8 @@
         uniforms: fadeUniforms(),
         vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
-        fragmentShader: `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
-          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade * ${ITEM_GLOW.toFixed(2)}, 1.0); }`
+        fragmentShader: `uniform float uGlow; varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
+          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade * uGlow, 1.0); }`
       });
       this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
@@ -1657,13 +1656,15 @@
       this.quadMat.uniforms.uTime.value = time;
     }
     // Camera and drawn head position for the fog and the edge fade of every floor material.
-    setView(cam, head, fog, range) {
+    // glow: Options > Item glow, the brightness of item cells, gems and cubes (1 = the remake).
+    setView(cam, head, fog, range, glow) {
       for (const m of this.fadeMats) {
         const u = m.uniforms;
         u.uCam.value.copy(cam);
         u.uHead.value.copy(head);
         u.uFog.value = fog;
         u.uEdge.value = range - 1;
+        u.uGlow.value = glow;
       }
     }
     dispose() {
@@ -2210,7 +2211,7 @@
         this.world.tileMat.uniforms.uSpectro.value = this.spectro;
         this.world.tileMat.uniforms.uRev.value = this.rev;
         this.world.update(this, this.time);
-        this.world.setView(this.camera.position, follow, this.viewFog, this.viewRange);
+        this.world.setView(this.camera.position, follow, this.viewFog, this.viewRange, this.save.data.itemGlow);
         this.snakeMat.uniforms.uFog.value = this.viewFog;
         this.snakeMat.uniforms.uCam.value.copy(this.camera.position);
         this.fx.bloom = this.cameraRig.bloom;
@@ -2323,6 +2324,12 @@
       view.value = s.viewDistance;
       showView();
       view.addEventListener('input', () => { s.viewDistance = +view.value; game.setView(s.viewDistance); showView(); game.save.write(); });
+      // Item glow: 40% to 100% of the remake's brightness; the default 75% keeps the glow from dazzling.
+      const glow = $('item-glow'), glowLabel = $('glow-value');
+      const showGlow = () => { glowLabel.textContent = `${Math.round(s.itemGlow * 100)}%`; };
+      glow.value = s.itemGlow;
+      showGlow();
+      glow.addEventListener('input', () => { s.itemGlow = +glow.value; showGlow(); game.drawnState = null; game.save.write(); });
       // The On/Off rows in Options: a row names its save key, each button a value.
       const apply = {
         grading: () => { game.fx.grade = s.grading !== 'off'; game.drawnState = null; },
