@@ -1470,12 +1470,14 @@
     boostUp: {c1: [0, 1, 0], c2: [0.481, 0.991, 0.481], hl: [0, 2.996, 0], hli: 1.7},
     boostDown: {c1: [1, 0.009, 0], c2: [1, 0.481, 0.476], hl: [16, 0, 0], hli: 1.7}
   };
-  // The floor cells of a power chain glow a little less than in the remake; the spinning cubes
-  // above them keep COLORS.power.
-  const POWER_FLOOR = 0.8;
+  // The floor cells of a power chain glow less than in the remake: their pulse a fifth dimmer, and
+  // the flash of a cell the snake drives over (HDR cyan times 3 there) about five times weaker,
+  // brighter than the pulse but no longer dazzling. The spinning cubes above keep COLORS.power.
+  const POWER_FLOOR = 0.8, POWER_FLASH = 0.4;
+  COLORS.powerFloor = {c1: COLORS.power.c1.map(v => v * POWER_FLOOR), c2: COLORS.power.c2.map(v => v * POWER_FLOOR),
+    hl: COLORS.power.hl.map(v => v * POWER_FLASH), hli: 1.7};
   // Green emission added to the spinning energy gems (not in the remake): a slight green glow.
   const GEM_GLOW = 'vec3(0.04, 0.4, 0.06)';
-  COLORS.powerFloor ={...COLORS.power, ...Object.fromEntries(['c1', 'c2', 'hl'].map(k => [k, COLORS.power[k].map(v => v * POWER_FLOOR)]))};
 
   const SIDES = [TOP, BOTTOM];
   function setColors(items, i, c) {
