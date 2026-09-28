@@ -365,8 +365,9 @@
     return m ? (m[1] ? 80 : +m[2]) : index % 36 + 1;
   }
   // ---------------------------------------------------------------- audio
-  // MusicManager: the groove music, one effect source (a new effect cuts the previous one) and
-  // one looping source for the power-chain buzz.
+  // MusicManager: the groove music and one effect source (a new effect cuts the previous one).
+  // Power chains sound as in the 2005 original: a short click on every cell, played over the
+  // other effects, and a chime when the chain is complete.
   class AudioManager {
     constructor(save) {
       this.save = save;
@@ -374,10 +375,10 @@
       this.buffers = {};
       this.fallback = {};
       this.current = null;
-      this.loop = null;
-      this.loopStopTimer = 0;
-      this.files = {energy: 'EnergyPickUp.wav', power: 'PowerPickUp_single.wav', spike: 'SpikeHit.wav', obstacle: 'ObstecleHit.wav',
+      this.files = {energy: 'EnergyPickUp.wav', spike: 'SpikeHit.wav', obstacle: 'ObstecleHit.wav',
         boost: 'Boost.wav', group: 'GroupComplete.wav', explosion: 'explosion.wav'};
+      // Effects of the 2005 original, in its ADPCM format (see GrooveMusic).
+      this.adpFiles = {pathCell: 'ppath_collect.adp', pathDone: 'ppath_comp.adp'};
       // Music is asked for by name: the level script (see Game.startMap), the menu and the game end.
       this.gameMusic = 'game';
       this.menuMusic = 'menu';
@@ -406,6 +407,13 @@
         for (const [id, file] of Object.entries(this.files)) {
           fetch(`audio/${file}`).then(r => r.arrayBuffer()).then(b => this.ctx.decodeAudioData(b)).then(buf => { this.buffers[id] = buf; })
             .catch(() => { this.fallback[id] = new Audio(`audio/${file}`); });
+        }
+        for (const [id, file] of Object.entries(this.adpFiles)) {
+          fetch(`audio/${file}`).then(r => r.arrayBuffer()).then(b => {
+            const pcm = decodeAdpcm(new Uint8Array(b)), buf = this.ctx.createBuffer(1, pcm.length, GROOVE_RATE);
+            buf.copyToChannel(pcm, 0);
+            this.buffers[id] = buf;
+          }).catch(() => { /* silent */ });
         }
       } catch (e) {
         this.ctx = null;
@@ -450,39 +458,19 @@
       src.start();
       return src;
     }
-    play(id) {
+    // over: play on top of the current effect instead of cutting it (the chain clicks).
+    play(id, over = false) {
       if (!this.unlocked) return;
+      if (over) { this.source(id, 0.49, false); return; }
       if (this.current) { try { this.current.stop(); } catch (e) { /* already stopped */ } this.current = null; }
       const src = this.source(id, 0.49, false);
       if (src) { this.current = src; return; }
       const el = this.fallback[id];
       if (el) { el.volume = clamp01(0.49 * this.save.data.sfx); el.currentTime = 0; el.play().catch(() => {}); }
     }
-    startLoop() {
-      if (this.loop || !this.unlocked) return;
-      this.loop = this.source('power', 0.514, true);
-      if (!this.loop) {
-        const el = this.fallback.power;
-        if (el) { el.loop = true; el.volume = clamp01(0.514 * this.save.data.sfx); el.play().catch(() => {}); this.loop = {stop: () => { el.pause(); el.loop = false; }}; }
-      }
-    }
-    // Like Unity's Invoke: the first call after the chain sets the stop and later calls leave it.
-    // The player calls this on every step off a chain; a step (0.25 s) is shorter than the delay,
-    // so moving the stop each time kept the buzz going long after the chain.
-    stopLoop(delay = 0.4) {
-      if (!this.loop || this.loopStopTimer) return;
-      this.loopStopTimer = setTimeout(() => this.killLoop(), delay * 1000);
-    }
-    killLoop() {
-      clearTimeout(this.loopStopTimer);
-      this.loopStopTimer = 0;
-      if (this.loop) { try { this.loop.stop(); } catch (e) { /* already stopped */ } }
-      this.loop = null;
-    }
     stopEffects() {
       if (this.current) { try { this.current.stop(); } catch (e) { /* already stopped */ } }
       this.current = null;
-      this.killLoop();
     }
   }
 
@@ -1333,7 +1321,7 @@
         else {
           this.combos = [it];
           num = it.group.id;
-          if (it.type === 'power') { g.resetMultiply(); g.audio.stopLoop(); }
+          if (it.type === 'power') g.resetMultiply();
         }
         if (this.combos.length === it.group.combo) {
           g.groupRemoved(it.group, it.type);
@@ -1343,7 +1331,7 @@
         g.pickUp(it, this);
       }
       this.currentCombo = num;
-      if (num === 0) { this.combos = []; g.audio.stopLoop(); }
+      if (num === 0) this.combos = [];
     }
     boostHitDetect() {
       const v = this.cellValue(this.side);
@@ -2027,8 +2015,7 @@
       if (type === 'power') {
         this.multiply++;
         this.ui.updateScore(this.shownScore, this.multiply);
-        this.audio.stopLoop();
-        this.audio.play('group');
+        this.audio.play('pathDone');
       }
       if (this.levels.removeGroup(group)) this.nextLevel();
     }
@@ -2038,7 +2025,8 @@
       const toward = V(player.oldpos.x, player.oldpos.y, -player.oldpos.z).sub(at);
       if (item.type === 'power') {
         item.hiddenUntil = this.time + 0.6;
-        this.audio.startLoop();
+        // The last cell of a chain has already been removed with it and gets the chime instead.
+        if (this.levels.items.get(this.levels.key(item.idx, item.side)) === item) this.audio.play('pathCell', true);
         this.particles.burst({at, dir: toward, count: 15, speed: 6, spread: 55 * DEG, life: 1, size: [0.3, 0.5], colorA: [0.21, 0.223, 0.991], colorB: [1, 1, 1]});
         this.addScore(SCORE_POWER);
       } else {
@@ -2069,7 +2057,6 @@
       this.save.data.cleared[def.key] = true;
       this.save.write();
       this.audio.stopEffects();
-      this.audio.killLoop();
       this.audio.play('group');
       const t = Math.max(0, Math.round(this.time - 1));
       $('complete-level').textContent = `${def.name} · ${def.kind}`;
@@ -2090,7 +2077,6 @@
       p.visible = false;
       this.audio.play('explosion');
       this.audio.stopMusic();
-      this.audio.killLoop();
       const pos = V(at.x, at.y, -at.z);
       // explosion_stylized_medium_demonFire: sphere flash, shock ring, fire bursts and debris.
       this.particles.burst({at: pos, count: 1, speed: 0, spread: 0, life: 1, size: 15, colorA: [0.5, 0.5, 0.5], colorB: [0.5, 0.5, 0.5], glow: true, grow: 1});
