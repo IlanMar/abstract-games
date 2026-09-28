@@ -1,8 +1,9 @@
 // Level 15 "Prism": a bright one-sided hex world after the hex levels of the classic set (Shielded,
 // Honeycomb, Twisted, Wave, Framed, Paperclip). An endless plane (the 48 x 60 tile repeats) with no holes,
-// so the snake never leaves the top face. The road heads north, north-east, south-east, north-west and
-// south-west in eighteen runs, turning both ways, with a wiggle north in the middle (N3 NW3 N3 NE3 N3)
-// where every bend has a short chain of its own. Every stretch borrows a figure from the classic hex levels:
+// so the snake never leaves the top face. The road climbs the tile three times, each pass a third of the
+// width further east, so that one lap crosses the whole tile; it heads north, north-east, south-east and
+// north-west in forty runs, turning both ways, with two wiggles north (N3 NW3 N3 NE3 N3) where every bend
+// has a short chain of its own. Every stretch borrows a figure from the classic hex levels:
 //   - shields: a lane of slow pads beside the road with boost gates every five cells, and wall hooks
 //     behind it (Shielded, where the chains run inside '=' shields);
 //   - frames: rectangles of wall with spike corners, open to the road (Framed);
@@ -18,7 +19,10 @@ const W = 48, H = 60, T = 'top';
 const g = new Grid(W, H, true);
 g.floor(0, 0, W - 1, H - 1);
 const start = [6, 56];
-const route = g.route(start, 'N14 NE8 N6 NW4 N4 NE10 SE6 NE4 N3 NW3 N3 NE3 N3 NW8 SW4 NW6 N6 NW6');
+// Three passes, each 60 rows north and 16 columns east: they run side by side and never meet.
+const route = g.route(start, 'N14 NE8 N6 NW4 N4 NE10 SE6 NE4 N3 NW3 N3 NE3 N3 NW8 N18'
+  + ' NE6 N10 NE3 SE4 NE3 N12 NW4 N8 NE10 N4 NW6 N14'
+  + ' NE6 N6 NE8 N6 NW4 N6 NE3 N3 NW3 N3 NE3 N11 NE3');
 const L = route.length;
 const dirs = ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
 const key = (c, r) => `${c},${r}`;
@@ -71,9 +75,13 @@ const M = {
   diamonds: ({u, d}) => { const q = Math.abs(mod(u, 6) - 3) + Math.abs(d - 4); return q === 0 ? '>' : q === 2 ? '^' : d >= 8 && mod(u, 3) === 0 ? '#' : '.'; },
   snakeroad: ({u, d}) => d === 2 ? (mod(u, 7) === 0 ? '.' : '#') : d === 3 ? '>' : d === 4 ? (mod(u + 3, 7) === 0 ? '.' : '#') : d >= 6 && mod(u - d, 3) === 0 ? '^' : '.'
 };
-// Stretch by stretch: N14 NE8 N6 NW4 N4 NE10 SE6 NE4 | N3 NW3 N3 NE3 N3 (the wiggle) | NW8 SW4 NW6 N6 NW6.
-const theme = ['shields', 'frames', 'twists', 'paperclips', 'waves', 'snakeroad', 'diamonds', 'frames',
-  'shields', 'shields', 'shields', 'shields', 'shields', 'twists', 'paperclips', 'waves', 'diamonds', 'snakeroad'];
+// Stretch by stretch, pass by pass (the wiggles take the shields).
+const theme = [
+  'shields', 'frames', 'twists', 'paperclips', 'waves', 'snakeroad', 'diamonds', 'frames',       // N14 .. NE4
+  'shields', 'shields', 'shields', 'shields', 'shields', 'twists', 'paperclips',                 // wiggle, NW8 N18
+  'waves', 'diamonds', 'frames', 'twists', 'paperclips', 'shields', 'waves', 'diamonds', 'snakeroad', 'frames', 'twists', 'waves',
+  'paperclips', 'waves', 'frames', 'snakeroad', 'twists', 'paperclips',                          // NE6 .. N6
+  'shields', 'shields', 'shields', 'shields', 'frames', 'waves', 'diamonds'];                   // wiggle, NE3 N11 NE3
 if (theme.length !== corners.length) throw new Error(`${corners.length} stretches, ${theme.length} themes`);
 const COMB_FROM = 8;                          // the open spaces far from the road take the honeycomb
 for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
