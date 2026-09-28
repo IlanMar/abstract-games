@@ -21,6 +21,7 @@
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
+  const ITEM_GLOW = 0.75;     // item cells, gems and cubes a quarter dimmer than the remake: their glow dazzled
   const MUSIC_GAIN = 0.2;     // groove output level: the beat scripts about as loud as the old menu music
   const FOG = 18;            // distance from the camera where the floor has faded to black
   const VIEW_MAX = 1.5;      // Options > View distance: 100% (the original) to 150%, 120% by default
@@ -795,7 +796,7 @@
           float inner = SHAPE(uv * 1.06 - 0.03, 0.8);
           vec3 c2 = mix(vCol2, vHL, thick);
           vec3 col = mix(vCol1, c2, abs(cos(uTime * 4.0))) * (1.0 + thick * (vFx.y - 1.0));
-          gl_FragColor = vec4((col * inner + border * vHL) * vFade, 1.0);
+          gl_FragColor = vec4((col * inner + border * vHL) * vFade * ${ITEM_GLOW.toFixed(2)}, 1.0);
         }`,
       side: T.DoubleSide,
       extensions: {derivatives: true}
@@ -1501,7 +1502,7 @@
         vertexShader: FADE + `varying vec3 vN; varying float vFade; void main(){ vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
           vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vFade = edgeFade(w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
         fragmentShader: `varying vec3 vN; varying float vFade; void main(){ vec3 n = normalize(vN); vec3 amb = vec3(0.168, 0.211, 0.290) + n.y * vec3(-0.015, 0.024, 0.099);
-          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade, 1.0); }`
+          gl_FragColor = vec4((vec3(0.651, 0.639, 0.137) * amb + vec3(0.493, 0.484, 0.104)) * vFade * ${ITEM_GLOW.toFixed(2)}, 1.0); }`
       });
       this.gems = new T.InstancedMesh(gemGeometry(), this.gemMat, 256);   // up to four copies of each item on a small map
       this.gems.frustumCulled = false;
