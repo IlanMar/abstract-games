@@ -464,11 +464,12 @@
       const src = this.source(id, 0.49);
       if (src) { this.current = src; return; }
       const el = this.fallback[id];
-      if (el) { el.volume = clamp01(0.49 * this.save.data.sfx); el.currentTime = 0; el.play().catch(() => {}); }
+      if (el) { el.volume = clamp01(0.49 * this.save.data.sfx); el.currentTime = 0; el.play().catch(() => {}); this.currentEl = el; }
     }
     stopEffects() {
       if (this.current) { try { this.current.stop(); } catch (e) { /* already stopped */ } }
-      this.current = null;
+      if (this.currentEl) this.currentEl.pause();
+      this.current = this.currentEl = null;
     }
   }
 
@@ -1948,6 +1949,8 @@
       document.addEventListener('visibilitychange', () => {
         this.audio.setHidden(document.hidden);
         if (document.hidden && this.isRunning()) this.pause(true);
+        // Level Complete does not go on to the next map by itself behind a hidden page.
+        if (document.hidden && this.state === 'complete') this.ui.stopCountdown();
         this.last = performance.now();
         this.drawnState = null;
       });
@@ -2032,6 +2035,7 @@
       this.timers = [];
       this.lost = false;
       this.time = 0;
+      this.roundFrom = 1;
       this.acc = 0;
       this.spectro = level ? 0 : 1;
       this.spectroTarget = this.spectro;
@@ -2166,7 +2170,8 @@
       this.save.write();
       this.audio.stopEffects();
       this.audio.play('group');
-      const t = Math.max(0, Math.round(this.time - 1));
+      // The time of this round: from the start (the first second is the fade-in) or from Stay on This Level.
+      const t = Math.max(0, Math.round(this.time - this.roundFrom));
       $('complete-level').textContent = `${def.name} · ${def.kind}`;
       $('complete-time').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
       $('complete-score').textContent = String(Math.max(0, this.score | 0)).padStart(6, '0');
@@ -2177,6 +2182,7 @@
     stayOnMap() {
       if (this.state !== 'complete') return;
       this.levels.load(0);
+      this.roundFrom = this.time;
       this.state = 'playing';
       this.ui.hideMenu();
       this.last = performance.now();
@@ -2418,6 +2424,7 @@
       // the map played last, and a tick marks the completed ones.
       const pick = $('level-select');
       pick.addEventListener('change', () => { this.selected = +pick.value; this.levelCard(); });
+      pick.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); game.startMap(this.selected); } });
       $('resume').addEventListener('click', () => game.pause(false));
       $('to-menu').addEventListener('click', () => game.toMenu());
       $('restart-level').addEventListener('click', () => game.restartLevel());
@@ -2449,7 +2456,7 @@
       color.addEventListener('input', () => { s.itemColor = +color.value; showColor(); game.drawnState = null; game.save.write(); });
       // The On/Off rows in Options: a row names its save key, each button a value.
       const apply = {
-        graphics: () => game.setGraphics(s.graphics),
+        graphics: () => { game.setGraphics(s.graphics); this.modernOnly(); },
         grading: () => { game.fx.grade = s.grading !== 'off'; game.drawnState = null; },
         popups: () => { if (s.popups === 'off') while (this.popups.length) this.popups.shift().remove(); },
         boostButton: () => this.boostButton(),
@@ -2465,6 +2472,7 @@
         this.settingButtons();
       }));
       this.settingButtons();
+      this.modernOnly();
       // Reset All Data asks for a second tap within three seconds, then starts the game afresh.
       const reset = $('reset-data');
       let armed = null;
@@ -2483,6 +2491,11 @@
       document.querySelectorAll('[data-setting]').forEach(row => {
         for (const b of row.querySelectorAll('button')) b.classList.toggle('selected', b.dataset.value === this.game.save.data[row.dataset.setting]);
       });
+    }
+    // Classic graphics draw no glow and no colour grading: their controls are greyed out.
+    modernOnly() {
+      const off = this.game.save.data.graphics === 'classic';
+      for (const el of document.querySelectorAll('#item-glow, #item-color, [data-setting="grading"] button')) el.disabled = off;
     }
     // Options > Score: Off hides the score, its bar and the multiplier at the top; the layout stays.
     scoreShown() { $('hud').classList.toggle('no-score', this.game.save.data.scoreShown === 'off'); }
@@ -2526,10 +2539,18 @@
       if (panel === 'new') {
         const s = this.game.save.data, last = MAPS.findIndex(m => m.key === s.lastMap);
         if (last >= 0) this.selected = last;
-        $('level-select').replaceChildren(...MAPS.map((m, i) => new Option(`${i + 1}. ${m.name} · ${m.kind}${s.cleared[m.key] ? ' ✓' : ''}`, i)));
+        // Two groups, the remake's worlds and the classic levels; the names carry their own numbers.
+        const groups = [['Levels', m => !m.key.startsWith('classic-')], ['Classic', m => m.key.startsWith('classic-')]].map(([label, has]) => {
+          const group = document.createElement('optgroup');
+          group.label = label;
+          MAPS.forEach((m, i) => { if (has(m)) group.append(new Option(`${m.name} · ${m.kind}${s.cleared[m.key] ? ' ✓' : ''}`, i)); });
+          return group;
+        });
+        $('level-select').replaceChildren(...groups);
         this.levelCard();
       }
-      const first = document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
+      // With a keyboard, Select Level opens on the list: the arrows pick a map and Enter plays it.
+      const first = panel === 'new' ? $('level-select') : document.querySelector(`#menu .panel[data-panel="${panel}"] button:not(:disabled)`);
       if (first && matchMedia('(hover: hover)').matches) first.focus({preventScroll: true});
     }
     levelCard() {
@@ -2541,17 +2562,23 @@
       const count = $('level-count');
       count.textContent = `${this.selected + 1} / ${MAPS.length}`;
       if (this.game.save.data.cleared[def.key]) count.insertAdjacentHTML('beforeend', ' · <span class="done">Completed</span>');
-      // The preview is square: a wide or tall map is centred on black.
+      // The preview is square: a wide or tall map is centred on black. A cell is 2 x 2 pixels, and on a
+      // hex map the odd columns sit a pixel lower, half a cell, as the cells lie in the game. A hex
+      // map repeats every zPeriod rows: its last data row is never played and is not drawn.
       const cv = $('level-preview'), ctx = cv.getContext('2d');
-      const size = Math.max(map.w, map.h), ox = (size - map.w) >> 1, oy = (size - map.h) >> 1;
+      const rows = map.zPeriod, pw = map.w * 2, ph = rows * 2 + (map.hex ? 1 : 0);
+      const size = Math.max(pw, ph), ox = (size - pw) >> 1, oy = (size - ph) >> 1;
       cv.width = cv.height = size;
-      const img = ctx.createImageData(size, size);
-      for (let x = 0; x < map.w; x++) for (let y = 0; y < map.h; y++) {
-        const idx = x * map.h + y, o = ((oy + map.h - 1 - y) * size + ox + x) * 4, v = map.pristine[TOP][idx];
-        const c = map.color[TOP];
-        if (v === -1) { img.data[o + 3] = 255; continue; }
-        const k = v === 1 || v === 2 ? 0.45 : 1;
-        img.data[o] = c[idx * 3] * k; img.data[o + 1] = c[idx * 3 + 1] * k; img.data[o + 2] = c[idx * 3 + 2] * k; img.data[o + 3] = 255;
+      const img = ctx.createImageData(size, size), c = map.color[TOP];
+      for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+      for (let x = 0; x < map.w; x++) for (let y = 0; y < rows; y++) {
+        const idx = x * map.h + y, v = map.pristine[TOP][idx];
+        if (v === -1) continue;
+        const k = v === 1 || v === 2 ? 0.45 : 1, top = oy + (rows - 1 - y) * 2 + (map.hex ? x & 1 : 0);
+        for (let o of [0, 1, size, size + 1]) {
+          o = (o + top * size + ox + x * 2) * 4;
+          img.data[o] = c[idx * 3] * k; img.data[o + 1] = c[idx * 3 + 1] * k; img.data[o + 2] = c[idx * 3 + 2] * k;
+        }
       }
       ctx.putImageData(img, 0, 0);
     }
