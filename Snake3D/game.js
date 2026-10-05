@@ -16,8 +16,7 @@
   const FIXED_DT = 0.02;
   const TOUCH_FPS = 60;      // Options > Frame rate > Auto: the cap on touch screens; a mouse screen runs at its own rate
   const COMPLETE_COUNTDOWN = 10;   // Level Complete: seconds before Continue goes on to the next map by itself
-  const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5,
-    dash: 1.5};              // the on-screen boost button (not in the original): 1.5 times faster while held
+  const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5};
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
     height: 4.64, back: 4.5, pitch: 44.54 * DEG, fov: 60, bloom: 2.5};
   const RANGE = 12;          // MapGenerator.RenderingRange 25 around the head
@@ -1317,9 +1316,10 @@
     clearControls() { this.rots[0] = this.rots[1] = 0; }
     speedUp() { this.returnOrgSpeed = true; this.game.cameraRig.fadeAmbientIn(); }
     frameUpdate() {
-      // PlayerController.Update (Android variant): boost while a key or two fingers are held.
+      // PlayerController.Update (Android variant): boost while a key or two fingers are held. The
+      // on-screen boost button (not in the original) is the boost key.
       if (this.isDead || this.tailTouched || !this.onGame) { this.boost = false; return; }
-      const held = this.boostKey || this.boost;
+      const held = this.boostKey || this.dash || this.boost;
       if (held && !this.boostedOn) { this.game.audio.play('boost'); this.boostedOn = true; }
       if (held || (this.speedHold && !this.slowDown)) this.speedUp();
       else this.boostedOn = false;
@@ -1330,12 +1330,7 @@
       this.cellAge += dt;
       this.time += dt * this.speed;
       let target = PLAYER.org, rate = PLAYER.returning;
-      if (this.returnOrgSpeed) { target = (this.boostKey && this.slowDown) ? PLAYER.org : (this.slowDown ? PLAYER.min : PLAYER.max); rate = PLAYER.accel; }
-      // The boost button raises whatever speed the snake is heading for, but never past a boost pad.
-      if (this.dash && this.onGame && !this.tailTouched) {
-        target = Math.min(PLAYER.max, target * PLAYER.dash);
-        if (this.speed < target) rate = PLAYER.accel;
-      }
+      if (this.returnOrgSpeed) { target = ((this.boostKey || this.dash) && this.slowDown) ? PLAYER.org : (this.slowDown ? PLAYER.min : PLAYER.max); rate = PLAYER.accel; }
       this.speed = lerp(this.speed, target, dt * rate);
       if (this.time < 1) return;
       this.step();
