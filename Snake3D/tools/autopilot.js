@@ -60,14 +60,18 @@ window.autopilot = (() => {
           const order = chainOrder(grp);
           if (!order) return {error: `chain ${grp.id} is not a path`};
           if (order.length !== grp.combo) return {error: `chain ${grp.id} has ${order.length} of ${grp.combo} cells`};
-          goals.push({kind: 'chain', side: grp.side, orders: [order, order.slice().reverse()]});
+          goals.push({kind: 'chain', id: grp.id, side: grp.side, orders: [order, order.slice().reverse()]});
         }
       }
       if (!goals.length) return {turns: []};
       stay = stay && goals.every(q => q.side === s.side);
+      // A chain the snake is already on counts the cells it has taken (the plan may start mid-chain).
+      let ph0 = '';
+      goals.forEach((goal, gi) => { if (goal.kind === 'chain' && goal.id === s.combo && s.taken && goal.side === s.side && !s.inVoid)
+        for (let e = 0; e < 2; e++) if (!ph0 && goal.orders[e][s.taken - 1] === s.idx) ph0 = `${gi}:${e}:${s.taken}`; });
       const key = (st, ph) => `${((st.idx * n + st.ci) * 2 + (st.di > 0 ? 1 : 0)) * 2 + (st.inVoid ? 1 : 0)}|${ph}`;
-      const queue = [{...s, ph: '', d: 0, parent: null}];
-      const seen = new Set([key(s, '')]);
+      const queue = [{...s, ph: ph0, d: 0, parent: null}];
+      const seen = new Set([key(s, ph0)]);
       for (let qi = 0; qi < queue.length; qi++) {
         if (queue.length > maxNodes) return {error: 'search too large'};
         const cur = queue[qi];
@@ -121,7 +125,7 @@ window.autopilot = (() => {
         if (now !== planned || !turns.length) {
           const avoid = new Set();
           for (let i = 1; i < p.trail.length - 1; i++) { const t = p.trail[i]; avoid.add(g.map.index(t.x, t.z) * 2 + (t.y > 0 ? 0 : 1)); }
-          const here = {x: p.pos.x, z: p.pos.z, ci: p.ci, di: p.dirIndex, inVoid: p.beenRev, idx: g.map.index(p.pos.x, p.pos.z), side: p.side};
+          const here = {x: p.pos.x, z: p.pos.z, ci: p.ci, di: p.dirIndex, inVoid: p.beenRev, idx: g.map.index(p.pos.x, p.pos.z), side: p.side, combo: p.currentCombo, taken: p.combos.length};
           const r = planner(g).plan(here, avoid, p.trail.length);
           if (r.error) errors.add(`stage ${g.levels.index + 1}: ${r.error}`);
           turns = r.turns || [];
@@ -262,7 +266,7 @@ window.autopilot = (() => {
       const plannedTurn = () => {
         const avoid = new Set();
         for (let i = 1; i < p.trail.length - 1; i++) { const t = p.trail[i]; avoid.add(map.index(t.x, t.z) * 2 + (t.y > 0 ? 0 : 1)); }
-        const here = {x: p.pos.x, z: p.pos.z, ci: p.ci, di: p.dirIndex, inVoid: p.beenRev, idx: map.index(p.pos.x, p.pos.z), side: p.side};
+        const here = {x: p.pos.x, z: p.pos.z, ci: p.ci, di: p.dirIndex, inVoid: p.beenRev, idx: map.index(p.pos.x, p.pos.z), side: p.side, combo: p.currentCombo, taken: p.combos.length};
         const r = pl.plan(here, avoid, p.trail.length, true);
         return (r.turns || pl.plan(here, avoid, p.trail.length).turns) || [];
       };

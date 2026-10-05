@@ -7,7 +7,7 @@ const path = require('path');
 const {hexStep, MOVES, isItem} = require('./grid');
 const floorOrItem = ch => ch === '.' || isItem(ch);
 
-const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'reef', 'observatory', 'aqueduct', 'origami', 'railyard', 'looking-glass', 'glacier', 'bulkheads', 'undertow', 'wires', 'lattice', 'barcode', 'catacombs', 'pinball', 'orbit', 'quilt', 'kaleidoscope', 'sieve', 'docks', 'rapids', 'meander', 'snowflake', 'reactor', 'synthwave', 'lava', 'rainbow', 'red-star', 'stars-stripes', 'twelve-stars', 'ziggurat', 'skyway', 'helter-skelter', 'classic'];
+const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'reef', 'observatory', 'aqueduct', 'origami', 'railyard', 'looking-glass', 'glacier', 'bulkheads', 'undertow', 'wires', 'lattice', 'barcode', 'catacombs', 'pinball', 'orbit', 'quilt', 'kaleidoscope', 'sieve', 'docks', 'rapids', 'meander', 'snowflake', 'reactor', 'synthwave', 'lava', 'rainbow', 'red-star', 'stars-stripes', 'twelve-stars', 'ziggurat', 'skyway', 'helter-skelter', 'furnace', 'switchback', 'rollercoaster', 'classic'];
 
 function check(world) {
   const {grid: g, start} = world;
