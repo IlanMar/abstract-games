@@ -244,7 +244,7 @@ window.autopilot = (() => {
         if (portrait) { phone.position.copy(g.camera.position); phone.quaternion.copy(g.camera.quaternion); phone.updateMatrixWorld(); cam = phone; }
         for (const it of g.levels.items.values()) {
           if (!it.inView || it.side !== p.side) continue;
-          v.set(it.wx, it.side === 0 ? 0.5 : -0.5, -it.wz).project(cam);
+          v.set(it.wx, map.lift(it.wx, it.wz) + (it.side === 0 ? 0.5 : -0.5), -it.wz).project(cam);
           if (v.z < 1 && Math.abs(v.x) < 0.97 && Math.abs(v.y) < 0.97) return true;
         }
         return false;

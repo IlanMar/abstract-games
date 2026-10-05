@@ -7,7 +7,7 @@ const path = require('path');
 const {hexStep, MOVES, isItem} = require('./grid');
 const floorOrItem = ch => ch === '.' || isItem(ch);
 
-const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'reef', 'observatory', 'aqueduct', 'origami', 'railyard', 'looking-glass', 'glacier', 'bulkheads', 'undertow', 'wires', 'lattice', 'barcode', 'catacombs', 'pinball', 'orbit', 'quilt', 'kaleidoscope', 'sieve', 'docks', 'rapids', 'meander', 'snowflake', 'reactor', 'synthwave', 'lava', 'rainbow', 'red-star', 'stars-stripes', 'twelve-stars', 'classic'];
+const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'reef', 'observatory', 'aqueduct', 'origami', 'railyard', 'looking-glass', 'glacier', 'bulkheads', 'undertow', 'wires', 'lattice', 'barcode', 'catacombs', 'pinball', 'orbit', 'quilt', 'kaleidoscope', 'sieve', 'docks', 'rapids', 'meander', 'snowflake', 'reactor', 'synthwave', 'lava', 'rainbow', 'red-star', 'stars-stripes', 'twelve-stars', 'ziggurat', 'classic'];
 
 function check(world) {
   const {grid: g, start} = world;
@@ -46,6 +46,11 @@ function check(world) {
       if (e.list.length > 1 && (ends !== 2 || degree.some(d => d > 2 || d === 0))) errors.push(`stage ${i + 1}: chain ${ch} is not a single path`);
     }
   });
+  if (world.height) {
+    if (g.hex) errors.push('relief is for square worlds only');
+    if (world.height.length !== g.h || world.height.some(row => row.length !== g.w)) errors.push('height is not the size of the world');
+    else if (world.height.some(row => row.some(v => v < 0 || v > 8.75 || Math.round(v * 4) !== v * 4))) errors.push('height must be quarters of a cell from 0 to 8.75');
+  }
   return errors;
 }
 
@@ -53,6 +58,11 @@ function source(world) {
   const q = s => `'${s}'`;
   const layer = l => `[${l.map(v => Array.isArray(v) ? `[${v.join(', ')}]` : q(v)).join(', ')}]`;
   const rows = side => world.grid.ascii(side).map(r => '      ' + q(r)).join(',\n');
+  // Relief: world.height[r][c] in cells, written as one base-36 digit per cell in quarters of a cell.
+  const relief = world.height ? `
+    height: [
+${world.height.map(row => '      ' + q(row.map(v => Math.round(v * 4).toString(36)).join(''))).join(',\n')}
+    ],` : '';
   return `  {
     key: ${q(world.key)}, name: ${q(world.name)}, kind: ${q(world.kind)}, hex: ${world.grid.hex},
     start: [${world.start[0]}, ${world.start[1]}, ${q(world.start[2])}],
@@ -60,7 +70,7 @@ function source(world) {
     colors: {
       top: [${world.colors.top.map(layer).join(', ')}],
       bottom: [${world.colors.bottom.map(layer).join(', ')}]
-    },
+    },${relief}
     top: [
 ${rows('top')}
     ],
@@ -87,6 +97,8 @@ if (!process.argv.includes('--check')) {
    ' ' hole (the snake wraps round its edge to the other face), '.' floor, '#' wall, '^' spike,
    '>' boost pad, '=' slow pad. Letters are items on that face: every cell of an upper-case letter is a
    crystal, all cells of one lower-case letter form a chain that has to be taken in one run.
+   height (optional, square worlds): the relief, one base-36 digit per cell in quarters of a cell; only the
+   drawing is lifted, the play stays on the flat grid.
    stages: the letters of every stage in play order. start: [column, line, heading] on top.
    colors: gradient layers per face, [from, to, x | y | d(iagonal) | r(adial), optional [c0, l0, c1, l1]]. */
 window.SNAKES_LEVELS = [

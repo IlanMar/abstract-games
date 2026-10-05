@@ -62,6 +62,41 @@
       this.color = [bytes(src.color), bytes(src.revColor)];
       this.levels = src.levels;
       this.start = src.start;
+      this.corner = null;
+      if (src.height && !hex) this.relief(src.height);
+    }
+    // Relief (square worlds only): the play stays on the flat grid, only the drawing is lifted. The
+    // floor is a sheet through the corners of the cells, each corner the mean height of the cells round
+    // it, so ramps are smooth. surf is the height of the sheet at a cell centre, gx and gz its slope.
+    relief(height) {
+      const w = this.w, h = this.h, top = this.env[TOP];
+      this.corner = new Float32Array(w * h * 4);
+      this.surf = new Float32Array(w * h);
+      this.gx = new Float32Array(w * h);
+      this.gz = new Float32Array(w * h);
+      for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) {
+        const idx = x * h + y;
+        for (let k = 0; k < 4; k++) {
+          const sx = k & 1 ? 1 : -1, sy = k & 2 ? 1 : -1;
+          let sum = 0, n = 0;
+          for (const [ox, oy] of [[0, 0], [sx, 0], [0, sy], [sx, sy]]) {
+            const j = mod(x + ox, w) * h + mod(y + oy, h);
+            if (top[j] !== -1) { sum += height[j]; n++; }
+          }
+          this.corner[idx * 4 + k] = n ? sum / n : height[idx];
+        }
+        const c = this.corner, o = idx * 4;
+        this.surf[idx] = (c[o] + c[o + 1] + c[o + 2] + c[o + 3]) / 4;
+        this.gx[idx] = (c[o + 1] + c[o + 3] - c[o] - c[o + 2]) / 2;
+        this.gz[idx] = (c[o + 2] + c[o + 3] - c[o] - c[o + 1]) / 2;
+      }
+    }
+    // Height of the sheet at the centre of a cell, and its normal in three.js coordinates (z negated).
+    lift(wx, wz) { return this.corner ? this.surf[this.index(wx, wz)] : 0; }
+    normal(wx, wz, out) {
+      if (!this.corner) return out.set(0, 1, 0);
+      const idx = this.index(wx, wz);
+      return out.set(-this.gx[idx], 1, this.gz[idx]).normalize();
     }
     reset() { this.env = this.pristine.map(a => a.slice()); }
     dataX(wx) { return mod(Math.round(wx) + DATA_OFFSET, this.w); }
@@ -131,7 +166,17 @@
     const [sc, sr, sd] = def.start;
     const start = {x: sc - DATA_OFFSET, z: rows - 1 - sr - DATA_OFFSET - (def.hex && (sc & 1) ? 0.5 : 0),
       ci: (def.hex ? HEX_DIRS : SQUARE_DIRS).indexOf(sd)};
-    return {w, h, env: env[0], revEnv: env[1], color: color[0], revColor: color[1], levels, start};
+    // Relief: one base-36 digit per cell, in steps of heightUnit (a quarter of a cell by default).
+    let height = null;
+    if (def.height) {
+      height = new Float32Array(w * h);
+      const unit = def.heightUnit || 0.25;
+      for (let r = 0; r < rows; r++) for (let x = 0; x < w; x++) {
+        const ch = def.height[r][x];
+        if (ch && ch !== ' ') height[x * h + rows - 1 - r] = parseInt(ch, 36) * unit;
+      }
+    }
+    return {w, h, env: env[0], revEnv: env[1], color: color[0], revColor: color[1], levels, start, height};
   }
 
   // Start a selected stage close to its active group, on the correct side of the map.
@@ -750,17 +795,23 @@
     #endif
   `;
 
+  // Relief: the four corner heights of a cell (x-z-, x+z-, x-z+, x+z+ in world terms; three.js z is the
+  // world z negated), one per corner vertex of the quad. Zero in a flat world and in a hex one.
+  const RELIEF = `
+    attribute vec4 iH;
+    float relief(vec3 p){ return p.x > 0.0 ? (p.z < 0.0 ? iH.w : iH.y) : (p.z < 0.0 ? iH.z : iH.x); }
+  `;
   function tileMaterial(hex) {
     return new T.ShaderMaterial({
       defines: hex ? {HEX: 1} : {},
       uniforms: {uRev: {value: 0}, uSpectro: {value: 1}, ...fadeUniforms()},
-      vertexShader: `
+      vertexShader: RELIEF + `
         attribute vec3 iPos; attribute vec3 iTop; attribute vec3 iRev; attribute vec2 iFx;
         uniform float uRev;
         varying vec2 vUv; varying vec3 vCol; varying vec2 vFx; varying vec3 vWorld;
         void main(){
           vUv = uv; vCol = mix(iTop, iRev, uRev); vFx = iFx;
-          vec3 p = position + iPos; vWorld = p;
+          vec3 p = position + iPos; p.y += relief(position); vWorld = p;
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: SHAPES + FADE + CLASSIC_LIGHT + `
@@ -797,7 +848,7 @@
         ...fadeUniforms()},
       vertexShader: FADE + `
         #ifdef INSTANCED
-          attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx;
+          attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx; attribute vec4 iH;
         #endif
         uniform vec3 uCol1, uCol2, uHL; uniform float uHLI, uThick;
         varying vec2 vUv; varying vec3 vCol1, vCol2, vHL; varying vec2 vFx; varying float vFade; varying vec3 vW;
@@ -806,6 +857,7 @@
           #ifdef INSTANCED
             vCol1 = iCol1; vCol2 = iCol2; vHL = iHL; vFx = iFx;
             vec4 w = vec4(position + iPos, 1.0);
+            w.y += position.x > 0.0 ? (position.z < 0.0 ? iH.w : iH.y) : (position.z < 0.0 ? iH.z : iH.x);
           #else
             vCol1 = uCol1; vCol2 = uCol2; vHL = uHL; vFx = vec2(uThick, uHLI);
             #ifdef USE_INSTANCING
@@ -1551,10 +1603,10 @@
       const hex = map.hex;
       this.maxCells = 1400;      // (2 * 18 + 1)^2 cells at the longest view distance
       this.tileMat = tileMaterial(hex);
-      this.tiles = this.instanced(hexOrQuad(hex), this.tileMat, {iPos: 3, iTop: 3, iRev: 3, iFx: 2});
+      this.tiles = this.instanced(hexOrQuad(hex), this.tileMat, {iPos: 3, iTop: 3, iRev: 3, iFx: 2, iH: 4});
       this.tiles.mesh.renderOrder = 2;
       this.itemMat = flashMaterial(hex, true);
-      this.itemTiles = this.instanced(hexOrQuad(hex), this.itemMat, {iPos: 3, iCol1: 3, iCol2: 3, iHL: 3, iFx: 2});
+      this.itemTiles = this.instanced(hexOrQuad(hex), this.itemMat, {iPos: 3, iCol1: 3, iCol2: 3, iHL: 3, iFx: 2, iH: 4});
       this.propMats = [propMaterial(0.953), propMaterial(0.502)];
       this.obstacles = [0, 1].map(side => this.props(obstacleGeometry(hex, side === BOTTOM), this.propMats[0]));
       this.spikes = [0, 1].map(side => this.props(spikeGeometry(hex, side === BOTTOM), this.propMats[1]));
@@ -1586,6 +1638,8 @@
       this.one = V(1, 1, 1);
       this.v = V();
       this.w = {x: 0, z: 0};
+      this.n = V();
+      this.up = V(0, 1, 0);
       this.counts = [0, 0, 0, 0];
       this.fadeMats = [this.tileMat, this.itemMat, this.quadMat, this.gemMat, ...this.propMats];
     }
@@ -1624,6 +1678,7 @@
       counts.fill(0);
       const glowing = game.glowItems;
       const ct = map.color[TOP], cr = map.color[BOTTOM], zBase = Math.round(hz);
+      const cor = map.corner;   // relief: corner heights of every cell, or null in a flat world
       for (let x = hx - range; x <= hx + range; x++) {
         const odd = hex && (map.dataX(x) & 1);
         for (let k = zBase - range; k <= zBase + range; k++) {
@@ -1644,6 +1699,7 @@
             if (ddx * ddx + ddz * ddz < r * r) { inten = 1; break; }
           }
           tiles.iFx.setXY(n, thick, inten);
+          if (cor) tiles.iH.setXYZW(n, cor[idx * 4], cor[idx * 4 + 1], cor[idx * 4 + 2], cor[idx * 4 + 3]);
           n++;
           for (const side of SIDES) {
             const v = map.env[side][idx];
@@ -1651,7 +1707,9 @@
               const list = v === 1 ? this.obstacles[side] : this.spikes[side];
               const key = (v === 1 ? 0 : 2) + side;
               if (counts[key] < list.instanceMatrix.count) {
-                this.m.makeTranslation(x, 0, tz);
+                // On a slope a block stands square to the sheet.
+                if (cor) this.m.compose(this.v.set(x, map.surf[idx], tz), this.q2.setFromUnitVectors(this.up, map.normal(x, z, this.n)), this.one);
+                else this.m.makeTranslation(x, 0, tz);
                 list.setMatrixAt(counts[key]++, this.m);
               }
             } else if ((v === 5 || v === 6) && ni < this.maxCells) {
@@ -1659,6 +1717,7 @@
               items.iPos.setXYZ(ni, x, side === TOP ? 0.006 : -0.006, tz);
               setColors(items, ni, c);
               items.iFx.setXY(ni, thick, c.hli);
+              if (cor) items.iH.setXYZW(ni, cor[idx * 4], cor[idx * 4 + 1], cor[idx * 4 + 2], cor[idx * 4 + 3]);
               ni++;
             }
           }
@@ -1691,13 +1750,15 @@
             items.iPos.setXYZ(ni, x, 0.005 * sgn, -z);
             setColors(items, ni, c);
             items.iFx.setXY(ni, fx, c.hli);
+            if (cor) { const o = it.idx * 4; items.iH.setXYZW(ni, cor[o], cor[o + 1], cor[o + 2], cor[o + 3]); }
             ni++;
-            this.v.set(x, 0.5 * sgn, -z);
+            const lift = cor ? map.surf[it.idx] : 0;
+            this.v.set(x, lift + 0.5 * sgn, -z);
             if (it.type === 'energy' && ng < 256) {
               this.m.compose(this.v, this.q, this.one);
               this.gems.setMatrixAt(ng++, this.m);
             } else if (it.type === 'power' && nq < 512 && time >= it.hiddenUntil) {
-              this.v.y = 0.46 * sgn;
+              this.v.y = lift + 0.46 * sgn;
               this.m.compose(this.v, this.q2.setFromAxisAngle(this.axis, spin + 1.3), this.one);
               this.quads.setMatrixAt(nq++, this.m);
             }
@@ -1771,8 +1832,12 @@
         if (map.isVoid(p.x, p.z)) {
           const ref = trail[k + 1] || trail[k - 1] || p;
           const dx = p.x - ref.x, dz = p.z - ref.z;
-          out.set(ref.x + dx * 0.85, 0, -(ref.z + dz * 0.85));
+          out.set(ref.x + dx * 0.85, map.lift(ref.x, ref.z), -(ref.z + dz * 0.85));
           n.set(dx, 0, -dz).normalize();
+        } else if (map.corner) {
+          // Relief: half a cell off the sheet along its normal, on the face the snake is on.
+          map.normal(p.x, p.z, n).multiplyScalar(p.y >= 0 ? 1 : -1);
+          out.set(p.x, map.lift(p.x, p.z), -p.z).addScaledVector(n, Math.abs(p.y));
         } else {
           out.set(p.x, p.y, -p.z);
           n.set(0, p.y >= 0 ? 1 : -1, 0);
@@ -2132,8 +2197,8 @@
     }
     pickUp(item, player) {
       const sgn = item.side === TOP ? 1 : -1;
-      const at = V(item.wx, 0.5 * sgn, -item.wz);
-      const toward = V(player.oldpos.x, player.oldpos.y, -player.oldpos.z).sub(at);
+      const at = V(item.wx, this.map.lift(item.wx, item.wz) + 0.5 * sgn, -item.wz);
+      const toward = V(player.oldpos.x, player.oldpos.y + this.map.lift(player.oldpos.x, player.oldpos.z), -player.oldpos.z).sub(at);
       if (item.type === 'power') {
         item.hiddenUntil = this.time + 0.6;
         // The last cell of a chain has already been removed with it and gets the chime instead.
@@ -2190,7 +2255,7 @@
     nextMap() { this.startMap((this.mapIndex + 1) % MAPS.length); }
     spikeBurst(target, side) {
       const sgn = side === TOP ? 1 : -1;
-      this.particles.burst({at: V(target.x, 0.25 * sgn, -target.z), dir: V(0, sgn, 0), count: 12, speed: [4, 4.47], spread: 38 * DEG, life: 2, size: [0.6, 1],
+      this.particles.burst({at: V(target.x, this.map.lift(target.x, target.z) + 0.25 * sgn, -target.z), dir: V(0, sgn, 0), count: 12, speed: [4, 4.47], spread: 38 * DEG, life: 2, size: [0.6, 1],
         colorA: [0.14, 0.16, 0.2], colorB: [0.22, 0.25, 0.3], gravity: 0.4 * sgn});
     }
     onDeath(at) {
@@ -2199,7 +2264,7 @@
       p.visible = false;
       this.audio.play('explosion');
       this.audio.stopMusic();
-      const pos = V(at.x, at.y, -at.z);
+      const pos = V(at.x, at.y + this.map.lift(at.x, at.z), -at.z);
       // explosion_stylized_medium_demonFire: sphere flash, shock ring, fire bursts and debris.
       this.particles.burst({at: pos, count: 1, speed: 0, spread: 0, life: 1, size: 15, colorA: [0.5, 0.5, 0.5], colorB: [0.5, 0.5, 0.5], glow: true, grow: 1});
       this.particles.burst({at: pos, count: 1, speed: 0, spread: 0, life: 0.4, size: 1, colorA: [0.4, 0.4, 0.4], colorB: [0.4, 0.4, 0.4], glow: true, grow: 9});
