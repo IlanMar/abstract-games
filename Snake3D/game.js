@@ -66,8 +66,8 @@
     }
     // Relief: the play stays on the flat grid, only the drawing is lifted. In a square world the floor
     // is a sheet through the corners of the cells, each corner the mean height of the cells round it, so
-    // ramps are smooth. A hex cell is a tilted plane through its own height, its slope fitted to its six
-    // neighbours; corner then holds (height, slope x, slope z, 0). surf is the height at a cell centre,
+    // ramps are smooth. A hex cell is a tilted plane through the mean height of it and its neighbours,
+    // its slope fitted to them; corner then holds (height, slope x, slope z, 0). surf is the height at a cell centre,
     // gx and gz its slope (world x and z).
     relief(height) {
       const w = this.w, h = this.h, top = this.env[TOP];
@@ -80,16 +80,19 @@
         for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) {
           const idx = x * h + y, h0 = height[idx];
           this.worldOf(x, y, 0, 0, p);
-          let sx = 0, sz = 0;
+          let sx = 0, sz = 0, sum = h0, n = 1;
           for (const [cx, cz] of HEX_CONTROL) {
             const dx = cx, dz = 1 / cz, j = this.index(p.x + dx, p.z + dz);
             const d = top[j] === -1 ? 0 : height[j] - h0;
             sx += dx * d; sz += dz * d;
+            if (top[j] !== -1) { sum += height[j]; n++; }
           }
-          this.surf[idx] = h0;
+          // The centre is the mean of the cell and its neighbours: a long gentle ramp stored in quarter
+          // steps then climbs evenly instead of in little stairs.
+          this.surf[idx] = sum / n;
           this.gx[idx] = sx / 4;              // the sums of dx * dx and dz * dz over the six neighbours
           this.gz[idx] = sz / 3;
-          this.corner.set([h0, this.gx[idx], this.gz[idx], 0], idx * 4);
+          this.corner.set([this.surf[idx], this.gx[idx], this.gz[idx], 0], idx * 4);
         }
         return;
       }
