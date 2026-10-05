@@ -47,13 +47,18 @@
 | 31 | Level 31 · Catacombs | [`tools/worlds/catacombs.js`](tools/worlds/catacombs.js) | квадрат 48×48 | трудный на `tools/road.js`: земля — только туннели (до 3 клеток от дороги на любой стороне), стены на расстоянии 2 с нишами и шипами, ниши-тупики за углами из правила выбега; две лестницы поворотов, ямы на месте нырков |
 | 32 | Level 32 · Pinball | [`tools/worlds/pinball.js`](tools/worlds/pinball.js) | гекс 44×48 | выше среднего на `tools/road.js`: гекс-плоскость-стол, бамперы `g.ring` на дальних клетках, флипперы — две косые стенки перед каждым нырком по `local().u`, дорожки ускорителей у дороги; снизу косые рельсы тормозов |
 | 33 | Level 33 · Orbit | [`tools/worlds/orbit.js`](tools/worlds/orbit.js) | гекс 48×56 | трудный над пустотой на `tools/road.js`: три концентрических гекс-кольца (радиус 6, 12, 18) вокруг планеты, спицы прокладывает сама дорога; ход по кольцу — повороты на 60° через каждые 6 клеток (а SE→SW — уже 120°, так нельзя) |
-| 34–75 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
+| 34 | Level 34 · Quilt | [`tools/worlds/quilt.js`](tools/worlds/quilt.js) | квадрат 48×48 | лёгкий односторонний на `tools/road.js` без нырков: лоскутное одеяло из квадратов 8×8, у каждого свой узор из площадок, «пуговицы»-стены не ближе 4 клеток; простая раскладка этапов (цепочка через каждый угол, между ними кристалл, тройка кристаллов или короткая цепочка) прямо в скрипте |
+| 35 | Level 35 · Kaleidoscope | [`tools/worlds/kaleidoscope.js`](tools/worlds/kaleidoscope.js) | гекс 48×48 | лёгкий-средний односторонний гекс на `tools/road.js`: розетки `g.ring` с шестью шипами на самых дальних местах, зеркальная отделка по `(u, d)`, `autoStages` без нырков с `pair: 2` |
+| 36 | Level 36 · Sieve | [`tools/worlds/sieve.js`](tools/worlds/sieve.js) | квадрат 48×48 | средний: дорожки через каждые 8 клеток, дыры 3×3 в шахматном порядке между ними; нырок — короткий отвод с дорожки в дыру, обратный путь идёт через промежуток, где дыры нет; пробки из стен там, где дыры нет |
+| 37 | Level 37 · Docks | [`tools/worlds/docks.js`](tools/worlds/docks.js) | квадрат 48×40 | выше среднего: набережная и четыре пирса над пустотой, каждый пирс проходится дважды — туда по одной стороне, обратно по другой; тупиковые слипы и лодки-островки (`boatAt`) в стороне от дороги |
+| 38 | Level 38 · Rapids | [`tools/worlds/rapids.js`](tools/worlds/rapids.js) | гекс 40×48 | трудный, уровень скорости: ускорители на свободных клетках дороги, если до поворота 8 клеток и больше, тормоза за 1–3 клетки до поворота; стены каньона на длинных прямых, водовороты `g.disk` на месте нырков |
+| 39–80 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
 
 Карты 0 (Initial) и 1 (Hexagone) — оригинальные, из `nsnakes-data.js`. Движок, который читает миры, лежит в [`game.js`](game.js) (см. [«Где это в игре»](#где-это-в-игре)).
 
 ## Классические уровни — главный образец
 
-Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 34–75). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
+Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 39–80). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
 
 ```bash
 node -e "const w={};new Function('window',require('fs').readFileSync('levels.js','utf8'))(w);const L=w.SNAKES_LEVELS.find(l=>l.kind==='Vents');L.top.forEach((r,i)=>console.log(r+'  |  '+L.bottom[i]))"
@@ -106,7 +111,7 @@ node tools/build-levels.js          # проверить и записать lev
 
 ```js
 document.head.append(Object.assign(document.createElement('script'), {src: 'tools/autopilot.js'}))
-autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19 Reef, 20 Observatory, 21 Aqueduct, 22 Origami, 23 Railyard, 24 Looking Glass, 25 Glacier, 26 Bulkheads, 27 Undertow, 28 Wires, 29 Lattice, 30 Barcode, 31 Catacombs, 32 Pinball, 33 Orbit, 34–75 классические
+autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19 Reef, 20 Observatory, 21 Aqueduct, 22 Origami, 23 Railyard, 24 Looking Glass, 25 Glacier, 26 Bulkheads, 27 Undertow, 28 Wires, 29 Lattice, 30 Barcode, 31 Catacombs, 32 Pinball, 33 Orbit, 34 Quilt, 35 Kaleidoscope, 36 Sieve, 37 Docks, 38 Rapids, 39–80 классические
 autopilot.route(2)   // найдёт ли дорогу игрок, который не знает карту
 ```
 
@@ -228,7 +233,7 @@ autopilot.route(2)   // найдёт ли дорогу игрок, которы�
 
 ## API `road.js`
 
-Для мира, где дорога идёт по обеим сторонам, как в средней и поздней классике (Wires, Lattice, Bulkheads, Undertow, Barcode, Catacombs, Pinball, Orbit). Начинайте с похожего скрипта: `wires.js` (квадрат над пустотой), `lattice.js` (гекс над пустотой), `bulkheads.js` (сплошная плита в рамке пустоты), `undertow.js` и `pinball.js` (гекс-плоскость с дырами), `barcode.js` (квадратная плоскость с щелями), `catacombs.js` (туннели: земля только вокруг дороги), `orbit.js` (кольца вокруг центра, дорога как спицы).
+Для мира, где дорога идёт по обеим сторонам, как в средней и поздней классике (Wires, Lattice, Bulkheads, Undertow, Barcode, Catacombs, Pinball, Orbit). Начинайте с похожего скрипта: `wires.js` (квадрат над пустотой), `lattice.js` (гекс над пустотой), `bulkheads.js` (сплошная плита в рамке пустоты), `undertow.js` и `pinball.js` (гекс-плоскость с дырами), `barcode.js` (квадратная плоскость с щелями), `catacombs.js` (туннели: земля только вокруг дороги), `orbit.js` (кольца вокруг центра, дорога как спицы), `sieve.js` (решётка дыр), `docks.js` (пирсы, каждый туда и обратно), `rapids.js` (дорога из ускорителей). Без нырков `road()` даёт и односторонний мир: `quilt.js`, `kaleidoscope.js`.
 
 - `road(g, [c, r, ход], 'N12 E8 D W7 S10 ...')` — путь из отрезков ходов, как `g.route`. `D` — нырок: следующая клетка — дыра или пустота за концом земли, змейка падает на другую сторону и едет обратно. Поэтому отрезок после `D` идёт в обратную сторону (W после E, SW после NE) и длиной не меньше 6 клеток: выныривая, игрок должен успеть увидеть цель до поворота. Путь возвращается к старту сверху и не пересекает себя на одной стороне. Землю под путём скрипт мира кладёт сам, клетки нырков оставляет пустыми.
 - У пути есть `at(i)` (`{side, c, r, h, hole}`), `length`, `cells`, `corners`, `dives`, `seg`, `has(side, c, r)`, `nbrs(c, r)` и `local(side, c, r)`: расстояние `d` до дороги на этой стороне, номер клетки `i`, координаты вдоль и поперёк `u`, `v` и участок `s`.
