@@ -63,17 +63,37 @@
       this.levels = src.levels;
       this.start = src.start;
       this.corner = null;
-      if (src.height && !hex) this.relief(src.height);
+      if (src.height) this.relief(src.height);
     }
-    // Relief (square worlds only): the play stays on the flat grid, only the drawing is lifted. The
-    // floor is a sheet through the corners of the cells, each corner the mean height of the cells round
-    // it, so ramps are smooth. surf is the height of the sheet at a cell centre, gx and gz its slope.
+    // Relief: the play stays on the flat grid, only the drawing is lifted. In a square world the floor
+    // is a sheet through the corners of the cells, each corner the mean height of the cells round it, so
+    // ramps are smooth. A hex cell is a tilted plane through its own height, its slope fitted to its six
+    // neighbours; corner then holds (height, slope x, slope z, 0). surf is the height at a cell centre,
+    // gx and gz its slope (world x and z).
     relief(height) {
       const w = this.w, h = this.h, top = this.env[TOP];
       this.corner = new Float32Array(w * h * 4);
       this.surf = new Float32Array(w * h);
       this.gx = new Float32Array(w * h);
       this.gz = new Float32Array(w * h);
+      if (this.hex) {
+        const p = {x: 0, z: 0};
+        for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) {
+          const idx = x * h + y, h0 = height[idx];
+          this.worldOf(x, y, 0, 0, p);
+          let sx = 0, sz = 0;
+          for (const [cx, cz] of HEX_CONTROL) {
+            const dx = cx, dz = 1 / cz, j = this.index(p.x + dx, p.z + dz);
+            const d = top[j] === -1 ? 0 : height[j] - h0;
+            sx += dx * d; sz += dz * d;
+          }
+          this.surf[idx] = h0;
+          this.gx[idx] = sx / 4;              // the sums of dx * dx and dz * dz over the six neighbours
+          this.gz[idx] = sz / 3;
+          this.corner.set([h0, this.gx[idx], this.gz[idx], 0], idx * 4);
+        }
+        return;
+      }
       for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) {
         const idx = x * h + y;
         for (let k = 0; k < 4; k++) {
@@ -797,9 +817,17 @@
 
   // Relief: the four corner heights of a cell (x-z-, x+z-, x-z+, x+z+ in world terms; three.js z is the
   // world z negated), one per corner vertex of the quad. Zero in a flat world and in a hex one.
-  const RELIEF = `
+  // A hex cell is a plane instead: iH = (height, slope along world x, slope along world z, 0).
+  const RELIEF_AT = `
+    #ifdef HEX
+      #define RELIEF(p) (iH.x + iH.y * (p).x - iH.z * (p).z)
+    #else
+      #define RELIEF(p) ((p).x > 0.0 ? ((p).z < 0.0 ? iH.w : iH.y) : ((p).z < 0.0 ? iH.z : iH.x))
+    #endif
+  `;
+  const RELIEF = RELIEF_AT + `
     attribute vec4 iH;
-    float relief(vec3 p){ return p.x > 0.0 ? (p.z < 0.0 ? iH.w : iH.y) : (p.z < 0.0 ? iH.z : iH.x); }
+    float relief(vec3 p){ return RELIEF(p); }
   `;
   function tileMaterial(hex) {
     return new T.ShaderMaterial({
@@ -846,7 +874,7 @@
       defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}, solid ? {SOLID: 1} : {}),
       uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0},
         ...fadeUniforms()},
-      vertexShader: FADE + `
+      vertexShader: FADE + RELIEF_AT + `
         #ifdef INSTANCED
           attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx; attribute vec4 iH;
         #endif
@@ -857,7 +885,7 @@
           #ifdef INSTANCED
             vCol1 = iCol1; vCol2 = iCol2; vHL = iHL; vFx = iFx;
             vec4 w = vec4(position + iPos, 1.0);
-            w.y += position.x > 0.0 ? (position.z < 0.0 ? iH.w : iH.y) : (position.z < 0.0 ? iH.z : iH.x);
+            w.y += RELIEF(position);
           #else
             vCol1 = uCol1; vCol2 = uCol2; vHL = uHL; vFx = vec2(uThick, uHLI);
             #ifdef USE_INSTANCING

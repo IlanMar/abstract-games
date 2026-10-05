@@ -7,7 +7,7 @@ const path = require('path');
 const {hexStep, MOVES, isItem} = require('./grid');
 const floorOrItem = ch => ch === '.' || isItem(ch);
 
-const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'reef', 'observatory', 'aqueduct', 'origami', 'railyard', 'looking-glass', 'glacier', 'bulkheads', 'undertow', 'wires', 'lattice', 'barcode', 'catacombs', 'pinball', 'orbit', 'quilt', 'kaleidoscope', 'sieve', 'docks', 'rapids', 'meander', 'snowflake', 'reactor', 'synthwave', 'lava', 'rainbow', 'red-star', 'stars-stripes', 'twelve-stars', 'ziggurat', 'classic'];
+const WORLDS = ['weave', 'spiral', 'hive', 'garden', 'blocks', 'candy', 'carnival', 'sunburst', 'kite-parade', 'causeway', 'mosaic', 'foundry', 'launchpad', 'prism', 'lanterns', 'clockwork', 'tightrope', 'reef', 'observatory', 'aqueduct', 'origami', 'railyard', 'looking-glass', 'glacier', 'bulkheads', 'undertow', 'wires', 'lattice', 'barcode', 'catacombs', 'pinball', 'orbit', 'quilt', 'kaleidoscope', 'sieve', 'docks', 'rapids', 'meander', 'snowflake', 'reactor', 'synthwave', 'lava', 'rainbow', 'red-star', 'stars-stripes', 'twelve-stars', 'ziggurat', 'skyway', 'classic'];
 
 function check(world) {
   const {grid: g, start} = world;
@@ -47,7 +47,6 @@ function check(world) {
     }
   });
   if (world.height) {
-    if (g.hex) errors.push('relief is for square worlds only');
     if (world.height.length !== g.h || world.height.some(row => row.length !== g.w)) errors.push('height is not the size of the world');
     else if (world.height.some(row => row.some(v => v < 0 || v > 8.75 || Math.round(v * 4) !== v * 4))) errors.push('height must be quarters of a cell from 0 to 8.75');
   }
@@ -97,7 +96,7 @@ if (!process.argv.includes('--check')) {
    ' ' hole (the snake wraps round its edge to the other face), '.' floor, '#' wall, '^' spike,
    '>' boost pad, '=' slow pad. Letters are items on that face: every cell of an upper-case letter is a
    crystal, all cells of one lower-case letter form a chain that has to be taken in one run.
-   height (optional, square worlds): the relief, one base-36 digit per cell in quarters of a cell; only the
+   height (optional): the relief, one base-36 digit per cell in quarters of a cell; only the
    drawing is lifted, the play stays on the flat grid.
    stages: the letters of every stage in play order. start: [column, line, heading] on top.
    colors: gradient layers per face, [from, to, x | y | d(iagonal) | r(adial), optional [c0, l0, c1, l1]]. */

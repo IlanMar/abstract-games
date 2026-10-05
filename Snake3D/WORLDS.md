@@ -62,13 +62,14 @@
 | 46 | Level 46 · Stars and Stripes | [`tools/worlds/stars-stripes.js`](tools/worlds/stars-stripes.js) | квадрат 60×52 | трудный, Америка: флаг из 13 полос, в крыже 50 звёзд-дыр в одну клетку; дорога петляет между звёздами и четыре раза ныряет в звёзды на краю крыжа; разделители полос из стен, фейерверки из шипов; тормозов нет |
 | 47 | Level 47 · Twelve Stars | [`tools/worlds/twelve-stars.js`](tools/worlds/twelve-stars.js) | квадрат 56×56 | трудный, Европа: круг из 12 золотых звёзд на синей площади, четыре звезды открыты насквозь; колоннада по обе стороны дороги (`d === 3`, каждая третья клетка), статуи на постаментах на дальних клетках, круг светится ускорителями |
 | 48 | Level 48 · Ziggurat | [`tools/worlds/ziggurat.js`](tools/worlds/ziggurat.js) | квадрат 40×40 | трудный, первый мир с рельефом (`height`): ступенчатая пирамида над пустотой, три яруса и вершина по 1,5 клетки, пандусы по две клетки; подъёмы по пандусам, шахта на вершине, спуск и круг по основанию по изнанке; зубцы на краях ярусов, ступени из тормозов на пандусах |
-| 49–90 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
+| 49 | Level 49 · Skyway | [`tools/worlds/skyway.js`](tools/worlds/skyway.js) | гекс 48×56 | трудный, гекс с рельефом в духе поздней классики: острова на разной высоте (0 → 4,5) над пустотой, мосты в три клетки — пандусы; высоты островов заданы, остальная суша сглажена усреднением соседей; огни поезда — ускорители там, где дорога поднимается, тормоза там, где спускается; площади-кольца шипов и стен, длинные цепочки, запуски и ворота `>=` |
+| 50–91 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
 
 Карты 0 (Initial) и 1 (Hexagone) — оригинальные, из `nsnakes-data.js`. Движок, который читает миры, лежит в [`game.js`](game.js) (см. [«Где это в игре»](#где-это-в-игре)).
 
 ## Классические уровни — главный образец
 
-Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 49–90). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
+Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 50–91). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
 
 ```bash
 node -e "const w={};new Function('window',require('fs').readFileSync('levels.js','utf8'))(w);const L=w.SNAKES_LEVELS.find(l=>l.kind==='Vents');L.top.forEach((r,i)=>console.log(r+'  |  '+L.bottom[i]))"
@@ -109,11 +110,11 @@ node -e "const w={};new Function('window',require('fs').readFileSync('levels.js'
 
 ## Рельеф
 
-Квадратный мир может быть не плоским: скрипт экспортирует `height`, массив `[строка][колонка]` высот клеток в клетках (четверти клетки, от 0 до 8,75), см. `ziggurat.js`. Сборщик пишет его в `levels.js` строками base-36. Игра по-прежнему идёт по плоской сетке: правила, этапы, автопилот и `road.js` рельефа не замечают, он только рисуется. Пол — лист через углы клеток (угол — среднее соседних клеток, не пустоты), поэтому пандусы гладкие; змейка, стены, шипы, предметы и частицы поднимаются на высоту листа и встают по его нормали, камера едет за головой.
+Мир может быть не плоским: скрипт экспортирует `height`, массив `[строка][колонка]` высот клеток в клетках (четверти клетки, от 0 до 8,75), см. `ziggurat.js` (квадрат) и `skyway.js` (гекс). Сборщик пишет его в `levels.js` строками base-36. Игра по-прежнему идёт по плоской сетке: правила, этапы, автопилот и `road.js` рельефа не замечают, он только рисуется. В квадрате пол — лист через углы клеток (угол — среднее соседних клеток, не пустоты), поэтому пандусы гладкие; в гексе каждая плитка — наклонная плоскость через свою высоту с наклоном по шести соседям; змейка, стены, шипы, предметы и частицы поднимаются на высоту листа и встают по его нормали, камера едет за головой.
 
 - Пандус не круче 0,5 клетки высоты на клетку (около 26°), иначе за гребнем не видно дороги. Обрывов нет: соседние клетки различаются только через пандус.
 - Один этаж — одна высота: мостов и дороги над дорогой нет.
-- Гекс-миры рельеф не поддерживают (`build-levels.js` выдаст ошибку).
+- Чтобы мосты между островами были ровными пандусами, задайте высоту только островам, а остальную сушу сгладьте (каждая клетка — среднее соседей, несколько тысяч проходов), как в `skyway.js`. Скрипт печатает самый крутой шаг дороги.
 
 ## Цикл работы
 
@@ -129,7 +130,7 @@ node tools/build-levels.js          # проверить и записать lev
 
 ```js
 document.head.append(Object.assign(document.createElement('script'), {src: 'tools/autopilot.js'}))
-autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19 Reef, 20 Observatory, 21 Aqueduct, 22 Origami, 23 Railyard, 24 Looking Glass, 25 Glacier, 26 Bulkheads, 27 Undertow, 28 Wires, 29 Lattice, 30 Barcode, 31 Catacombs, 32 Pinball, 33 Orbit, 34 Quilt, 35 Kaleidoscope, 36 Sieve, 37 Docks, 38 Rapids, 39 Meander, 40 Snowflake, 41 Reactor, 42 Synthwave, 43 Lava, 44 Rainbow, 45 Red Star, 46 Stars and Stripes, 47 Twelve Stars, 48 Ziggurat, 49–90 классические
+autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19 Reef, 20 Observatory, 21 Aqueduct, 22 Origami, 23 Railyard, 24 Looking Glass, 25 Glacier, 26 Bulkheads, 27 Undertow, 28 Wires, 29 Lattice, 30 Barcode, 31 Catacombs, 32 Pinball, 33 Orbit, 34 Quilt, 35 Kaleidoscope, 36 Sieve, 37 Docks, 38 Rapids, 39 Meander, 40 Snowflake, 41 Reactor, 42 Synthwave, 43 Lava, 44 Rainbow, 45 Red Star, 46 Stars and Stripes, 47 Twelve Stars, 48 Ziggurat, 49 Skyway, 50–91 классические
 autopilot.route(2)   // найдёт ли дорогу игрок, который не знает карту
 ```
 
