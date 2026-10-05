@@ -1,107 +1,72 @@
-// Level 3 "Spiral": three 3-wide rings joined into a spiral that winds into a central arena. The way
-// in runs on top (boost straights, braking before corners, gates, a slalom); from the arena the snake
-// drops to the underside and winds back out on the other face of the same rings.
+// Level 3 "Spiral": an easy-to-medium level on a giant lollipop. A square world, an endless candy plate
+// (the 36 x 36 tile repeats) with a square spiral swirled into it, arms six cells apart, and a hole at
+// the heart. The road winds into the spiral on top, drops through the heart, winds back out along the
+// same swirl underneath and comes up through a hole by the start.
+//   - the swirl: a candy wall between the arms, three cells from the road on either side, broken into
+//     short sticks with a sprinkle (a spike) in every gap;
+//   - the long straights get a crystal, a boost strip and a long chain; the arms shorten as the spiral
+//     tightens, so the bends come quicker and quicker towards the heart.
+// Colour style, lollipop: a gold road over a swirl of pink and rose, with a white candy line between the
+// arms; underneath a grape swirl of violet and purple with a pink line.
+// Stages: long chains along the arms, a chain round every bend, a lead-in chain right up to each hole
+// and the next chain where the snake comes out.
 const {Grid} = require('../grid');
-const W = 44, H = 44;
+const {road, autoStages, placeStages, putPads} = require('../road');
+const W = 36, H = 36, T = 'top', B = 'bottom';
 const g = new Grid(W, H);
+g.floor(0, 0, W - 1, H - 1);
+const start = [4, 32];
+const runs =
+  'N28 E28 S28 W22 N22 E16 S16 W10 N8 D'         // top: into the spiral and down through the heart
+  + ' S9 E10 N16 W16 S22 E22 N28 W28 S29 D'      // underside: back out along the same swirl, down through the hole
+  + ' N2';                                       // top: up into the start
+// The holes: three cells across and two along, at the dive cells.
+const probe = road(new Grid(W, H), [...start, 'N'], runs);
+const holes = new Set();
+for (const p of probe.cells) if (p.hole) {
+  const [ac, ar] = g.move(p.c, p.r, p.h), across = p.h === 'N' || p.h === 'S' ? 'E' : 'N', back = {E: 'W', N: 'S'}[across];
+  for (const q of [[p.c, p.r], [ac, ar]]) for (const o of [q, g.move(...q, across), g.move(...q, back)]) { g.hole(...o); holes.add(o.join(',')); }
+}
+const R = road(g, [...start, 'N'], runs);
+const mod = (a, n) => ((a % n) + n) % n;
+const key = (c, r) => `${c},${r}`;
+for (const p of R.cells) if (!p.hole && g.get(T, p.c, p.r) === ' ') throw new Error(`the road runs over a hole at ${p.c},${p.r}`);
 
-// Rings: bands of 3 cells, 2-cell gaps between rings.
-for (const o of [1, 6, 11]) { const f = W - 1 - o; g.floor(o, o, f, f); g.hole(o + 3, o + 3, f - 3, f - 3); }
-g.floor(16, 16, 27, 27);                     // arena
-// Bridges from each ring's left band to the next ring, and cuts that turn the rings into a spiral.
-g.floor(4, 6, 5, 8); g.hole(1, 4, 3, 5);     // ring 0 -> ring 1
-g.floor(9, 11, 10, 13); g.hole(6, 9, 8, 10); // ring 1 -> ring 2
-g.floor(14, 16, 15, 18); g.hole(11, 14, 13, 15); // ring 2 -> arena
+// Past every corner three cells straight on stay clear on its face, with the cells round them.
+const runout = {top: new Set(), bottom: new Set()};
+for (const k of R.corners) {
+  const p = R.at(k);
+  let q = [p.c, p.r];
+  for (let n = 0; n < 3; n++) { q = g.move(...q, p.h); for (const o of [q, ...R.nbrs(...q)]) runout[p.side].add(key(...o)); }
+}
 
-const T = 'top', B = 'bottom';
-// ---- ring 0 (top side, clockwise)
-g.rect(T, 16, 2, 23, 2, '>');                // boost straight
-g.rect(T, 35, 1, 37, 3, '=');                // brake before the corner
-for (const [c, r] of [[40, 10], [41, 16], [40, 22], [41, 28]]) g.rect(T, c, r, c + 1, r, '^');   // slalom teeth
-g.set(T, 30, 40, '#'); g.set(T, 30, 42, '#');  // gates with a moving opening
-g.set(T, 22, 41, '#'); g.set(T, 22, 42, '#');
-g.set(T, 14, 40, '#'); g.set(T, 14, 41, '#');
-g.rect(T, 2, 24, 2, 33, '>');                // boost up the left band
-g.rect(T, 1, 9, 3, 11, '=');                 // brake before the bridge
-// ---- ring 1
-g.rect(T, 12, 6, 31, 6, '^');                // spiked outer edge; the underside spikes the inner edge
-g.rect(B, 12, 8, 31, 8, '^');
-g.hole(36, 16); g.hole(36, 26);              // portholes
-g.set(T, 28, 36, '^'); g.set(T, 24, 36, '^');
-g.rect(T, 7, 24, 7, 30, '>');
-g.rect(T, 6, 14, 8, 15, '=');
-// ---- ring 2
-g.rect(T, 14, 12, 19, 12, '>');
-g.rect(T, 30, 15, 32, 16, '=');
-g.set(T, 30, 21, '#'); g.set(T, 32, 21, '#');
-g.rect('both', 16, 30, 27, 30, '^'); g.rect('both', 16, 32, 27, 32, '^');   // a spiked channel on both faces
-// ---- arena
-g.set(T, 27, 20, '^'); g.set(T, 27, 22, '^');   // the lead-in to the edge can only be run eastwards
-g.rect(B, 19, 20, 24, 20, '^'); g.rect(B, 19, 23, 24, 23, '^');
-// ---- underside of the way out
-g.rect(B, 12, 20, 12, 24, '>');              // ring 2 left band, heading south
-g.set(B, 31, 21, '#');                       // ring 2 right band: the gate the other way round
-g.rect(B, 16, 13, 28, 13, '^');              // ring 2 top band: spiked inner edge
-g.rect(B, 6, 26, 8, 27, '=');
-g.rect(B, 12, 36, 22, 36, '^');              // ring 1 bottom band: spiked middle row east of the corner
-g.rect(B, 12, 37, 22, 37, '.');
-g.set(B, 14, 42, '#'); g.set(B, 22, 40, '#'); g.set(B, 22, 42, '#'); g.set(B, 30, 40, '#');
-g.rect(B, 41, 33, 41, 37, '>');              // ring 0 right band, heading north
-g.rect(B, 38, 1, 39, 3, '=');
+// ---- the swirl, face by face.
+for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const side of [T, B]) {
+  if (g.get(T, c, r) === ' ') continue;
+  const q = R.local(side, c, r);
+  if (q.d === 0) continue;
+  let ch = '.';
+  if (R.nbrs(c, r).some(o => holes.has(o.join(',')))) ch = '=';           // round a hole
+  else if (q.d === 3) ch = mod(q.u, 6) < 3 ? '#' : mod(q.u, 6) === 4 ? '^' : '.';   // a candy stick, a sprinkle
+  if (/[#^]/.test(ch) && (q.d <= 1 || runout[side].has(key(c, r)))) ch = '.';
+  if (ch !== '.') g.set(side, c, r, ch);
+}
+for (const p of R.cells) if (!p.hole) for (const q of R.nbrs(p.c, p.r))
+  if (/[#^]/.test(g.get(p.side, ...q))) throw new Error(`an obstacle at ${q} on ${p.side} stands next to the road`);
 
-// ---- stages: inward on top
-g.stage(['gem', T, 14, 2]);                                   // 1
-g.stage(['chain', T, 25, 2, 'EEEEEEE']);                      // 2  straight after the boost pads
-g.stage(['gem', T, 41, 5]);                                   // 3  corner after braking
-g.stage(['chain', T, 42, 8, 'SSSSWWSSSSS']);                  // 4  slalom
-g.stage(['gem', T, 42, 24]);                                  // 5
-g.stage(['chain', T, 40, 27, 'SSSSSS']);                      // 6
-g.stage(['gem', T, 37, 41]);                                  // 7
-g.stage(['chain', T, 33, 41, 'WWWWWW']);                      // 8  first gate
-g.stage(['gem', T, 22, 40]);                                  // 9  in the second gate
-g.stage(['chain', T, 17, 42, 'WWWWWWW']);                     // 10 third gate
-g.stage(['gem', T, 2, 37]);                                   // 11
-g.stage(['chain', T, 2, 23, 'NNNNNNN']);                      // 12 after the boost, brake for the bridge
-g.stage(['gem', T, 5, 7]);                                    // 13 bridge to ring 1
-g.stage(['chain', T, 10, 7, 'EEEEEEEEEEE']);                  // 14 under the spiked edge
-g.stage(['gem', T, 33, 7]);                                   // 15
-g.stage(['chain', T, 37, 10, 'SSSSSSSSSS']);                  // 16 past the first porthole
-g.stage(['gem', T, 35, 26]);                                  // 17 inside of the second porthole
-g.stage(['chain', T, 31, 36, 'WWNWWSWWSWWNWW']);              // 18 wave between spikes
-g.stage(['gem', T, 7, 33]);                                   // 19 past the corner
-g.stage(['chain', T, 7, 23, 'NNNNNN']);                       // 20
-g.stage(['gem', T, 10, 12]);                                  // 21 bridge to ring 2
-g.stage(['chain', T, 20, 12, 'EEEEEEE']);                     // 22
-g.stage(['gems', T, [[31, 13], [31, 21]]]);                   // 23 round the corner and into the gate
-g.stage(['chain', T, 27, 31, 'WWWWWWWWWW']);                  // 24 spiked channel
-g.stage(['gem', T, 12, 27]);                                  // 25
-g.stage(['chain', T, 12, 20, 'NNNEEEE']);                     // 26 onto the arena bridge
-g.stage(['gems', T, [[19, 17], [22, 17], [24, 19]]]);         // 27 across the arena and round to the south
-g.stage(['chain', T, 24, 20, 'SEEE']);                        // 28 a lead-in that turns east and runs off the arena's edge
-// ---- and out on the underside
-g.stage(['gem', B, 27, 21]);                                  // 29 waits just past the edge
-g.stage(['chain', B, 24, 17, 'WWWWWWWWWW']);                  // 30 back over the bridge
-g.stage(['gem', B, 12, 26]);                                  // 31
-g.stage(['chain', B, 17, 31, 'EEEEEEEEEE']);                  // 32 the channel from below
-g.stage(['gem', B, 30, 23]);                                  // 33 straight up the band, through the gate
-g.stage(['chain', B, 27, 11, 'WWWWWWWWWWW']);                 // 34
-g.stage(['chain', B, 7, 16, 'SSSSSSS']);                      // 35
-g.stage(['gem', B, 9, 36]);                                   // 36
-g.stage(['chain', B, 11, 35, 'EEEEEEEEEE']);                  // 37
-g.stage(['gem', B, 30, 35], ['chain', B, 35, 24, 'NNNNNNNNNN']);   // 38 round the corner
-g.stage(['gem', B, 33, 7]);                                   // 39
-g.stage(['chain', B, 31, 7, 'WWWWWWWWW']);                    // 40
-g.stage(['gems', B, [[12, 7], [5, 7]]], ['chain', B, 1, 12, 'SSSSSSSSSS']);   // 41 over the bridge, then south
-g.stage(['gem', B, 2, 41]);                                   // 42
-g.stage(['chain', B, 15, 41, 'EEEEEE']);                      // 43
-g.stage(['gems', B, [[31, 41], [41, 38]]]);                   // 44
-g.stage(['chain', B, 42, 27, 'NNNNNNNNNN']);                  // 45
-g.stage(['gem', B, 41, 4]);                                   // 46
-g.stage(['chain', B, 32, 2, 'WWWWWWW'], ['gems', B, [[15, 2], [5, 2]]]);   // 47 then over the west edge to the start
+// ---- stages.
+const {stages, pads} = autoStages(R, {lengths: [9, 12], lead: [7, 4], launch: 16});
+placeStages(g, R, stages);
+putPads(g, R, pads);
 
-const colors = {
-  top: [['#ff7a28', '#7a28c8', 'r']],
-  bottom: [['#2cc8a8', '#a01e6e', 'r']]
+// ---- colours, lollipop: pink and rose on top, grape underneath, a candy line between the arms.
+const colorOf = side => (c, r) => {
+  const q = R.local(side, c, r);
+  if (q.d === 0) return mod(q.i, 4) < 2 ? '#ff6600' : '#ff5a28';
+  if (q.d >= 3) return side === T ? '#ffffff' : '#ff0088';
+  if (side === T) return mod(q.s, 2) ? '#ff0088' : '#ff44aa';
+  return mod(q.s, 2) ? '#6600cc' : '#cc00ff';
 };
-module.exports = {key: 'spiral', name: 'Level 3', kind: 'Spiral', start: [3, 2, 'E'], colors, grid: g};
+const colors = {top: g.layers(colorOf(T)), bottom: g.layers(colorOf(B))};
+module.exports = {key: 'spiral', name: 'Level 3', kind: 'Spiral', start: [...start, 'N'], colors, grid: g};
 if (require.main === module) console.log(g.print());
