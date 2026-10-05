@@ -26,7 +26,6 @@ const R = road(g, [...start, 'N'],
   + ' N11 E4 S32 E8 N8');      // top: up through the gap, the long east lane south and round into the start
 const mod = (a, n) => ((a % n) + n) % n;
 const key = (c, r) => `${c},${r}`;
-const OTHER = {top: B, bottom: T};
 
 // Holes and plugs, centred where the gaps between lanes cross: a hole where (i + j) is even.
 const cheb = (c, r, cc, cr) => Math.max(Math.abs(mod(c - cc + W / 2, W) - W / 2), Math.abs(mod(r - cr + H / 2, H) - H / 2));

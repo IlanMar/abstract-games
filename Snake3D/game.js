@@ -186,14 +186,13 @@
     const [sc, sr, sd] = def.start;
     const start = {x: sc - DATA_OFFSET, z: rows - 1 - sr - DATA_OFFSET - (def.hex && (sc & 1) ? 0.5 : 0),
       ci: (def.hex ? HEX_DIRS : SQUARE_DIRS).indexOf(sd)};
-    // Relief: one base-36 digit per cell, in steps of heightUnit (a quarter of a cell by default).
+    // Relief: one base-36 digit per cell, in quarters of a cell.
     let height = null;
     if (def.height) {
       height = new Float32Array(w * h);
-      const unit = def.heightUnit || 0.25;
       for (let r = 0; r < rows; r++) for (let x = 0; x < w; x++) {
         const ch = def.height[r][x];
-        if (ch && ch !== ' ') height[x * h + rows - 1 - r] = parseInt(ch, 36) * unit;
+        if (ch && ch !== ' ') height[x * h + rows - 1 - r] = parseInt(ch, 36) / 4;
       }
     }
     return {w, h, env: env[0], revEnv: env[1], color: color[0], revColor: color[1], levels, start, height};
@@ -815,31 +814,27 @@
     #endif
   `;
 
-  // Relief: the four corner heights of a cell (x-z-, x+z-, x-z+, x+z+ in world terms; three.js z is the
-  // world z negated), one per corner vertex of the quad. Zero in a flat world and in a hex one.
-  // A hex cell is a plane instead: iH = (height, slope along world x, slope along world z, 0).
-  const RELIEF_AT = `
+  // Relief, the height of a vertex of a floor cell from its attribute iH (zero in a flat world). A
+  // square cell has the four corner heights (x-z-, x+z-, x-z+, x+z+ in world terms; three.js z is the
+  // world z negated); a hex cell is a plane, iH = (height, slope along world x, slope along world z, 0).
+  const RELIEF = `
     #ifdef HEX
       #define RELIEF(p) (iH.x + iH.y * (p).x - iH.z * (p).z)
     #else
       #define RELIEF(p) ((p).x > 0.0 ? ((p).z < 0.0 ? iH.w : iH.y) : ((p).z < 0.0 ? iH.z : iH.x))
     #endif
   `;
-  const RELIEF = RELIEF_AT + `
-    attribute vec4 iH;
-    float relief(vec3 p){ return RELIEF(p); }
-  `;
   function tileMaterial(hex) {
     return new T.ShaderMaterial({
       defines: hex ? {HEX: 1} : {},
       uniforms: {uRev: {value: 0}, uSpectro: {value: 1}, ...fadeUniforms()},
       vertexShader: RELIEF + `
-        attribute vec3 iPos; attribute vec3 iTop; attribute vec3 iRev; attribute vec2 iFx;
+        attribute vec3 iPos; attribute vec3 iTop; attribute vec3 iRev; attribute vec2 iFx; attribute vec4 iH;
         uniform float uRev;
         varying vec2 vUv; varying vec3 vCol; varying vec2 vFx; varying vec3 vWorld;
         void main(){
           vUv = uv; vCol = mix(iTop, iRev, uRev); vFx = iFx;
-          vec3 p = position + iPos; p.y += relief(position); vWorld = p;
+          vec3 p = position + iPos; p.y += RELIEF(position); vWorld = p;
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: SHAPES + FADE + CLASSIC_LIGHT + `
@@ -874,7 +869,7 @@
       defines: Object.assign(hex ? {HEX: 1} : {}, instanced ? {INSTANCED: 1} : {}, solid ? {SOLID: 1} : {}),
       uniforms: {uTime: {value: 0}, uCol1: {value: new T.Vector3()}, uCol2: {value: new T.Vector3()}, uHL: {value: new T.Vector3()}, uHLI: {value: 1}, uThick: {value: 0},
         ...fadeUniforms()},
-      vertexShader: FADE + RELIEF_AT + `
+      vertexShader: FADE + RELIEF + `
         #ifdef INSTANCED
           attribute vec3 iPos; attribute vec3 iCol1; attribute vec3 iCol2; attribute vec3 iHL; attribute vec2 iFx; attribute vec4 iH;
         #endif

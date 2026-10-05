@@ -26,7 +26,6 @@ const R = road(g, [...start, 'N'],
   + ' NW19 N4');                  // top: back along the middle ring, a spoke out and up into the start
 const mod = (a, n) => ((a % n) + n) % n;
 const key = (c, r) => `${c},${r}`;
-const OTHER = {top: B, bottom: T};
 
 // Ring radius of every cell round the planet.
 const radius = new Map();

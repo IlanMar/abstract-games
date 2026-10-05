@@ -26,7 +26,6 @@ const R = road(g, [...start, 'N'],
   + ' NE5 N3');             // top: round to the north corner and up into the start
 const mod = (a, n) => ((a % n) + n) % n;
 const key = (c, r) => `${c},${r}`;
-const OTHER = {top: B, bottom: T};
 const ROT = ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
 
 // ---- the land: the road, the hub and the twigs.

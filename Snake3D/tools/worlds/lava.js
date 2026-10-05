@@ -25,7 +25,6 @@ const R = road(g, [...start, 'N'],
 const mod = (a, n) => ((a % n) + n) % n;
 const key = (c, r) => `${c},${r}`;
 const hash = (c, r) => { let h = c * 374761393 + r * 668265263; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-const OTHER = {top: B, bottom: T};
 
 // ---- the rivers: lines 6, 24 and 42, swinging up to two cells north and south, two cells wide. Road
 // cells on a river are bridges; every other river cell is open through both faces.

@@ -27,7 +27,6 @@ const R = road(g, [...start, 'N'],
 const mod = (a, n) => ((a % n) + n) % n;
 const key = (c, r) => `${c},${r}`;
 const hash = (c, r) => { let h = c * 374761393 + r * 668265263; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-const OTHER = {top: B, bottom: T};
 
 // ---- the drains.
 const drain = new Set();

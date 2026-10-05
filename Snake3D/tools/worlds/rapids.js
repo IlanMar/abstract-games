@@ -26,7 +26,6 @@ const R = road(g, [...start, 'N'],
   + ' N5');                        // top: up into the start
 const mod = (a, n) => ((a % n) + n) % n;
 const key = (c, r) => `${c},${r}`;
-const OTHER = {top: B, bottom: T};
 
 // ---- the whirlpools: a disc of radius one one step past each dive, through both faces.
 const pools = R.cells.filter(p => p.hole).map(p => g.step(p.c, p.r, p.h));

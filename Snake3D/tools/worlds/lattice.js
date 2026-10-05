@@ -24,7 +24,6 @@ const R = road(g, [...start, 'N'],
   + ' N8 NE7 N20 NE7 N22');         // top: up the east, round the east edge and up into the start
 const mod = (a, n) => ((a % n) + n) % n;
 const key = (c, r) => `${c},${r}`;
-const sameCell = ([a, b], [c, d]) => a === c && b === d;
 const OTHER = {top: B, bottom: T};
 
 // Stretch lengths by stretch number; long stretches become galleries.
