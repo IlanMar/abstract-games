@@ -15,6 +15,11 @@
   // Values come from the serialized scene components of the Unity build.
   const FIXED_DT = 0.02;
   const TOUCH_FPS = 60;      // Options > Frame rate > Auto: the cap on touch screens; a mouse screen runs at its own rate
+  // Automatic quality of Modern graphics under a frame cap: the steps tried in turn while the frames run
+  // late, each a pixel-density limit and the multisampling of the scene. Step 0 is the full look.
+  const QUALITY = [{scale: 2, samples: 4}, {scale: 2, samples: 2}, {scale: 1.5, samples: 2}, {scale: 1.25, samples: 0}];
+  const QUALITY_WINDOW = 2000;   // ms of play judged at a time
+  const QUALITY_LATE = 0.9;      // a window below this share of the cap is too slow
   const COMPLETE_COUNTDOWN = 10;   // Level Complete: seconds before Continue goes on to the next map by itself
   const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5};
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
@@ -603,7 +608,8 @@
       const gl = renderer.getContext();
       this.hdr = renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float');
       this.type = this.hdr ? T.HalfFloatType : T.UnsignedByteType;
-      this.samples = renderer.capabilities.isWebGL2 ? Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0) : 0;
+      this.maxSamples = renderer.capabilities.isWebGL2 ? Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0) : 0;
+      this.samples = this.maxSamples;
       this.scene = null;
       this.down = [];
       this.up = [];
@@ -691,8 +697,10 @@
       return new T.WebGLRenderTarget(w, h, {type: this.type, format: T.RGBAFormat, depthBuffer: samples !== undefined, samples: samples || 0,
         minFilter: T.LinearFilter, magFilter: T.LinearFilter, generateMipmaps: false});
     }
-    setSize(w, h) {
-      if (this.scene && this.scene.width === w && this.scene.height === h) return;
+    setSize(w, h, samples = this.maxSamples) {
+      samples = Math.min(samples, this.maxSamples);
+      if (this.scene && this.scene.width === w && this.scene.height === h && this.samples === samples) return;
+      this.samples = samples;
       this.release();
       this.scene = this.target(w, h, this.samples);
       this.width = w;
@@ -2024,6 +2032,7 @@
       this.highlights = new Map();
       this.clearColor = new T.Color();
       this.setView(this.save.data.viewDistance);
+      this.quality = 0;
       this.setFrameRate(this.save.data.frameRate);
       this.followAt = V();
       this.glowItems = [];
@@ -2077,8 +2086,9 @@
     resize() {
       const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight;
       // Modern stops at 2x: its post-processing passes cost per pixel. Classic has none and draws at
-      // the full pixel density of the screen (3x on an iPhone).
-      const q = Math.min(window.devicePixelRatio || 1, this.classic ? 3 : 2);
+      // the full pixel density of the screen (3x on an iPhone). A lower quality step lowers Modern further.
+      const step = QUALITY[this.quality];
+      const q = Math.min(window.devicePixelRatio || 1, this.classic ? 3 : step.scale);
       this.renderer.setPixelRatio(q);
       this.renderer.setSize(w, h, false);
       const aspect = w / h;
@@ -2088,7 +2098,7 @@
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
       if (this.classic) this.post.release();
-      else this.post.setSize(Math.floor(w * q), Math.floor(h * q));
+      else this.post.setSize(Math.floor(w * q), Math.floor(h * q), step.samples);
       this.drawnState = null;
     }
     later(delay, fn) { this.timers.push({at: this.time + delay, fn}); }
@@ -2333,6 +2343,35 @@
       }
       if (this.fpsShown && this.state === 'playing') this.countFrame(now);
       else this.fpsFrom = 0;   // a pause is not a long frame
+      this.judgeQuality(now);
+    }
+    // Automatic quality: under a frame cap (phones, tablets), Modern graphics that keep missing the cap
+    // for a whole window of play drop one QUALITY step: first half the multisampling, then the pixel
+    // density. A device that keeps the cap never leaves step 0, the full look. A step that brings no
+    // more frames means the cap is not the graphics' doing (Low Power Mode holds Safari at 30 FPS): the
+    // step is undone and the quality left alone for the rest of the visit. Pauses, menus, hidden pages
+    // and stalls of a fifth of a second (loading, a shader compiled on first use) start the window again.
+    judgeQuality(now) {
+      const w = this.qualityWindow;
+      if (!this.fpsCap || this.classic || this.qualityFixed || this.state !== 'playing' || this.frozen) { this.qualityWindow = null; return; }
+      if (!w || now - w.last > 200) { this.qualityWindow = {from: now, last: now, frames: 0}; return; }
+      w.frames++;
+      w.last = now;
+      if (now - w.from < QUALITY_WINDOW) return;
+      const fps = w.frames * 1000 / (now - w.from), probe = this.qualityProbe;
+      this.qualityWindow = null;
+      this.qualityProbe = null;
+      if (probe && fps < QUALITY_LATE * this.fpsCap && fps < 1.1 * probe.fps) {
+        this.qualityFixed = true;
+        this.setQuality(probe.from);
+      } else if (fps < QUALITY_LATE * this.fpsCap && this.quality < QUALITY.length - 1) {
+        this.qualityProbe = {from: this.quality, fps};
+        this.setQuality(this.quality + 1);
+      }
+    }
+    setQuality(step) {
+      this.quality = step;
+      this.resize();
     }
     // Options > Frame rate: 'auto' caps touch screens (phones, tablets) at 60 and leaves a mouse
     // screen at its refresh rate; '60' caps everything; 'max' caps nothing.
@@ -2355,7 +2394,7 @@
       this.fpsLast = now;
       if (now - this.fpsFrom < 500) return;
       const fps = this.fpsCount * 1000 / (now - this.fpsFrom);
-      setText($('fps'), `${Math.round(fps)} FPS · max ${Math.round(this.fpsWorst)} ms`);
+      setText($('fps'), `${Math.round(fps)} FPS · max ${Math.round(this.fpsWorst)} ms${this.quality ? ` · quality −${this.quality}` : ''}`);
       this.fpsFrom = now;
       this.fpsCount = 0;
       this.fpsWorst = 0;
