@@ -71,13 +71,17 @@
 | 55 | Level 55 · Labyrinth | [`tools/worlds/labyrinth.js`](tools/worlds/labyrinth.js) | квадрат 48×48 | очень трудный, плоский: лабиринт стен на обеих сторонах, коридоры по решётке через 4 клетки шириной 3; ложные ответвления длиной 4–8 клеток от развилок дороги, каждое кончается шипом; выбег за каждым углом — тупик; два колодца-нырка |
 | 56 | Level 56 · Saddle | [`tools/worlds/saddle.js`](tools/worlds/saddle.js) | гекс 48×56 | очень трудный, с рельефом: гекс-остров радиуса 19 изогнут седлом `k(x² − z²)` (высоко на востоке и западе, низко на севере и юге, перевал в середине); изолинии из тормозов через каждые 1,5 клетки высоты, огни поезда на подъёмах и спусках, скалы на хребтах, шипы в долинах; два срыва за южный край |
 | 57 | Level 57 · Tetris | [`tools/worlds/tetris.js`](tools/worlds/tetris.js) | квадрат 40×56 | трудный, плоский: стакан тетриса, нырки в дыры в форме O и I; фигуры всех семи видов в четырёх поворотах, мино 2×2 клетки: каменные (стены), светящиеся из ускорителей и тормозов, крашеные; снизу каменные фигуры шипастые, площадки меняются |
-| 58–99 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
+| 58 | Level 58 · Gantry | [`tools/worlds/gantry.js`](tools/worlds/gantry.js) | квадрат 56×56 | очень трудный, по поздней классике (Skeletal, Dual): стальной каркас над пустотой, мосты в 3 клетки и два моста-струны в одну клетку с дорожкой кристаллов через 4 клетки; щиты — стена вплотную к дороге с одной стороны (шип каждую пятую клетку, не ближе 3 клеток к повороту); комнаты Dual с блоками стен и кольцом тормозов; каждый четвёртый этап — две цепочки сразу; палитра Trail |
+| 59 | Level 59 · Archipelago | [`tools/worlds/archipelago.js`](tools/worlds/archipelago.js) | гекс 48×56 | очень трудный, по Absolute и Shrivel: острова радиуса 3 на поворотах, каждый второй мост — струна в одну клетку с дорожкой кристаллов, остальные с «лесенкой» стен вплотную; кольцо тормозов вокруг островов; этапы из двух групп; палитра Twisted (без синей половины) |
+| 60 | Level 60 · Chambers | [`tools/worlds/chambers.js`](tools/worlds/chambers.js) | квадрат 48×48 | очень трудный, по Chamber, Queue и Colour Check: сплошная плита, стены через 8 клеток делят её на камеры с дверями; рельсы `=>=>=` и шипы в углах камер, огни `>..>`; снизу шахматка ускорителей и тормозов; этапы из двух групп |
+| 61 | Level 61 · Zigzag | [`tools/worlds/zigzag.js`](tools/worlds/zigzag.js) | гекс 48×56 | очень трудный, по Zig-Zag: четыре полосы зигзагов из колен по 6 клеток (повороты по 60°, острова на изгибах), туннели `#j#` — стены вплотную с обеих сторон на длинных прямых; щит из тормозов снаружи изгиба, огни внутри; в средней полосе этап из трёх цепочек сразу; палитра бонус-уровней |
+| 62–103 | Classic 1–36 и Classic Bonus 1–6 | [`tools/worlds/classic.js`](tools/worlds/classic.js) | квадрат и гекс 16×16…64×64 | уровни оригинальной Snakes (2005), сконвертированные из [`tools/classic-data.json`](tools/classic-data.json); один скрипт отдаёт список миров |
 
 Карты 0 (Initial) и 1 (Hexagone) — оригинальные, из `nsnakes-data.js`. Движок, который читает миры, лежит в [`game.js`](game.js) (см. [«Где это в игре»](#где-это-в-игре)).
 
 ## Классические уровни — главный образец
 
-Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 58–99). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
+Лучшие уровни в игре — классические, из оригинальной Snakes 2005 года (карты 62–103). Новый мир нужно строить **по их образцу**: брать их приёмы, ритм этапов и насыщенность, а не придумывать с нуля. Перед работой откройте несколько поздних классических уровней: в меню или текстом из `levels.js`.
 
 ```bash
 node -e "const w={};new Function('window',require('fs').readFileSync('levels.js','utf8'))(w);const L=w.SNAKES_LEVELS.find(l=>l.kind==='Vents');L.top.forEach((r,i)=>console.log(r+'  |  '+L.bottom[i]))"
@@ -115,6 +119,10 @@ node -e "const w={};new Function('window',require('fs').readFileSync('levels.js'
 - этап может состоять из двух групп: кристалл на прямой и цепочка через поворот (`[['gem', i], ['chain', i + 2, j]]`);
 - ворота и запуски — плитки `>` и `=` на свободных клетках пути между этапами. Кончайте их тормозом, если дальше поворот.
 - Стены и шипы, как и раньше, не ближе чем через клетку от дороги; тормоза и ускорители можно вплотную: они не ранят.
+- Поздняя классика всё же ставит стены вплотную к цепочке: туннель `#j#` (Zig-Zag), «лесенка» `##kk` (Absolute). В наших мирах так можно на прямой, не ближе 3 клеток после поворота и 4 до следующего (`gantry.js`, `archipelago.js`, `zigzag.js`); выбег за углом остаётся чистым.
+- Этап из нескольких групп (Snake Road — по 4, Zig-Zag — 12 сразу): склейте соседние этапы `autoStages` в один, порядок игрок выбирает сам. Не склеивайте этапы через туннель: группа позади змейки в туннеле недостижима (`zigzag.js`).
+- Дорожка кристаллов `A...A...A` через 4 клетки ведёт по мосту-струне в одну клетку (Skeletal, Absolute): группа `['gems', i, i + 4, ...]`.
+- Палитры классики проверяйте на цвет цепочек: бирюзовый пол (Dual) и синий (начало Twisted) прячут подсветку цепочки, оливковый (Queue) — ускорители.
 
 ## Рельеф
 
@@ -140,7 +148,7 @@ node tools/build-levels.js          # проверить и записать lev
 
 ```js
 document.head.append(Object.assign(document.createElement('script'), {src: 'tools/autopilot.js'}))
-autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19 Reef, 20 Observatory, 21 Aqueduct, 22 Origami, 23 Railyard, 24 Looking Glass, 25 Glacier, 26 Bulkheads, 27 Undertow, 28 Wires, 29 Lattice, 30 Barcode, 31 Catacombs, 32 Pinball, 33 Orbit, 34 Quilt, 35 Kaleidoscope, 36 Sieve, 37 Docks, 38 Rapids, 39 Meander, 40 Snowflake, 41 Reactor, 42 Synthwave, 43 Lava, 44 Rainbow, 45 Red Star, 46 Stars and Stripes, 47 Twelve Stars, 48 Ziggurat, 49 Skyway, 50 Helter Skelter, 51 Furnace, 52 Switchback, 53 Rollercoaster, 54 Velodrome, 55 Labyrinth, 56 Saddle, 57 Tetris, 58–99 классические
+autopilot.check(2)   // 0 Initial, 1 Hexagone, 2 Weave, 3 Spiral, 4 Hive, 5 Garden, 6 Blocks, 7 Candy, 8 Carnival, 9 Sunburst, 10 Kite Parade, 11 Causeway, 12 Mosaic, 13 Foundry, 14 Launchpad, 15 Prism, 16 Lanterns, 17 Clockwork, 18 Tightrope, 19 Reef, 20 Observatory, 21 Aqueduct, 22 Origami, 23 Railyard, 24 Looking Glass, 25 Glacier, 26 Bulkheads, 27 Undertow, 28 Wires, 29 Lattice, 30 Barcode, 31 Catacombs, 32 Pinball, 33 Orbit, 34 Quilt, 35 Kaleidoscope, 36 Sieve, 37 Docks, 38 Rapids, 39 Meander, 40 Snowflake, 41 Reactor, 42 Synthwave, 43 Lava, 44 Rainbow, 45 Red Star, 46 Stars and Stripes, 47 Twelve Stars, 48 Ziggurat, 49 Skyway, 50 Helter Skelter, 51 Furnace, 52 Switchback, 53 Rollercoaster, 54 Velodrome, 55 Labyrinth, 56 Saddle, 57 Tetris, 58 Gantry, 59 Archipelago, 60 Chambers, 61 Zigzag, 62–103 классические
 autopilot.route(2)   // найдёт ли дорогу игрок, который не знает карту
 ```
 
