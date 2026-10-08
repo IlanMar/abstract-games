@@ -265,7 +265,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, itemColor: 0, graphics: 'modern', grading: 'on', popups: 'on', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', scoreShown: 'on', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, itemColor: 0, graphics: 'modern', grading: 'on', popups: 'off', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', scoreShown: 'off', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));

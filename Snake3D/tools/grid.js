@@ -114,15 +114,18 @@ class Grid {
   }
   // Adds the stages of a route world. Each stage is a list of groups by route index: ['gem', i],
   // ['gems', i, j, ...] or ['chain', i, j] (the cells from i to j). Checks that every stage begins within
-  // three cells of where the previous one ended, and that the snake gets there without turning: a player
-  // needs three cells to react, so it only turns where an item of the stage in play shows the way.
-  routeStages(route, side, stages) {
+  // twelve cells (the edge of sight) of where the previous one ended, and that the snake gets there
+  // without turning: it only turns where an item of the stage in play shows the way, or, up to `bends`
+  // times, where the painted road (the rails) does.
+  routeStages(route, side, stages, {bends = 0} = {}) {
     const first = s => s[0][1], last = s => Math.max(...s.map(([, ...ix]) => ix[ix.length - 1]));
     stages.forEach((s, k) => {
       const e = last(s), f = k + 1 < stages.length ? first(stages[k + 1]) : first(stages[0]) + route.length;
       const n = (k + 1) % stages.length + 1;
-      if (f - e > 3) throw new Error(`stage ${n} begins ${f - e} cells after stage ${k + 1}`);
-      for (let i = e + 1; i <= f; i++) if (route.heading(i) !== route.heading(e)) throw new Error(`stage ${n} starts round a bend`);
+      if (f - e > 12) throw new Error(`stage ${n} begins ${f - e} cells after stage ${k + 1}`);
+      let turns = 0;
+      for (let i = e + 1; i <= f; i++) if (route.heading(i) !== route.heading(i - 1)) turns++;
+      if (turns > bends) throw new Error(`stage ${n} starts round a bend`);
       this.stage(...s.map(([kind, ...ix]) => kind === 'gem' ? ['gem', side, ...route.at(ix[0])]
         : kind === 'gems' ? ['gems', side, ix.map(route.at)] : ['chain', side, route.along(ix[0], ix[1])]));
     });

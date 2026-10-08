@@ -99,18 +99,37 @@ function road(g, [c0, r0, h0], runs) {
 //   lengths: straight chain lengths, used in turn; lead: [long, short] cells a corner chain begins before
 //   its bend; launch: straights this long get a crystal, a boost strip and a long chain (0: none);
 //   pair: every pair-th corner stage also has a crystal on the straight before it; gate(i): true where
-//   a stage ending at i should be followed by a '>=' gate on the road.
-function autoStages(R, {first = 11, lengths = [9, 12], lead = [7, 4], launch = 0, pair = 0, gate = () => false} = {}) {
+//   a stage ending at i should be followed by a '>=' gate on the road; gaps: empty road cells between
+//   two stages on one heading, used in turn (11 puts the next stage at the edge of sight, 12 cells
+//   ahead); a stage after a gap is shorter, and none waits where the snake comes out of a dive; crumbs:
+//   every crumbs-th gap of 6 cells or more gets crystals every three cells leading to the stage (0: none);
+//   rails: every rails-th lone bend gets no chain, the next stage waits two cells past it and the painted
+//   road shows the turn (0: none; placeStages then needs {bends: 1}).
+function autoStages(R, {first = 11, lengths = [9, 12], lead = [7, 4], launch = 0, pair = 0, gate = () => false,
+  gaps = [1], crumbs = 0, rails = 0} = {}) {
   const L = R.length, stages = [], pads = [];
   const end = L + first - 3;
   const marks = [...R.corners.map(k => ({k, dive: false})), ...R.dives.map(k => ({k, dive: true}))]
     .flatMap(m => [m, {k: m.k + L, dive: m.dive}]).filter(m => m.k > first && m.k + 2 <= end).sort((a, b) => a.k - b.k);
-  let pos = first, nLen = 0, nCorner = 0;
+  // free: the next stage may wait gaps[...] cells further on (not the first one, nor where the snake
+  // comes out of a dive); wait never leaves less than room cells for it before limit.
+  // A long wait is sometimes strewn with crumbs: crystals every three cells that lead on to the stage,
+  // which takes them in as its first group (every crumbs-th long wait; 0: none).
+  let pos = first, nLen = 0, nCorner = 0, nGap = 0, nLong = 0, nRail = 0, free = false;
+  const lastEnd = () => Math.max(...stages[stages.length - 1].map(([, ...ix]) => ix[ix.length - 1]));
+  const wait = (limit, room) => {
+    const from = pos, extra = free ? Math.max(0, Math.min(gaps[nGap++ % gaps.length] - 1, limit - pos - room)) : 0;
+    free = true;
+    pos += extra;
+    if (extra < 5 || !crumbs || nLong++ % crumbs) return [];
+    return [['gems', ...Array.from({length: Math.floor((extra - 1) / 3) + 1}, (_, k) => from + k * 3)]];
+  };
   const fill = limit => {           // straight chains from pos up to limit (the last cell they may take)
     while (limit - pos >= 4) {
+      const crumb = wait(limit, 6);
       let len = Math.min(lengths[nLen++ % lengths.length] - 1, limit - pos);
       if (limit - pos - len < 6) len = limit - pos;      // too little left for another chain: take it all
-      stages.push([['chain', pos, pos + len]]);
+      stages.push([...crumb, ['chain', pos, pos + len]]);
       const e = pos + len;
       if (gate(e) && limit - e >= 4) { pads.push([e + 1, '>'], [e + 2, '=']); pos = e + 3; }
       else pos = e + 2;
@@ -123,6 +142,7 @@ function autoStages(R, {first = 11, lengths = [9, 12], lead = [7, 4], launch = 0
       fill(k - 6);
       stages.push([['chain', Math.min(pos, k - 3), k - 1]]);
       pos = k + 1;
+      free = false;
       continue;
     }
     if (launch && k - pos >= launch) {
@@ -130,6 +150,7 @@ function autoStages(R, {first = 11, lengths = [9, 12], lead = [7, 4], launch = 0
       pads.push([pos + 1, '>'], [pos + 2, '>'], [k - 6, '=']);
       stages.push([['chain', pos + 3, k - 7]]);
       pos = k - 5;
+      free = false;
     }
     const pre = lead[nCorner % lead.length];
     fill(k - pre - 2);
@@ -137,9 +158,17 @@ function autoStages(R, {first = 11, lengths = [9, 12], lead = [7, 4], launch = 0
     let last = n;
     while (marks[last + 1] && !marks[last + 1].dive && marks[last + 1].k - marks[last].k <= 5) last++;
     const nextK = marks[last + 1] ? marks[last + 1].k : end + 3;
+    // Rails: a lone bend with a long straight after it is left to the painted road.
+    if (rails && last === n && stages.length && free && nextK - k >= 12 && k + 2 - lastEnd() <= 12 && nRail++ % rails === rails - 1) {
+      pos = k + 2;
+      free = false;
+      continue;
+    }
+    const crumb = wait(k - Math.min(pre, 3), 0);
     const to = Math.min(marks[last].k + (nextK - marks[last].k <= 7 ? 1 : 3), nextK - (marks[last + 1] && marks[last + 1].dive ? 4 : 3));
     const from = Math.min(pos, k - 1);
-    if (pair && nCorner % pair === 0 && k - from >= 5) stages.push([['gem', from], ['chain', from + 2, to]]);
+    if (crumb.length) stages.push([...crumb, ['chain', from, to]]);
+    else if (pair && nCorner % pair === 0 && k - from >= 5) stages.push([['gem', from], ['chain', from + 2, to]]);
     else stages.push([['chain', from, to]]);
     nCorner++;
     pos = to + 2;
@@ -151,9 +180,9 @@ function autoStages(R, {first = 11, lengths = [9, 12], lead = [7, 4], launch = 0
   return {stages, pads};
 }
 
-// Puts the stages on the grid and checks the thread: each stage begins within three cells of the end of
-// the one before and on the same heading, or, across a dive, right on the cell where the snake comes out.
-function placeStages(g, R, stages) {
+// Puts the stages on the grid and checks the thread: each stage begins within twelve cells (the edge of
+// sight) of the end of the one before and on the same heading (or past at most `bends` bends of a painted road), or, across a dive, right on the cell where the snake comes out.
+function placeStages(g, R, stages, {bends = 0} = {}) {
   const L = R.length, at = R.at;
   const firstOf = s => s[0][1], lastOf = s => Math.max(...s.map(([, ...ix]) => ix[ix.length - 1]));
   const range = (a, b) => Array.from({length: b - a + 1}, (_, k) => a + k);
@@ -164,8 +193,8 @@ function placeStages(g, R, stages) {
     const holes = range(e + 1, f - 1).filter(i => at(i).hole);
     if (holes.length) { if (holes.length > 1 || f !== holes[0] + 1 || holes[0] - e > 3) throw new Error(`stage ${n} is not right after the dive past stage ${k + 1}`); }
     else {
-      if (f - e > 3) throw new Error(`stage ${n} begins ${f - e} cells after stage ${k + 1}`);
-      for (const i of range(e + 1, f)) if (at(i).h !== at(e).h) throw new Error(`stage ${n} starts round a bend`);
+      if (f - e > 12) throw new Error(`stage ${n} begins ${f - e} cells after stage ${k + 1}`);
+      if (range(e + 1, f).filter(i => at(i).h !== at(i - 1).h).length > bends) throw new Error(`stage ${n} starts round a bend`);
     }
     g.stage(...s.map(([kind, ...ix]) => {
       const cells = kind === 'chain' ? range(ix[0], ix[1]) : ix;
