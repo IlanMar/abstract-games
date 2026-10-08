@@ -102,27 +102,34 @@ function road(g, [c0, r0, h0], runs) {
 //   a stage ending at i should be followed by a '>=' gate on the road; gaps: empty road cells between
 //   two stages on one heading, used in turn (11 puts the next stage at the edge of sight, 12 cells
 //   ahead); a stage after a gap is shorter, and none waits where the snake comes out of a dive; crumbs:
-//   every crumbs-th gap of 6 cells or more gets crystals every three cells leading to the stage (0: none);
+//   every crumbs-th straight with room gets crystals steps[...] cells apart (3 to 11) leading to the stage
+//   (0: none);
 //   rails: every rails-th lone bend gets no chain, the next stage waits two cells past it and the painted
 //   road shows the turn (0: none; placeStages then needs {bends: 1}).
 function autoStages(R, {first = 11, lengths = [9, 12], lead = [7, 4], launch = 0, pair = 0, gate = () => false,
-  gaps = [1], crumbs = 0, rails = 0} = {}) {
+  gaps = [1], crumbs = 0, steps = [4, 8, 11, 6, 3, 10], rails = 0} = {}) {
   const L = R.length, stages = [], pads = [];
   const end = L + first - 3;
   const marks = [...R.corners.map(k => ({k, dive: false})), ...R.dives.map(k => ({k, dive: true}))]
     .flatMap(m => [m, {k: m.k + L, dive: m.dive}]).filter(m => m.k > first && m.k + 2 <= end).sort((a, b) => a.k - b.k);
   // free: the next stage may wait gaps[...] cells further on (not the first one, nor where the snake
   // comes out of a dive); wait never leaves less than room cells for it before limit.
-  // A long wait is sometimes strewn with crumbs: crystals every three cells that lead on to the stage,
-  // which takes them in as its first group (every crumbs-th long wait; 0: none).
-  let pos = first, nLen = 0, nCorner = 0, nGap = 0, nLong = 0, nRail = 0, free = false;
+  // A long wait is sometimes strewn with crumbs: crystals steps[...] cells apart (each in sight of the one
+  // before) across the rest of the straight, leading on to the stage, which takes them in as its first
+  // group (every crumbs-th wait with room; 0: none).
+  let pos = first, nLen = 0, nCorner = 0, nGap = 0, nLong = 0, nStep = 0, nRail = 0, free = false;
   const lastEnd = () => Math.max(...stages[stages.length - 1].map(([, ...ix]) => ix[ix.length - 1]));
   const wait = (limit, room) => {
-    const from = pos, extra = free ? Math.max(0, Math.min(gaps[nGap++ % gaps.length] - 1, limit - pos - room)) : 0;
+    const was = free, top = limit - room;          // top: the last cell the stage may begin on
     free = true;
-    pos += extra;
-    if (extra < 5 || !crumbs || nLong++ % crumbs) return [];
-    return [['gems', ...Array.from({length: Math.floor((extra - 1) / 3) + 1}, (_, k) => from + k * 3)]];
+    if (!was) return [];
+    if (crumbs && top - pos >= 8 && nLong++ % crumbs === 0) {
+      const gems = [];
+      for (let x = lastEnd(), st; x + (st = steps[nStep++ % steps.length]) < top; x += st) gems.push(x + st);
+      if (gems.length) { pos = top; return [['gems', ...gems]]; }
+    }
+    pos += Math.max(0, Math.min(gaps[nGap++ % gaps.length] - 1, top - pos));
+    return [];
   };
   const fill = limit => {           // straight chains from pos up to limit (the last cell they may take)
     while (limit - pos >= 4) {
