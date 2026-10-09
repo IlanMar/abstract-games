@@ -1094,7 +1094,7 @@
   const SNAKE_ATTRS = ['position', 'aEdge', 'aEdge2'];
   class SnakeMesh {
     constructor(material) {
-      this.max = 16384;          // vertices: about 340 cells of snake; the rest of a longer tail is not drawn
+      this.max = 16384;          // vertices: about 340 cells of snake; the rest of a longer tail is not drawn (SnakeBuilder.build)
       this.pos = new Float32Array(this.max * 3);
       this.edge = new Float32Array(this.max * 4);
       this.edge2 = new Float32Array(this.max);
@@ -1938,7 +1938,12 @@
       this.prepare(player, map);
       const n = player.bodyLength;
       const th = player.tailTouched ? 1 : t;
-      const uHead = 1.5 - th, uTail = Math.max(uHead, n - 0.5 - t);
+      // A ring of the body takes 24 vertices, the head and the tail 36 each. A snake too long for the
+      // buffer is drawn up to where it fills it, tail spike included: filling the buffer with the
+      // body first left no room for the head, and a very long snake (many rounds of Stay on This
+      // Level) lost its head.
+      const uMax = 1.5 + 0.5 * (Math.floor((m.max - 72) / 24) - 2);
+      const uHead = 1.5 - th, uTail = Math.min(uMax, Math.max(uHead, n - 0.5 - t));
       let count = 0;
       this.frame(uHead, this.frameAt(count++));
       for (let u = 1.5; u < uTail - 1e-4; u += 0.5) if (u > uHead + 1e-4) this.frame(u, this.frameAt(count++));
@@ -2414,7 +2419,13 @@
       if (this.enabled && !this.awaitingStart) {
         // Unity order: FixedUpdate steps first, then Update.
         this.acc += dt;
-        while (this.acc >= FIXED_DT) { this.acc -= FIXED_DT; p.fixedUpdate(FIXED_DT); }
+        // A step can end the round (Level Complete): the steps left in this frame must not move the
+        // snake on behind the results, into a wall or its own tail.
+        while (this.acc >= FIXED_DT) {
+          this.acc -= FIXED_DT;
+          p.fixedUpdate(FIXED_DT);
+          if (this.state !== 'playing') return;
+        }
         this.input.poll();
         p.frameUpdate();
       }
