@@ -524,6 +524,8 @@
       gain.gain.value = volume;
       src.connect(gain);
       gain.connect(this.sfxGain);
+      // A finished effect lets go of its gain node, so a long run of pickup clicks leaves nothing behind.
+      src.onended = () => gain.disconnect();
       src.start();
       return src;
     }
