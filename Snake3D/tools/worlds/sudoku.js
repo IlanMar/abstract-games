@@ -16,6 +16,7 @@
 // olive thick lines and rose digits, underneath a pale blue road over chocolate; the dives glow raspberry.
 const {Grid} = require('../grid');
 const {road, autoStages, placeStages, putPads} = require('../road');
+const kit = require('../worldkit');
 const W = 72, H = 72, T = 'top', B = 'bottom';
 const g = new Grid(W, H);
 g.floor(0, 0, W - 1, H - 1);
@@ -26,28 +27,14 @@ const R = road(g, [...start, 'N'],
   + ' S8 W16 N32 E32 S15 D'          // top: back, west, north, east and down into the third
   + ' N8 W40 S35 D'                  // underneath: back, the long way west and south to the last
   + ' N4');                          // top: up into the start
-const mod = (a, n) => ((a % n) + n) % n;
-const key = (c, r) => `${c},${r}`;
-const hash = n => { let h = n * 374761393; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const {mod, key, hash} = kit;
 
-// ---- the dives: the dive cell and its two neighbours across the road.
-const gap = new Set();
-for (const p of R.cells) if (p.hole) {
-  const across = p.h === 'N' || p.h === 'S' ? [[1, 0], [-1, 0]] : [[0, 1], [0, -1]];
-  for (const [dx, dy] of [[0, 0], ...across]) gap.add(key(mod(p.c + dx, W), mod(p.r + dy, H)));
-}
-for (const p of R.cells) if (!p.hole && gap.has(key(p.c, p.r))) throw new Error(`the road runs over a dive at ${p.c},${p.r}`);
-for (const k of gap) g.hole(...k.split(',').map(Number));
-const glow = new Set();
-for (const k of gap) { const [c, r] = k.split(',').map(Number); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) glow.add(key(mod(c + dx, W), mod(r + dy, H))); }
-
-// Past every corner three cells straight on stay clear on its face, with the cells round them.
-const runout = {top: new Set(), bottom: new Set()};
-for (const k of R.corners) {
-  const p = R.at(k);
-  let q = [p.c, p.r];
-  for (let n = 0; n < 3; n++) { q = g.move(...q, p.h); for (const o of [q, ...R.nbrs(...q)]) runout[p.side].add(key(...o)); }
-}
+// ---- the dives (the dive cell and its two neighbours across the road), the glow round them, and the
+// runouts past the corners.
+const gap = kit.diveGaps(g, R);
+kit.punch(g, R, gap, 'a dive');
+const glow = kit.glow(g, gap);
+const runout = kit.runouts(g, R);
 const clear = (c, r) => R.local(T, c, r).d >= 2 && !runout.top.has(key(c, r)) && !glow.has(key(c, r));
 
 // ---- the puzzle: a valid solution, givens where the hash picks them and the digit stands clear.
@@ -67,13 +54,8 @@ const thin = (c, r) => mod(c, 8) === 0 || mod(r, 8) === 0;
 const thick = (c, r) => mod(c, 24) === 0 || mod(r, 24) === 0;
 
 // ---- the puzzle and the scrap paper under it.
-for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const side of [T, B]) {
-  const k = key(c, r);
-  if (gap.has(k)) continue;
-  const q = R.local(side, c, r);
-  if (q.d === 0) continue;
-  const n = hash(c * 131 + r * 71 + (side === T ? 0 : 7919));
-  const x = mod(c, 8), y = mod(r, 8), cell = key(Math.floor(c / 8), Math.floor(r / 8));
+kit.paint(g, R, {skip: gap, keep: [glow], runout}, (side, c, r, q, n) => {
+  const k = key(c, r), x = mod(c, 8), y = mod(r, 8), cell = key(Math.floor(c / 8), Math.floor(r / 8));
   let ch = '.';
   if (side === T) {
     if (thick(c, r)) ch = q.d >= 2 ? '#' : '.';                                                    // a thick line
@@ -86,11 +68,9 @@ for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const side of [T, B
     else if (q.d >= 2 && mod(c - r, 8) === 0 && n < 0.4) ch = '=';                                   // a crossing-out
     else if (q.d >= 3 && n < 0.03) ch = '^';
   }
-  if (/[#^]/.test(ch) && (q.d <= 1 || runout[side].has(k) || glow.has(k))) ch = '.';
-  if (ch !== '.') g.set(side, c, r, ch);
-}
-for (const p of R.cells) if (!p.hole) for (const q of R.nbrs(p.c, p.r))
-  if (/[#^]/.test(g.get(p.side, ...q))) throw new Error(`an obstacle at ${q} on ${p.side} stands next to the road`);
+  return ch;
+});
+kit.checkRoad(g, R);
 
 // ---- stages: an uneven thread over a long lap.
 const {stages, pads} = autoStages(R, {lengths: [12, 15], lead: [5, 4], launch: 0, gate: i => mod(i, 3) === 2,
@@ -101,7 +81,7 @@ putPads(g, R, pads);
 // ---- colours: a newspaper puzzle at night.
 const colorOf = side => (c, r) => {
   const q = R.local(side, c, r), k = key(c, r);
-  if (q.d === 0) return side === T ? (mod(q.i, 4) < 2 ? '#ff0088' : '#ff44aa') : (mod(q.i, 4) < 2 ? '#ff99cc' : '#ff44aa');
+  if (q.d === 0) return kit.stripe(q, side === T ? ['#ff0088', '#ff44aa'] : ['#ff99cc', '#ff44aa']);
   if (glow.has(k)) return '#ff0066';
   if (side === B) return thick(c, r) ? '#6600cc' : '#993300';
   if (thick(c, r)) return '#993300';

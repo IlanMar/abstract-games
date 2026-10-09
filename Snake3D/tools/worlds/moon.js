@@ -17,6 +17,7 @@
 // underneath a pale blue road over chocolate tubes; the shafts and dives glow raspberry.
 const {Grid} = require('../grid');
 const {road, autoStages, placeStages, putPads} = require('../road');
+const kit = require('../worldkit');
 const W = 72, H = 72, T = 'top', B = 'bottom';
 const g = new Grid(W, H, true);
 g.floor(0, 0, W - 1, H - 1);
@@ -27,9 +28,7 @@ const R = road(g, [...start, 'N'],
   + ' N24 NW10 N4 NW16 SW8 S28 D'           // top: back up the east, across the seas and down into the third
   + ' N20 NW12 SW6 S31 D'                   // underneath: back, north-west and the long way south to the last
   + ' N6');                                 // top: up into the start
-const mod = (a, n) => ((a % n) + n) % n;
-const key = (c, r) => `${c},${r}`;
-const hash = n => { let h = n * 374761393; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const {mod, key, hash} = kit;
 const near = (c, r) => Math.min(R.local(T, c, r).d, R.local(B, c, r).d);
 const SX = Math.sqrt(3) / 2, WX = W * SX;
 const pos = (c, r) => [c * SX, r + mod(c, 2) / 2];
@@ -56,33 +55,15 @@ const raw = Array.from({length: H}, (_, r) => Array.from({length: W}, (_, c) => 
 const smooth = (c, r) => (raw[r][c] + ['N', 'NE', 'SE', 'S', 'SW', 'NW'].reduce((s, m) => { const [x, y] = g.step(c, r, m); return s + raw[y][x]; }, 0) / 6) / 2;
 const height = Array.from({length: H}, (_, r) => Array.from({length: W}, (_, c) => Math.round(smooth(c, r) * 4) / 4));
 
-// ---- the dives and the shafts.
-const gap = new Set();
-for (const p of R.cells) if (p.hole) {
-  gap.add(key(p.c, p.r));
-  for (const o of R.nbrs(p.c, p.r)) if (!R.has(T, ...o) && !R.has(B, ...o)) gap.add(key(...o));
-}
+// ---- the dives and the shafts, the glow round them, and the runouts past the corners.
+const gap = kit.diveGaps(g, R);
 for (const k of craters) if (k.rad <= 6 && g.disk(k.c, k.r, 3).every(q => near(...q) >= 3)) g.disk(k.c, k.r, 1).forEach(q => gap.add(key(...q)));
-for (const p of R.cells) if (!p.hole && gap.has(key(p.c, p.r))) throw new Error(`the road runs over a shaft at ${p.c},${p.r}`);
-for (const k of gap) g.hole(...k.split(',').map(Number));
-const glow = new Set();
-for (const k of gap) g.disk(...k.split(',').map(Number), 1).forEach(q => glow.add(key(...q)));
-
-// Past every corner three cells straight on stay clear on its face, with the cells round them.
-const runout = {top: new Set(), bottom: new Set()};
-for (const k of R.corners) {
-  const p = R.at(k);
-  let q = [p.c, p.r];
-  for (let n = 0; n < 3; n++) { q = g.step(...q, p.h); for (const o of [q, ...R.nbrs(...q)]) runout[p.side].add(key(...o)); }
-}
+kit.punch(g, R, gap, 'a shaft');
+const glow = kit.glow(g, gap);
+const runout = kit.runouts(g, R);
 
 // ---- the surface and the tubes under it.
-for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const side of [T, B]) {
-  const k = key(c, r);
-  if (gap.has(k)) continue;
-  const q = R.local(side, c, r);
-  if (q.d === 0) continue;
-  const n = hash(c * 131 + r * 71 + (side === T ? 0 : 7919));
+kit.paint(g, R, {skip: gap, keep: [glow], runout}, (side, c, r, q, n) => {
   let ch = '.';
   if (side === T) {
     const {rim} = crater(c, r);
@@ -95,11 +76,9 @@ for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const side of [T, B
     else if (q.d >= 2 && mod(2 * r - c, 13) === 0) ch = '>';                                         // a glowing vein
     else if (q.d >= 3 && n < 0.03) ch = '^';
   }
-  if (/[#^]/.test(ch) && (q.d <= 1 || runout[side].has(k) || glow.has(k))) ch = '.';
-  if (ch !== '.') g.set(side, c, r, ch);
-}
-for (const p of R.cells) if (!p.hole) for (const q of R.nbrs(p.c, p.r))
-  if (/[#^]/.test(g.get(p.side, ...q))) throw new Error(`an obstacle at ${q} on ${p.side} stands next to the road`);
+  return ch;
+});
+kit.checkRoad(g, R);
 
 // ---- stages: an uneven thread over a long lap.
 const {stages, pads} = autoStages(R, {first: 13, lengths: [11, 14], lead: [5, 4], launch: 0, gate: i => mod(i, 3) === 1,
@@ -110,7 +89,7 @@ putPads(g, R, pads);
 // ---- colours: moonlight.
 const colorOf = side => (c, r) => {
   const q = R.local(side, c, r), k = key(c, r);
-  if (q.d === 0) return side === T ? (mod(q.i, 4) < 2 ? '#ff6600' : '#ff5a28') : (mod(q.i, 4) < 2 ? '#ff99cc' : '#ff44aa');
+  if (q.d === 0) return kit.stripe(q, side === T ? ['#ff6600', '#ff5a28'] : ['#ff99cc', '#ff44aa']);
   if (glow.has(k)) return '#ff0066';
   if (side === B) return '#993300';
   if (crater(c, r).rim) return '#b41e46';
@@ -120,7 +99,5 @@ const colors = {top: g.layers(colorOf(T)), bottom: g.layers(colorOf(B))};
 module.exports = {key: 'moon', name: 'Level 115', kind: 'Moon', start: [...start, 'N'], colors, grid: g, height};
 if (require.main === module) {
   console.log(g.print());
-  let worst = 0;
-  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const q of R.nbrs(c, r)) worst = Math.max(worst, Math.abs(height[r][c] - height[q[1]][q[0]]));
-  console.log('steepest step', worst, 'top', Math.max(...height.flat()), 'low', Math.min(...height.flat()), 'craters', craters.length);
+  console.log('steepest step', kit.steepest(g, R, height), 'top', Math.max(...height.flat()), 'low', Math.min(...height.flat()), 'craters', craters.length);
 }
