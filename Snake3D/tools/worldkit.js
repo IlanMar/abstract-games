@@ -9,6 +9,10 @@
 //   const runout = kit.runouts(g, R);           // past every corner, cells kept clear on its face
 //   kit.paint(g, R, {skip: gap, keep: [glow], runout}, (side, c, r, q, n) => '...');
 //   kit.checkRoad(g, R);                        // nothing sharp next to the road
+//   stages = kit.merge(R, kit.trails(stages, tight));   // crystal trails on ropes, two chains at once
+//
+// For the late classic manner: kit.paint(g, R, {shield}) and kit.checkRoad(g, R, shield) keep a wall
+// right beside a straight road (a shield or a tunnel).
 //
 // Everything wraps round the world's edges and works in square and hex worlds alike.
 const mod = (a, n) => ((a % n) + n) % n;
@@ -66,8 +70,9 @@ function runouts(g, R, n = 3) {
 // cell that is not road and not in `skip`; q is R.local(side, c, r) and n a fixed random number for the
 // cell and face. A wall or spike is dropped where it would stand next to the road (q.d <= 1), on a
 // runout of its face, or in any set of `keep`. `cells` limits the fill to a list of keys (a world over
-// the void: only its land).
-function paint(g, R, {skip = new Set(), keep = [], runout = {top: new Set(), bottom: new Set()}, cells = null} = {}, draw) {
+// the void: only its land). `shield(side, c, r, q)` keeps a wall or spike right beside the road (q.d === 1)
+// where it holds and the road there is straight (see straight): a shield or a tunnel.
+function paint(g, R, {skip = new Set(), keep = [], runout = {top: new Set(), bottom: new Set()}, cells = null, shield = null} = {}, draw) {
   const all = cells || (function* () { for (let r = 0; r < g.h; r++) for (let c = 0; c < g.w; c++) yield key(c, r); })();
   for (const k of all) {
     if (skip.has(k)) continue;
@@ -76,16 +81,22 @@ function paint(g, R, {skip = new Set(), keep = [], runout = {top: new Set(), bot
       const q = R.local(side, c, r);
       if (q.d === 0) continue;
       let ch = draw(side, c, r, q, hash(c * 131 + r * 71 + (side === 'top' ? 0 : 7919)));
-      if (/[#^]/.test(ch) && (q.d <= 1 || runout[side].has(k) || keep.some(s => s.has(k)))) ch = '.';
+      const beside = q.d === 1 && shield && straight(R, q.i) && shield(side, c, r, q);
+      if (/[#^]/.test(ch) && ((q.d <= 1 && !beside) || runout[side].has(k) || keep.some(s => s.has(k)))) ch = '.';
       if (ch !== '.') g.set(side, c, r, ch);
     }
   }
 }
 
-// Throws if a wall or a spike stands next to the road on the road's face.
-function checkRoad(g, R) {
-  for (const p of R.cells) if (!p.hole) for (const q of R.nbrs(p.c, p.r))
-    if (/[#^]/.test(g.get(p.side, ...q))) throw new Error(`an obstacle at ${q} on ${p.side} stands next to the road`);
+// Throws if a wall or a spike stands next to the road on the road's face, but for the shields that
+// paint kept (the same `shield` test, on a straight road).
+function checkRoad(g, R, shield = null) {
+  for (const p of R.cells) if (!p.hole) for (const q of R.nbrs(p.c, p.r)) {
+    if (!/[#^]/.test(g.get(p.side, ...q))) continue;
+    const l = R.local(p.side, ...q);
+    if (shield && l.d === 1 && straight(R, l.i) && shield(p.side, ...q, l)) continue;
+    throw new Error(`an obstacle at ${q} on ${p.side} stands next to the road`);
+  }
 }
 
 // The road's own colour in two-cell stripes: road(q, ['#ff6600', '#ff5a28']) for a cell with q.d === 0.
@@ -100,4 +111,43 @@ function steepest(g, R, height) {
   return worst;
 }
 
-module.exports = {mod, key, unkey, hash, diveGaps, punch, glow, runouts, paint, checkRoad, stripe, steepest};
+// True where road cell i lies at least `after` cells past the last bend or dive and `before` cells short of
+// the next: there a wall may stand right beside the road, a tunnel or a shield as in Zig-Zag and Shielded.
+function straight(R, i, after = 3, before = 4) {
+  const L = R.length, turns = R.turns || (R.turns = new Set(R.corners));
+  for (let n = -after; n <= before; n++) {
+    const k = mod(i + n, L);
+    if (turns.has(k) || R.at(k).hole || R.at(k + 1).hole) return false;
+  }
+  return true;
+}
+
+// Crystal trails over tightropes, as in Skeletal and Absolute: a chain of autoStages lying wholly on road
+// cells where tight(i) holds and at least `min` cells long becomes crystals four cells apart, the last on
+// the chain's last cell.
+function trails(stages, tight, min = 9) {
+  return stages.map(s => s.map(([kind, ...ix]) => {
+    if (kind !== 'chain' || ix[1] - ix[0] < min) return [kind, ...ix];
+    for (let i = ix[0]; i <= ix[1]; i++) if (!tight(i)) return [kind, ...ix];
+    const gems = [];
+    for (let i = ix[0]; i < ix[1] - 1; i += 4) gems.push(i);
+    gems.push(ix[1]);
+    return ['gems', ...gems];
+  }));
+}
+
+// Several groups at once, as in Snake Road: from the stage `from` on, every `every`-th stage made only of
+// chains also takes the next one when that is all chains too and no dive lies between them; the player
+// takes the two in either order.
+function merge(R, stages, every = 4, from = 2) {
+  const out = [], chains = s => s.every(gr => gr[0] === 'chain');
+  const dive = (x, y) => R.dives.some(d => [d, d + R.length].some(e => e > x && e < y));
+  for (let k = 0; k < stages.length; k++) {
+    const a = stages[k], b = stages[k + 1];
+    if (k % every === from && b && chains(a) && chains(b) && !dive(a[0][1], b[0][1])) { out.push([...a, ...b]); k++; }
+    else out.push(a);
+  }
+  return out;
+}
+
+module.exports = {mod, key, unkey, hash, diveGaps, punch, glow, runouts, paint, checkRoad, stripe, steepest, straight, trails, merge};
