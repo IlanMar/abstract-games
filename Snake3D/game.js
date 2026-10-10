@@ -15,11 +15,13 @@
   // Values come from the serialized scene components of the Unity build.
   const FIXED_DT = 0.02;
   const TOUCH_FPS = 60;      // Options > Frame rate > Auto: the cap on touch screens; a mouse screen runs at its own rate
-  // Automatic quality of Modern graphics under a frame cap: the steps tried in turn while the frames run
-  // late, each a pixel-density limit and the multisampling of the scene. Step 0 is the full look.
-  const QUALITY = [{scale: 2, samples: 4}, {scale: 2, samples: 2}, {scale: 1.5, samples: 2}, {scale: 1.25, samples: 0}];
+  // Automatic quality of Modern graphics: the steps tried in turn while the frames run late, each a
+  // pixel-density limit and the multisampling of the scene. Step 0 is the full look; the last two also
+  // reach a screen of density 1 (a desktop monitor), the very last draws below it and lets it scale up.
+  const QUALITY = [{scale: 2, samples: 4}, {scale: 2, samples: 2}, {scale: 1.5, samples: 2}, {scale: 1.25, samples: 0}, {scale: 1, samples: 0}, {scale: 0.75, samples: 0}];
   const QUALITY_WINDOW = 2000;   // ms of play judged at a time
-  const QUALITY_LATE = 0.9;      // a window below this share of the cap is too slow
+  const QUALITY_FPS = 60;        // the rate judged without a cap: a faster screen only has to keep 60
+  const QUALITY_LATE = 0.9;      // a window below this share of the cap (or of 60) is too slow
   const COMPLETE_COUNTDOWN = 10;   // Level Complete: seconds before Continue goes on to the next map by itself
   const PLAYER = {accel: 8, returning: 2, org: 4, max: 12, min: 2, startDelay: 1, goStage1: 5, sizeBegin: 4, up: 0.5};
   const CAMERA = {rotatingSpeed: 30, speed: 4, speedRev: 4, shakeDuration: 0.15, shakeMagnitude: 0.1,
@@ -2403,26 +2405,26 @@
       else this.fpsFrom = 0;   // a pause is not a long frame
       this.judgeQuality(now);
     }
-    // Automatic quality: under a frame cap (phones, tablets), Modern graphics that keep missing the cap
-    // for a whole window of play drop one QUALITY step: first half the multisampling, then the pixel
-    // density. A device that keeps the cap never leaves step 0, the full look. A step that brings no
+    // Automatic quality: Modern graphics that keep missing the cap (phones, tablets), or 60 FPS without
+    // a cap (a mouse screen at its own rate), for a whole window of play drop one QUALITY step: first
+    // half the multisampling, then the pixel density. A device that keeps up never leaves step 0. A step that brings no
     // more frames means the cap is not the graphics' doing (Low Power Mode holds Safari at 30 FPS): the
     // step is undone and the quality left alone for the rest of the visit. Pauses, menus, hidden pages
     // and stalls of a fifth of a second (loading, a shader compiled on first use) start the window again.
     judgeQuality(now) {
       const w = this.qualityWindow;
-      if (!this.fpsCap || this.classic || this.qualityFixed || this.state !== 'playing' || this.frozen) { this.qualityWindow = null; return; }
+      if (this.classic || this.qualityFixed || this.state !== 'playing' || this.frozen) { this.qualityWindow = null; return; }
       if (!w || now - w.last > 200) { this.qualityWindow = {from: now, last: now, frames: 0}; return; }
       w.frames++;
       w.last = now;
       if (now - w.from < QUALITY_WINDOW) return;
-      const fps = w.frames * 1000 / (now - w.from), probe = this.qualityProbe;
+      const fps = w.frames * 1000 / (now - w.from), probe = this.qualityProbe, goal = QUALITY_LATE * (this.fpsCap || QUALITY_FPS);
       this.qualityWindow = null;
       this.qualityProbe = null;
-      if (probe && fps < QUALITY_LATE * this.fpsCap && fps < 1.1 * probe.fps) {
+      if (probe && fps < goal && fps < 1.1 * probe.fps) {
         this.qualityFixed = true;
         this.setQuality(probe.from);
-      } else if (fps < QUALITY_LATE * this.fpsCap && this.quality < QUALITY.length - 1) {
+      } else if (fps < goal && this.quality < QUALITY.length - 1) {
         this.qualityProbe = {from: this.quality, fps};
         this.setQuality(this.quality + 1);
       }
