@@ -2155,6 +2155,7 @@
       this.ui.hideMenu();
       this.ui.hud(true);
       this.ui.updateScore(0, 1);
+      this.updateFound();
       this.ui.startPrompt(this.awaitingStart);
       this.audio.level = grooveLevel(def, index);
       this.audio.restartMusic(this.audio.gameMusic);
@@ -2232,6 +2233,7 @@
         this.audio.play('pathDone');
       }
       if (this.levels.removeGroup(group)) this.nextLevel();
+      this.updateFound();
     }
     pickUp(item, player) {
       const sgn = item.side === TOP ? 1 : -1;
@@ -2251,8 +2253,19 @@
         }
         this.addScore(SCORE_ENERGY);
         this.audio.play('energy');
+        this.updateFound();
       }
       this.ui.updateScore(this.shownScore, this.multiply);
+    }
+    // An open world (open: true in levels.js) lays all its items out at once, in one stage, with no
+    // route between them; the HUD counts the ones found. Other maps do not show the counter.
+    updateFound() {
+      const def = MAPS[this.mapIndex].source, el = $('found');
+      const on = !!(def && def.open && this.levels);
+      el.classList.toggle('hidden', !on);
+      if (!on) return;
+      const total = this.map.levels[this.levels.index].length;
+      setText(el, `◆ ${total - this.levels.groups.size} / ${total}`);
     }
     nextLevel() {
       let index = this.levels.index + 1;
@@ -2285,6 +2298,7 @@
     stayOnMap() {
       if (this.state !== 'complete') return;
       this.levels.load(0);
+      this.updateFound();
       this.roundFrom = this.time;
       this.state = 'playing';
       this.ui.hideMenu();

@@ -60,6 +60,16 @@ button { font: inherit; color: inherit; }
 #hud .combo { display: flex; align-items: center; }
 #mult { font-family: "Tomorrow", var(--menu-font); font-size: calc(43.75 * var(--u)); }
 #popups { overflow: visible; }
+#found {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 84 * var(--u));
+  transform: translateX(-50%);
+  font-family: "Tomorrow", var(--menu-font);
+  font-size: max(16px, calc(34 * var(--u)));
+  white-space: nowrap;
+  text-shadow: 0 2px 8px #000;
+}
 #start-prompt { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: max(18px, calc(26 * var(--u))); text-shadow: 0 2px 8px #000; white-space: nowrap; }
 .popup {
   position: absolute;
