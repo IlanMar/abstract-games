@@ -101,21 +101,26 @@
         }
         return;
       }
-      for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) {
-        const idx = x * h + y;
-        for (let k = 0; k < 4; k++) {
-          const sx = k & 1 ? 1 : -1, sy = k & 2 ? 1 : -1;
-          let sum = 0, n = 0;
-          for (const [ox, oy] of [[0, 0], [sx, 0], [0, sy], [sx, sy]]) {
-            const j = mod(x + ox, w) * h + mod(y + oy, h);
-            if (top[j] !== -1) { sum += height[j]; n++; }
+      // Each corner: the cell, its neighbour across x, across y and diagonally, summed in that order.
+      // No arrays per corner: a big map has tens of thousands of cells.
+      for (let x = 0; x < w; x++) {
+        const xc = x * h, xl = mod(x - 1, w) * h, xr = mod(x + 1, w) * h;
+        for (let y = 0; y < h; y++) {
+          const idx = xc + y, yd = mod(y - 1, h), yu = mod(y + 1, h);
+          for (let k = 0; k < 4; k++) {
+            const cx = k & 1 ? xr : xl, cy = k & 2 ? yu : yd;
+            let sum = 0, n = 0;
+            if (top[idx] !== -1) { sum += height[idx]; n++; }
+            if (top[cx + y] !== -1) { sum += height[cx + y]; n++; }
+            if (top[xc + cy] !== -1) { sum += height[xc + cy]; n++; }
+            if (top[cx + cy] !== -1) { sum += height[cx + cy]; n++; }
+            this.corner[idx * 4 + k] = n ? sum / n : height[idx];
           }
-          this.corner[idx * 4 + k] = n ? sum / n : height[idx];
+          const c = this.corner, o = idx * 4;
+          this.surf[idx] = (c[o] + c[o + 1] + c[o + 2] + c[o + 3]) / 4;
+          this.gx[idx] = (c[o + 1] + c[o + 3] - c[o] - c[o + 2]) / 2;
+          this.gz[idx] = (c[o + 2] + c[o + 3] - c[o] - c[o + 1]) / 2;
         }
-        const c = this.corner, o = idx * 4;
-        this.surf[idx] = (c[o] + c[o + 1] + c[o + 2] + c[o + 3]) / 4;
-        this.gx[idx] = (c[o + 1] + c[o + 3] - c[o] - c[o + 2]) / 2;
-        this.gz[idx] = (c[o + 2] + c[o + 3] - c[o] - c[o + 1]) / 2;
       }
     }
     // Height of the sheet at the centre of a cell, and its normal in three.js coordinates (z negated).
