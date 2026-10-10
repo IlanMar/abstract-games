@@ -79,6 +79,8 @@
           <div class="row" data-setting="fpsCounter"><button data-value="on">On</button><button data-value="off">Off</button></div>
           <span>Score</span>
           <div class="row" data-setting="scoreShown"><button data-value="on">On</button><button data-value="off">Off</button></div>
+          <span>Keep finds</span>
+          <div class="row" data-setting="keepFound"><button data-value="on">On</button><button data-value="off">Off</button></div>
         </div>
         <div class="space"></div>
         <button id="reset-data">Reset All Data</button>
@@ -108,6 +110,7 @@
       <div class="panel hidden" data-panel="lost">
         <h2>Game Over</h2>
         <div class="label" id="lost-stage"></div>
+        <button id="continue-search" class="hidden" disabled>Continue</button>
         <button id="retry-level">Restart Level</button>
         <div class="space"></div>
         <button id="lost-to-menu">Main Menu</button>
@@ -119,6 +122,6 @@
   <script src="vendor/three.min.js"></script>
   <script src="nsnakes-data.js?v=8"></script>
   <script src="levels.js?v=92"></script>
-  <script src="game.js?v=77"></script>
+  <script src="game.js?v=78"></script>
 </body>
 </html>

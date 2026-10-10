@@ -206,8 +206,9 @@
   }
 
   // Start a selected stage close to its active group, on the correct side of the map.
-  function stageSpawn(map, index) {
-    const group = map.levels[index][0];
+  function stageSpawn(map, index) { return groupSpawn(map, map.levels[index][0]); }
+  // A place beside a group (a stage's first one, or the last one found in an open world), facing it.
+  function groupSpawn(map, group) {
     if (!group || !group.cells.length) return null;
     const side = group.rev ? BOTTOM : TOP;
     const rev = side === TOP;
@@ -265,7 +266,7 @@
   // ---------------------------------------------------------------- persistence
   class Save {
     constructor() {
-      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, itemColor: 0, graphics: 'modern', grading: 'on', popups: 'off', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', scoreShown: 'off', played: false, cleared: {}, lastMap: 'square'};
+      const defaults = {music: 1, sfx: 1, viewDistance: 1.2, itemGlow: 0.75, itemColor: 0, graphics: 'modern', grading: 'on', popups: 'off', boostButton: 'off', frameRate: 'auto', fpsCounter: 'off', scoreShown: 'off', keepFound: 'on', played: false, cleared: {}, lastMap: 'square'};
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem('nsnakes-save')); } catch (e) { stored = null; }
       this.data = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, stored?.[key] ?? value]));
@@ -2110,7 +2111,8 @@
     }
     later(delay, fn) { this.timers.push({at: this.time + delay, fn}); }
     // ---------------- scene management
-    startMap(index, level = 0) {
+    // resume: {ids, last} of the groups found before a Game Over in an open world (Continue).
+    startMap(index, level = 0, resume = null) {
       this.audio.unlock();
       this.mapIndex = index;
       const def = MAPS[index];
@@ -2125,6 +2127,14 @@
       this.levels = new Levels(this.map);
       if (level) this.levels.load(level);
       this.spawn = level ? stageSpawn(this.map, level) : null;
+      this.found = {ids: new Set(), last: null};
+      if (resume) {
+        // The groups found stay found; the snake waits beside the last one, as at a selected stage.
+        for (const id of resume.ids) { const group = this.levels.groups.get(id); if (group) this.levels.removeGroup(group); }
+        this.found = {ids: new Set(resume.ids), last: resume.last};
+        this.spawn = groupSpawn(this.map, this.map.levels[0].find(g => g.g === resume.last));
+      }
+      const selected = level > 0 || !!resume;
       this.world = new WorldView(this.scene, this.map);
       this.player = new Player(this);
       this.spawn = null;
@@ -2140,7 +2150,7 @@
       this.time = 0;
       this.roundFrom = 1;
       this.acc = 0;
-      this.spectro = level ? 0 : 1;
+      this.spectro = selected ? 0 : 1;
       this.spectroTarget = this.spectro;
       this.spectroSpeed = 0;
       this.rev = this.player.rev ? 0 : 1;
@@ -2149,7 +2159,7 @@
       this.scoreTick = 0;
       this.multiply = 1;
       this.enabled = false;
-      this.awaitingStart = level > 0;
+      this.awaitingStart = selected;
       if (this.awaitingStart) this.player.onGame = true;
       this.state = 'playing';
       this.ui.hideMenu();
@@ -2163,7 +2173,7 @@
       // MenuManager.waitingInstatiat: the player is enabled after one second, then the fade out.
       this.later(1, () => {
         this.enabled = true;
-        if (!level) this.later(PLAYER.startDelay, () => { this.setSpectro(0, 0.5); this.player.onGame = true; });
+        if (!selected) this.later(PLAYER.startDelay, () => { this.setSpectro(0, 0.5); this.player.onGame = true; });
         this.later(0.5, () => this.ui.fade(0, 1));
       });
     }
@@ -2177,6 +2187,16 @@
     restartLevel() {
       if ((this.state !== 'paused' && !this.lost) || !this.levels) return;
       this.startMap(this.mapIndex, 0);
+    }
+    // Game Over > Continue in an open world with Options > Keep finds: the map again without the
+    // groups found so far.
+    canContinue() {
+      const def = MAPS[this.mapIndex].source;
+      return !!(def && def.open && this.save.data.keepFound !== 'off' && this.found && this.found.ids.size);
+    }
+    continueSearch() {
+      if (!this.lost || !this.canContinue()) return;
+      this.startMap(this.mapIndex, 0, this.found);
     }
     toMenu() {
       this.state = 'menu';
@@ -2232,8 +2252,14 @@
         this.ui.updateScore(this.shownScore, this.multiply);
         this.audio.play('pathDone');
       }
-      if (this.levels.removeGroup(group)) this.nextLevel();
+      if (this.takeGroup(group)) this.nextLevel();
       this.updateFound();
+    }
+    // Takes a finished group off the stage; true when it was the stage's last one.
+    takeGroup(group) {
+      this.found.ids.add(group.id);
+      this.found.last = group.id;
+      return this.levels.removeGroup(group);
     }
     pickUp(item, player) {
       const sgn = item.side === TOP ? 1 : -1;
@@ -2249,7 +2275,7 @@
         this.particles.burst({at, dir: toward, count: 5, speed: 6, spread: 55 * DEG, life: 1, size: [0.3, 0.5], colorA: [0.924, 0.992, 0.212], colorB: [0.701, 0.726, 0.236]});
         player.addPartOfSnake();
         if (this.levels.items.get(this.levels.key(item.idx, item.side)) === item) {
-          if (this.levels.removeGroup(item.group)) this.nextLevel();
+          if (this.takeGroup(item.group)) this.nextLevel();
         }
         this.addScore(SCORE_ENERGY);
         this.audio.play('energy');
@@ -2275,6 +2301,7 @@
         index = 0;
       }
       this.levels.load(index);
+      this.found = {ids: new Set(), last: null};
     }
     // Level Complete, as in the original: the snake stops, the results show, and Next Level (or the
     // countdown) goes on to the next map. After the last map comes the first one. Stay on This Level
@@ -2298,6 +2325,7 @@
     stayOnMap() {
       if (this.state !== 'complete') return;
       this.levels.load(0);
+      this.found = {ids: new Set(), last: null};
       this.updateFound();
       this.roundFrom = this.time;
       this.state = 'playing';
@@ -2336,6 +2364,10 @@
       this.later(1, () => {
         const def = MAPS[this.mapIndex];
         $('lost-stage').textContent = `${def.name} · ${def.kind}`;
+        const more = this.canContinue(), button = $('continue-search');
+        button.classList.toggle('hidden', !more);
+        button.disabled = !more;
+        if (more) button.textContent = `Continue · ◆ ${this.found.ids.size} / ${this.map.levels[this.levels.index].length}`;
         this.audio.playMusic(this.audio.endMusic);
         this.ui.showMenu('lost', true);
       });
@@ -2581,6 +2613,7 @@
       $('to-menu').addEventListener('click', () => game.toMenu());
       $('restart-level').addEventListener('click', () => game.restartLevel());
       $('retry-level').addEventListener('click', () => game.restartLevel());
+      $('continue-search').addEventListener('click', () => game.continueSearch());
       $('lost-to-menu').addEventListener('click', () => game.toMenu());
       $('pause-button').addEventListener('click', e => { e.stopPropagation(); game.pause(true); });
       const s = game.save.data;
